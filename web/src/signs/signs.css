@@ -314,6 +314,39 @@
   text-align: center;
 }
 
+/* Photos held on the phone because the sign has not synced yet. Toned as information rather than
+   alarm: nothing has gone wrong, the road simply has no signal. */
+.sg-held {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 0.5rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.sg-held__line {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.sg-held__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+/* Outdoors, one-handed: the discard/retry pair has to be as tappable as the save button. */
+.sg-held__actions .btn {
+  min-height: var(--tap);
+}
+.sg-held__cap {
+  margin: 0;
+}
+/* Same frame as an uploaded photo, without the enlarge affordance: there is nothing on the server
+   to enlarge yet. */
+.sg-photo--held {
+  cursor: default;
+}
+
 /* ------------------------------------------------------------------ pickup list */
 
 .sg-standing {

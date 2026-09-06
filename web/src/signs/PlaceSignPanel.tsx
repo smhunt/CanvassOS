@@ -10,7 +10,8 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { usePlaceSign } from '../api/hooks';
 import type { Sign, SignInput } from '../api/types';
-import { ErrorBox, Spinner } from '../components/ui';
+import { useOutbox, usePhotoQueue } from '../offline/useOutbox';
+import { ErrorBox, Spinner, n } from '../components/ui';
 import {
   ACCURACY_WARN_M,
   formatAccuracy,
@@ -29,11 +30,29 @@ interface Props {
 
 const EMPTY = { label: '', size: '', permission_by: '', note: '' };
 
+/**
+ * What the volunteer is looking at after they press save.
+ *
+ * `queued` is the load-bearing field: with no signal the write went into the outbox, not the
+ * database, and the card must say so rather than claiming a record the server has never seen.
+ * `client_id` travels with it because that is what a photo taken here is filed under until the
+ * sign has a real id.
+ */
+interface Placed {
+  sign: Sign;
+  queued: boolean;
+  clientId: string;
+}
+
 export function PlaceSignPanel({ household, onClearHousehold }: Props) {
   const geo = useGeoFix();
   const place = usePlaceSign();
+  // Subscribing starts the outbox on this screen too. A volunteer who reopens the app here with a
+  // sign still queued needs it flushing: a photo held on the phone is waiting on that sign's id.
+  const outbox = useOutbox();
+  const photoQ = usePhotoQueue();
   const [form, setForm] = useState(EMPTY);
-  const [created, setCreated] = useState<Sign | null>(null);
+  const [created, setCreated] = useState<Placed | null>(null);
   // The exact body that was sent, kept for retries — same client_id, same sign.
   const attempt = useRef<SignInput | null>(null);
 
@@ -57,12 +76,17 @@ export function PlaceSignPanel({ household, onClearHousehold }: Props) {
       client_id: crypto.randomUUID(),
     };
     attempt.current = body;
-    place.mutate(body, { onSuccess: (r) => setCreated(r.sign) });
+    place.mutate(body, { onSuccess: (r, sent) => keep(r, sent) });
+  }
+
+  /** `queued` comes straight from the mutation, so the card can only ever say what actually happened. */
+  function keep(r: { sign: Sign; queued: boolean }, sent: SignInput) {
+    setCreated({ sign: r.sign, queued: r.queued, clientId: sent.client_id ?? r.sign.client_id ?? '' });
   }
 
   function retry() {
     const body = attempt.current;
-    if (body) place.mutate(body, { onSuccess: (r) => setCreated(r.sign) });
+    if (body) place.mutate(body, { onSuccess: (r, sent) => keep(r, sent) });
   }
 
   function again() {
@@ -75,8 +99,10 @@ export function PlaceSignPanel({ household, onClearHousehold }: Props) {
   }
 
   if (created) {
-    return <PlacedCard sign={created} onAgain={again} />;
+    return <PlacedCard placed={created} onAgain={again} />;
   }
+
+  const heldElsewhere = photoQ.photos.length;
 
   const fix = geo.fix;
   const outsideArea = fix ? !isInMiddlesexCentre(fix) : false;
@@ -205,6 +231,14 @@ export function PlaceSignPanel({ household, onClearHousehold }: Props) {
       {!fix && (
         <p className="muted small sg-save__hint">A sign cannot be saved without a GPS fix.</p>
       )}
+      {heldElsewhere > 0 && (
+        // Photos from earlier placements are still on this phone. A volunteer who cannot see them
+        // has no way to know whether the sign they placed an hour ago is findable yet.
+        <p className="muted small sg-save__hint" role="status">
+          {n(heldElsewhere)} sign photo{heldElsewhere === 1 ? '' : 's'} still waiting on this phone —{' '}
+          {outbox.online ? 'going up now.' : 'they go up on their own as soon as there is signal.'}
+        </p>
+      )}
     </form>
   );
 }
@@ -285,21 +319,44 @@ function FixReadout({ fix, poor, attempts }: { fix: GeoFix; poor: boolean; attem
   );
 }
 
-/** After the sign is saved: the record, then the optional photo. */
-function PlacedCard({ sign, onAgain }: { sign: Sign; onAgain: () => void }) {
+/**
+ * After the sign is saved: what actually happened, then the optional photo.
+ *
+ * "Sign recorded" is only true when the server said so. Offline the write is sitting in the outbox
+ * on this phone, and telling a volunteer in a field that it is recorded is the one thing a status
+ * message must never do — they would walk away from a sign that no organiser can see. The wording
+ * matches the door screen's sync affordances ("saved on this phone", "as soon as there is signal")
+ * so the two screens agree about what the queue means.
+ */
+function PlacedCard({ placed, onAgain }: { placed: Placed; onAgain: () => void }) {
+  const { sign, queued, clientId } = placed;
   const describe = sign.label ?? sign.address ?? `${formatCoord(sign.lat)}, ${formatCoord(sign.lon)}`;
   return (
     <div className="card sg-placed">
-      <div className="alert alert--ok alert--compact" role="status">
-        <div>
-          <strong>Sign recorded</strong>
-          <div className="alert__detail">
-            {describe} · fix good to {formatAccuracy(sign.accuracy_m)}
+      {queued ? (
+        <div className="alert alert--warn alert--compact" role="status">
+          <div>
+            <strong>Saved on this phone</strong>
+            <div className="alert__detail">
+              {describe} · fix good to {formatAccuracy(sign.accuracy_m)}. It has not reached the server yet — it goes up
+              on its own as soon as there is signal, and nothing here needs you to remember it.
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="alert alert--ok alert--compact" role="status">
+          <div>
+            <strong>Sign recorded</strong>
+            <div className="alert__detail">
+              {describe} · fix good to {formatAccuracy(sign.accuracy_m)}
+            </div>
+          </div>
+        </div>
+      )}
 
-      <PhotoCapture signId={sign.id} describe={describe} />
+      {/* A queued sign has no server id — `sign.id` is the deliberately unusable `queued:` placeholder
+          from hooks.ts — so the photo is filed under the client_id instead and uploads itself later. */}
+      <PhotoCapture signId={queued ? null : sign.id} clientId={clientId} describe={describe} />
 
       <div className="sg-placed__actions">
         <button type="button" className="btn btn--primary" onClick={onAgain}>

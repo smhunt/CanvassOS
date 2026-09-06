@@ -19,6 +19,7 @@
 import { ApiError, api } from '../api/client';
 import type { ContactResult } from '../api/types';
 import { META, OUTBOX, idbDelete, idbGetAll, idbPut, isMemoryOnly } from './db';
+import { adoptSignId, discardPhotosFor, startPhotoQueue } from './photoQueue';
 
 export type OutboxEndpoint = '/contacts' | '/signs';
 
@@ -130,6 +131,9 @@ export function onSynced(fn: () => void): () => void {
 export function start(): Promise<void> {
   if (started) return started;
   started = (async () => {
+    // Photos wait on this queue for their sign's real id, so they come up with it — otherwise a
+    // photo taken offline would sit there until the volunteer happened to open the signs screen.
+    void startPhotoQueue();
     entries = await idbGetAll<OutboxEntry>(OUTBOX);
     const meta = await idbGetAll<{ key: string; value: number }>(META);
     lastSyncAt = meta.find((m) => m.key === LAST_SYNC_KEY)?.value ?? null;
@@ -306,6 +310,24 @@ async function park(entry: OutboxEntry, reason: ParkedReason, err: unknown): Pro
 }
 
 /**
+ * Tell the photo queue the sign it has been waiting for now exists.
+ *
+ * The `client_id` used is the one WE generated (`entry.id`), never the one echoed back — the same
+ * rule the rest of this module follows. A photo held for a sign the server has now named becomes
+ * uploadable at exactly this moment and not a second earlier, which is why this is a call and not
+ * a subscription: nothing has to be mounted for it to happen.
+ *
+ * A malformed or surprising body is not fatal here. The sign is placed either way; the photo simply
+ * stays held, and the volunteer keeps seeing that it is still waiting rather than being told a lie.
+ */
+async function handOverSignId(entry: OutboxEntry, res: unknown): Promise<void> {
+  if (entry.endpoint !== '/signs') return;
+  const signId = (res as { sign?: { id?: unknown } } | null)?.sign?.id;
+  if (typeof signId !== 'string' || !signId) return;
+  await adoptSignId(entry.id, signId);
+}
+
+/**
  * Replay the queue oldest first, one at a time.
  *
  * Sequential on purpose: a phone on one bar does not get faster by opening six sockets, and doors
@@ -327,11 +349,14 @@ export async function flush(): Promise<void> {
     notify();
     for (const entry of due) {
       try {
-        await api.post(entry.endpoint, entry.body);
+        const res = await api.post(entry.endpoint, entry.body);
         // The response's `client_id` may be a derived `<client_id>:<voter_id>` key, so it is not
         // consulted: the entry is identified by the id we generated and nothing else.
         await drop(entry.id);
         landed = true;
+        // The one thing the response body is read for. A sign photo taken in a field has been
+        // waiting on this exact fact — the server id — and it is only knowable here.
+        await handOverSignId(entry, res);
       } catch (err) {
         const kind = classify(err);
         if (kind === 'rejected') {
@@ -387,6 +412,10 @@ export async function retryEntry(id: string): Promise<void> {
 
 /** Deliberate deletion only — a queued door is never dropped on the app's own initiative. */
 export async function discardEntry(id: string): Promise<void> {
+  const entry = entries.find((e) => e.id === id);
   await drop(id);
+  // A discarded sign will never exist, so a photo held for it can never be attached to anything.
+  // Keeping it would be keeping a photograph of somebody's house for no reason at all.
+  if (entry?.endpoint === '/signs') void discardPhotosFor(id);
   schedule();
 }

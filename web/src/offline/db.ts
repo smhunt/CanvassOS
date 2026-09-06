@@ -19,17 +19,29 @@
 export const OUTBOX = 'outbox';
 export const TURF_CACHE = 'turf_cache';
 export const META = 'meta';
-export type StoreName = typeof OUTBOX | typeof TURF_CACHE | typeof META;
+/**
+ * Sign photos taken before their sign existed on the server (offline/photoQueue.ts).
+ *
+ * WHY its own store rather than rows in the outbox: these hold image blobs, they are uploaded
+ * multipart rather than as JSON, and they are keyed by the sign's `client_id` because that is the
+ * only identifier that exists at the moment the shutter is pressed. IndexedDB stores a Blob
+ * natively, which is the other half of why this data never went anywhere near localStorage.
+ */
+export const PENDING_PHOTOS = 'pending_photos';
+export type StoreName = typeof OUTBOX | typeof TURF_CACHE | typeof META | typeof PENDING_PHOTOS;
 
 const DB_NAME = 'mc-canvass-field';
-const DB_VERSION = 1;
-const STORES: StoreName[] = [OUTBOX, TURF_CACHE, META];
+// v2 adds `pending_photos`. onupgradeneeded creates whatever is missing, so a phone already holding
+// a v1 queue keeps every queued door across the upgrade.
+const DB_VERSION = 2;
+const STORES: StoreName[] = [OUTBOX, TURF_CACHE, META, PENDING_PHOTOS];
 
 /** Each store is keyed by an in-object field, so a put is an upsert with no separate key argument. */
 const KEY_PATH: Record<StoreName, string> = {
   [OUTBOX]: 'id',
   [TURF_CACHE]: 'turf_id',
   [META]: 'key',
+  [PENDING_PHOTOS]: 'id',
 };
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;

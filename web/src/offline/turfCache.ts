@@ -16,6 +16,7 @@
  */
 import type { DoorsResponse } from '../api/types';
 import { TURF_CACHE, idbClear, idbGet, idbGetAll, idbPut } from './db';
+import { clearPendingPhotos } from './photoQueue';
 
 export interface CachedTurf {
   turf_id: string;
@@ -38,4 +39,16 @@ export async function cachedTurfSummaries(): Promise<{ turf_id: string; name: st
     .sort((a, b) => b.cached_at - a.cached_at);
 }
 
-export const clearTurfCache = (): Promise<void> => idbClear(TURF_CACHE);
+/**
+ * "Clear saved data" — one button, everything personal it can reach.
+ *
+ * The turf cache is not the only personal information this app leaves on a phone: a sign photo is a
+ * photograph of somebody's house, and one taken offline is held here until its sign exists (see
+ * photoQueue.ts). A volunteer who says "clear this phone" means that too, and must not have to know
+ * there is a second store to find. So this clears both, and the placing screen says plainly at
+ * capture time that a held photo is cleared by this button — nothing here is discovered afterwards.
+ */
+export async function clearTurfCache(): Promise<void> {
+  await idbClear(TURF_CACHE);
+  await clearPendingPhotos();
+}
