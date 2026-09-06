@@ -21,6 +21,14 @@ const schema = z.object({
   // Sign photos are files on disk, not rows: they are large, never queried, and living in `data/`
   // means `make purge` shreds them with the CSVs after the election. Created on first boot if absent.
   SIGN_PHOTO_DIR: z.string().default('../data/sign-photos'),
+  // Street-level imagery of a door (GET /api/households/:id/streetview). ABSENT = FEATURE OFF, and
+  // that is the default on purpose: it is the only call this stack makes to a third party, and a
+  // campaign is entitled to decide it would rather make none. When it is set, the key stays here —
+  // it is never served to the browser (see lib/streetview.ts for the whole privacy argument).
+  STREETVIEW_API_KEY: z.string().min(1).optional(),
+  // An enum rather than a string so that adding an openly-licensed provider later is a deliberate
+  // code change, not a typo in the environment that silently disables the feature.
+  STREETVIEW_PROVIDER: z.enum(['google']).default('google'),
   LOG_LEVEL: z.string().default('info'),
 });
 

@@ -28,13 +28,14 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { after, before, describe, it } from 'node:test';
+import { after, before, beforeEach, describe, it } from 'node:test';
 import { parse } from 'csv-parse/sync';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { hashPassword } from '../src/auth/password.js';
 import { loadConfig } from '../src/config.js';
 import { createPool, type Db } from '../src/db.js';
+import { clearStreetViewCache, type FetchLike } from '../src/lib/streetview.js';
 import { normalizeContactValue } from '../src/routes/voter-contacts.js';
 
 const DATABASE_URL =
@@ -1898,5 +1899,190 @@ describe('voter contacts (phone / email collected at the door)', () => {
       const res = await app.inject({ method, url, ...(method === 'POST' ? { payload: {} } : {}) });
       assert.equal(res.statusCode, 401, `${method} ${url}`);
     }
+  });
+});
+
+/**
+ * Street-level imagery of a door.
+ *
+ * Nothing in here talks to Google: the provider is a stub, so the suite never makes a billed call
+ * and never sends a real coordinate anywhere. What is actually under test is the set of rails that
+ * make the feature safe to turn on — it is off by default, it is scoped exactly like the household
+ * card, and it cannot be made to spend money by asking for a wall-sized image.
+ */
+describe('street-level imagery', () => {
+  /** A 1×1 PNG. The route does not parse the bytes; this is just something plausible to serve. */
+  const PIXEL = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  /** Every provider URL the stub was asked for, in order — the evidence for "nothing left the building". */
+  let provider: string[] = [];
+  /** What the (free) metadata endpoint should claim about the next door asked about. */
+  let metaStatus = 'OK';
+
+  const stub: FetchLike = async (input) => {
+    const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const url = new URL(href);
+    provider.push(url.pathname);
+    // A stub that leaked the key or an address would be a bug worth failing on, so assert here.
+    assert.equal(url.searchParams.get('key'), 'test-streetview-key');
+    const location = url.searchParams.get('location') ?? '';
+    assert.match(location, /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/, 'only coordinates are ever sent to the provider');
+    if (url.pathname.endsWith('/metadata')) {
+      return new Response(JSON.stringify({ status: metaStatus }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(PIXEL, { headers: { 'content-type': 'image/png' } });
+  };
+
+  /** The same stack with a key configured — the only place in the suite where the feature is on. */
+  let svApp: FastifyInstance;
+  /** Mapped doors inside the volunteer's turf, and one mapped door outside it. */
+  let inTurf: string[];
+
+  const sv = (url: string, cookie: string) => svApp.inject({ method: 'GET', url, headers: { cookie } });
+
+  const auditFor = async (id: string) =>
+    (
+      await db.query<{ detail: Record<string, unknown> }>(
+        `SELECT detail FROM audit_log WHERE action = 'view_streetview' AND target = $1 ORDER BY id DESC LIMIT 1`,
+        [id],
+      )
+    ).rows[0]?.detail;
+
+  before(async () => {
+    const config = loadConfig({
+      DATABASE_URL,
+      SESSION_SECRET: 'test-secret-test-secret-test-secret-0123456789',
+      DOMAIN: 'canvass.test',
+      COOKIE_SECURE: 'false',
+      BOUNDARY_PATH: resolve(DATA_DIR, 'mc_boundary.json'),
+      SIGN_PHOTO_DIR: photoDir,
+      STREETVIEW_API_KEY: 'test-streetview-key',
+      LOG_LEVEL: 'silent',
+    });
+    svApp = await buildApp({ config, db, fetchImpl: stub, logger: false });
+    await svApp.ready();
+    inTurf = ctx.streetHouseholdIds.filter((id) => households.find((h) => h.household_id === id)?.lat);
+    assert.ok(inTurf.length >= 3, 'need a few mapped doors inside the volunteer turf');
+  });
+
+  after(async () => {
+    await svApp.close();
+    clearStreetViewCache();
+  });
+
+  beforeEach(() => {
+    // Each case starts with an empty memory cache so a cache hit from a neighbouring test can
+    // never be mistaken for a provider call that did not happen.
+    clearStreetViewCache();
+    provider = [];
+    metaStatus = 'OK';
+  });
+
+  it('is off unless a key is configured, and says so cleanly', async () => {
+    // `app` (the rest of the suite) has no STREETVIEW_API_KEY, which is the default deployment.
+    for (const [door, cookie] of [
+      [ctx.streetHouseholdIds[0]!, volunteerCookie],
+      [ctx.outsideHouseholdId, organizerCookie],
+    ] as const) {
+      const res = await call('GET', `/api/households/${door}/streetview`, cookie);
+      assert.equal(res.statusCode, 503, res.body);
+      assert.equal((res.json() as { error: { code: string } }).error.code, 'streetview_disabled');
+    }
+    // And with the feature off nothing is recorded, because nothing was looked at.
+    const n = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_log WHERE action = 'view_streetview'
+        AND target = $1 AND at > now() - interval '1 minute'`,
+      [ctx.outsideHouseholdId],
+    );
+    assert.equal(n.rows[0]!.n, 0);
+  });
+
+  it('requires a session', async () => {
+    const res = await svApp.inject({ method: 'GET', url: `/api/households/${inTurf[0]}/streetview` });
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(provider, [], 'an anonymous request never reaches the provider');
+  });
+
+  it('refuses a volunteer a door outside their turfs, without asking the provider about it', async () => {
+    const res = await sv(`/api/households/${ctx.outsideHouseholdId}/streetview`, volunteerCookie);
+    assert.equal(res.statusCode, 403, res.body);
+    assert.equal((res.json() as { error: { code: string } }).error.code, 'not_your_turf');
+    // The point of checking scope before anything else: the coordinates of a door this volunteer
+    // may not see are never sent anywhere, and no charge is incurred on their behalf.
+    assert.deepEqual(provider, []);
+    assert.equal(await auditFor(ctx.outsideHouseholdId), undefined);
+
+    // ...and an organizer is not turf-bound, on the same door.
+    const org = await sv(`/api/households/${ctx.outsideHouseholdId}/streetview`, organizerCookie);
+    assert.equal(org.statusCode, 200, org.body);
+  });
+
+  it('caps the requested size so the endpoint cannot bill the campaign arbitrarily', async () => {
+    for (const qs of ['w=4000', 'h=4000', 'w=2048&h=2048', 'w=10', 'w=abc']) {
+      const res = await sv(`/api/households/${inTurf[0]}/streetview?${qs}`, volunteerCookie);
+      assert.equal(res.statusCode, 400, `${qs} → ${res.body}`);
+      assert.equal((res.json() as { error: { code: string } }).error.code, 'validation_error');
+    }
+    assert.deepEqual(provider, [], 'a rejected size never reaches the provider');
+
+    const ok = await sv(`/api/households/${inTurf[0]}/streetview?w=320&h=200`, volunteerCookie);
+    assert.equal(ok.statusCode, 200, ok.body);
+  });
+
+  it('checks the free metadata endpoint before the billed image, and caches the bytes', async () => {
+    const door = inTurf[1]!;
+    const res = await sv(`/api/households/${door}/streetview`, volunteerCookie);
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(res.headers['content-type'], 'image/png');
+    assert.equal(res.headers['cache-control'], 'private, max-age=900');
+    assert.deepEqual(res.rawPayload, PIXEL);
+    // Metadata is free and answers "is there imagery here?"; it must come first, every time.
+    assert.deepEqual(provider, ['/maps/api/streetview/metadata', '/maps/api/streetview']);
+    assert.deepEqual(await auditFor(door), { available: true, provider: 'google', size: '640x400' });
+
+    // The same door again re-fetches the image — the bytes are never kept, because Google's ToS
+    // §3.2.3 forbids caching Street View imagery. Only the (expressly exempt) panorama id is
+    // remembered, so the second request skips the free metadata call and nothing else.
+    const again = await sv(`/api/households/${door}/streetview`, volunteerCookie);
+    assert.equal(again.statusCode, 200);
+    assert.deepEqual(provider, [
+      '/maps/api/streetview/metadata',
+      '/maps/api/streetview',
+      '/maps/api/streetview',
+    ]);
+  });
+
+  it('returns an honest 404 where the provider has no imagery — common on concession roads', async () => {
+    metaStatus = 'ZERO_RESULTS';
+    const door = inTurf[2]!;
+    const res = await sv(`/api/households/${door}/streetview`, volunteerCookie);
+    assert.equal(res.statusCode, 404, res.body);
+    assert.equal((res.json() as { error: { code: string } }).error.code, 'no_imagery');
+    // The billed image endpoint was never touched: no paying for a grey placeholder.
+    assert.deepEqual(provider, ['/maps/api/streetview/metadata']);
+    // Still audited: this door's coordinates did go to a third party, and the log must say so.
+    assert.deepEqual(await auditFor(door), { available: false, provider: 'google' });
+  });
+
+  it('404s a door with no coordinates without sending anything anywhere', async () => {
+    const legal = households.find((h) => h.household_id!.startsWith('H-LEGAL'))!.household_id!;
+    const res = await sv(`/api/households/${legal}/streetview`, organizerCookie);
+    assert.equal(res.statusCode, 404, res.body);
+    assert.equal((res.json() as { error: { code: string } }).error.code, 'no_imagery');
+    assert.deepEqual(provider, []);
+  });
+
+  it('turns a provider failure into a 502, never into a broken image or a 500', async () => {
+    metaStatus = 'REQUEST_DENIED'; // e.g. the key was revoked or billing lapsed
+    const res = await sv(`/api/households/${inTurf[0]}/streetview`, organizerCookie);
+    assert.equal(res.statusCode, 502, res.body);
+    assert.equal((res.json() as { error: { code: string } }).error.code, 'streetview_unavailable');
+    // The provider's own status stays in the log; the volunteer at the door gets a generic message.
+    assert.doesNotMatch(res.body, /REQUEST_DENIED/);
   });
 });

@@ -10,6 +10,7 @@ import { registerSessionHook } from './auth/guard.js';
 import type { Config } from './config.js';
 import { createPool, type Db } from './db.js';
 import { ApiError } from './lib/errors.js';
+import type { FetchLike } from './lib/streetview.js';
 import { auditRoutes } from './routes/audit.js';
 import { authRoutes } from './routes/auth.js';
 import { contactRoutes } from './routes/contacts.js';
@@ -28,6 +29,11 @@ declare module 'fastify' {
   interface FastifyInstance {
     db: Db;
     config: Config;
+    /**
+     * The only outbound HTTP the API makes (Street View imagery). Decorated rather than called as
+     * a global so the test suite can hand in a stub — no test ever makes a real, billed request.
+     */
+    httpFetch: FetchLike;
   }
 }
 
@@ -35,6 +41,8 @@ export interface BuildOptions {
   config: Config;
   /** Inject an existing pool (tests); otherwise one is created from config.DATABASE_URL. */
   db?: Db;
+  /** Inject an outbound fetch (tests); otherwise the platform one. */
+  fetchImpl?: FetchLike;
   logger?: boolean;
 }
 
@@ -60,6 +68,8 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
   const db = opts.db ?? createPool(config.DATABASE_URL);
   app.decorate('db', db);
   app.decorate('config', config);
+  // Bound to globalThis explicitly: an unbound `fetch` reference throws "Illegal invocation".
+  app.decorate('httpFetch', opts.fetchImpl ?? ((input, init) => globalThis.fetch(input, init)));
   if (!opts.db) {
     app.addHook('onClose', async () => {
       await db.end();

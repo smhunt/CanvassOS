@@ -56,6 +56,104 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
   Audit `view_household`.
 - `GET /api/households/legal?ward=` → `{ households: [...] }` the concession/lot rows (organizer/admin) so they are listable even though unmapped.
 
+### Street-level imagery of a door (optional, OFF by default)
+- `GET /api/households/:id/streetview?w=640&h=400` → **the image bytes** for that door (`image/jpeg` or
+  `image/png` as the provider sent them), so a canvasser can recognise the house before they walk up it — is it
+  the one behind the hedge, are there steps, is there a gate.
+  Sets `Cache-Control: private, max-age=900` (short on purpose — see the caching note below),
+  `Content-Length`, `Content-Disposition: inline` and `X-Streetview-Provider`.
+  - **Scoped exactly like `GET /api/households/:id`** (the same `lib/scope.ts` helper, not a second
+    implementation): organizer/admin any door, volunteer only a door inside one of their assigned turfs,
+    otherwise `403 not_your_turf`. Scope is checked before the row is loaded.
+  - `503 { code: "streetview_disabled" }` when no `STREETVIEW_API_KEY` is configured — **this is the default**.
+    Checked before anything else: the answer is identical for every id, role and caller, so it discloses nothing.
+  - `404 { code: "no_imagery" }` when the provider has no panorama near the door (common on rural concession
+    roads) **or** when the household has no coordinates at all (every `H-LEGAL-*` row, plus the handful of
+    unmatched civic rows). Nothing is sent to the provider in the second case.
+  - `502 { code: "streetview_unavailable" }` when the provider errors (revoked key, lapsed billing,
+    `OVER_QUERY_LIMIT`, a timeout). The provider's own status goes to the log, never to the response.
+  - `400 validation_error` when `w`/`h` are outside **100–640**. Both default to `640`×`400`. The cap is a
+    spending control as much as a provider limit: every distinct pixel size is a separately billed image.
+  - Rate-limited to **40/minute per user** (per user, not per IP — a canvassing team shares one LTE NAT).
+  - Audit `view_streetview` with `{ available, provider }`, plus `{ size }` when an image came back. There is no
+    `cached` flag because there is no byte cache: every `200` is one fresh, billed image request. A
+    `404 no_imagery` is audited too — the door's coordinates still went to a third party.
+
+**Why the endpoint exists at all, rather than a key in the browser.** The doors come from the voters list, and
+s. 23(8) of the *Municipal Elections Act, 1996* says a recipient of that list "shall not provide it to any other
+person". The design that resolves this:
+- **Coordinates only.** What crosses the wire to the provider is `location=<lat>,<lon>` — never a name, never an
+  address string, never a household id, never a session token. The lat/lon comes from Middlesex County's *public*
+  open address data; the location of a house is not confidential. Who lives there is, and it never leaves the server.
+- **Proxied, so the key stays server-side.** A key in client JavaScript is both a billing risk and a disclosure:
+  the requests would carry the campaign's `Referer`, tying "which doors are being looked at, in what order" to the
+  campaign. Proxied, the provider sees one server asking about coordinates.
+- **Nothing is stored — not on disk, not in memory.** A directory of 7,000 photographs of electors' houses keyed
+  to the voters list is exactly the artefact s. 23 exists to prevent, and Google's terms forbid it independently
+  (below). The one thing `api/src/lib/streetview.ts` remembers is the **panorama id** for a coordinate (or `null`
+  for "asked, nothing here"), bounded to 2,000 entries with a 6 h TTL, in process memory, gone on restart —
+  a `pano_ID` is the single value the Maps Service Specific Terms expressly permit storing.
+- **The free metadata endpoint is checked first.** `/maps/api/streetview/metadata` answers "is there imagery
+  here?" at no charge, which is both how the honest 404 is produced and how the campaign avoids paying for a grey
+  "no imagery available" placeholder on every rural door.
+- **Off by default.** Absent the key the feature does not exist; the UI renders nothing at all.
+
+**Provider, terms and cost** (`STREETVIEW_PROVIDER=google` → Google Street View Static API; checked
+September 2026, all figures USD and subject to change — re-check before enabling):
+
+- **Cost.** SKU *Static Street View* (`9BD0-A2EE-44C3`) is an **Essentials** SKU: **10,000 requests free per
+  month**, then **$7.00 per 1,000** up to 100k. SKU *Street View Metadata* (`3168-48A9-5C8C`) is **free with
+  unlimited use** — "Street View Static API metadata requests are available at no charge. No quota is consumed
+  when you request metadata." The old recurring $200 monthly credit is gone, replaced by these per-SKU free caps.
+  At 7,140 doors, a campaign that photographed **every** door once a month would stay inside the free cap; the
+  realistic pattern (a volunteer glancing at the doors on their sheet) is comfortably free.
+  *Note the SKU:* the JS panorama widget is *Dynamic* Street View, a **Pro** SKU at 5,000 free and $14.00 per
+  1,000 — twice the price. This endpoint deliberately uses the Static API.
+  → <https://developers.google.com/maps/billing-and-pricing/pricing>, <https://developers.google.com/maps/documentation/streetview/metadata>
+- **Caching is prohibited, and that is why the byte cache was removed.** Maps Platform ToS §3.2.3(b): "No
+  Caching. Customer will not cache Google Maps Content except as expressly permitted…"; §3.2.3(a) bars
+  "pre-fetch, index, store, reshare, or rehost" and names "**Street View images**" explicitly. The **only**
+  carve-out (Maps Service Specific Terms §A.3) is `pano_ID`, which "you can store… indefinitely". There is no
+  30-day allowance for imagery — that applies to lat/lng from Places/Geocoding/Directions. §3.2.3(c) also bars
+  *deriving* content from the imagery, which would cover running vision models over door photos: don't.
+  The response therefore carries a short `Cache-Control: private, max-age=900` (a scroll-back window, not a
+  stored copy) and no server-side copy of the bytes exists at any point after the reply is written.
+  → <https://developers.google.com/maps/documentation/streetview/policies>, <https://cloud.google.com/maps-platform/terms>
+- **Attribution is required and is the app's job.** The policies page requires Google Maps attribution wherever
+  Maps Platform content is shown outside a Google map, and accepts the Google Maps logo or the words
+  "Google Maps". Do **not** assume the returned JPEG carries a usable watermark — the "Image capture: Month
+  Year" line belongs to the interactive panorama, not the static image, and §3.2.2(b) forbids modifying or
+  obscuring whatever Google does supply. `web/src/map/StreetView.tsx` renders the words "Google Maps" with
+  `translate="no"` under every photo, and the API sets `X-Streetview-Provider` so any other consumer knows what
+  it has to credit.
+- **Political / campaign use is not restricted.** Nothing in the Maps Platform ToS or the Google Cloud
+  Acceptable Use Policy restricts political, election or campaign use. §3.2.1's restrictions are High Risk
+  Activities, fee avoidance, export control/ITAR, HIPAA, Prohibited Territories and COPPA-directed children's
+  services; a volunteer canvassing tool hits none of them.
+- **Two obligations the campaign must actually meet before enabling this**, and they are not code:
+  1. ToS §3.2.2(a) requires the app to have publicly accessible **Terms of Use and a Privacy Policy** telling
+     users it uses Google Maps features and linking the Google Maps/Google Earth Additional Terms of Service and
+     the Google Privacy Policy. Awkward for a login-only volunteer tool, but it is a hard requirement.
+  2. The key must be restricted: **API restriction to Street View Static API only, plus an IP restriction to the
+     server's egress address.** An HTTP-referrer restriction does nothing here — this is a web-service API called
+     server-side, and the key never reaches a browser.
+  → <https://developers.google.com/maps/api-security-best-practices>
+
+**Why not an openly-licensed source.** Mapillary/KartaView imagery is CC BY-SA and free (a token is required;
+nothing in the ToU bars campaign use), which would be a better licensing and privacy story — but the coverage is
+not there for rural Middlesex. Sampling volunteer-contributed coverage within 3 km: Komoka 10,320 photos across
+6 sequences, Arva 6,189/11, Coldstream 3,297/8, Denfield 572/4, **Ilderton 0** — and every sequence in the county
+dates from **2017–2019**. That is a handful of individual drives down the main roads seven-plus years ago, with
+nothing on most concession roads and nothing for the newer Komoka/Kilworth subdivisions. It is also
+forward-facing dashcam footage from a moving car, so a property set back behind a treeline yields a mailbox, not
+a door. Ontario GeoHub and ArcGIS Hub carry no street-level imagery for the county at all — only orthophoto.
+**Worth knowing:** Middlesex County's own GIS publishes *Ontario Imagery 2023–2027* as a free WMS — current
+high-resolution aerial, no per-request cost, no caching restriction, no coverage gaps. For a rural door it
+arguably answers the canvasser's real question better than street level does (where is the driveway, where do I
+park, which of these three buildings is the house). It is not this endpoint, but it is the strongest
+unencumbered option and the map layer worth building next.
+
+
 ## Search (organizer/admin)
 - `GET /api/search?q=adams&limit=25` → `{ voters: [{ id, display_name, household_id, address, community, ward }], households: [{ id, address, community, ward, n_voters }] }`
   Trigram similarity on `voter.full_name` and `household.address`; also matches "123 King" style (number + street prefix). Audit `search` with `{ q }`.
@@ -343,6 +441,12 @@ about. So it has different rules from the list:
 - Passwords: `argon2id` via `argon2` package.
 - All `SELECT`s that return voter rows go through one `serializeVoter(row, role)` function that strips organizer-only fields for volunteers — this is the single enforcement point.
 - Env: `DATABASE_URL`, `SESSION_SECRET` (for cookie signing), `DOMAIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` (used ONLY on first boot to create the initial admin if no users exist), `PORT` (default 3000), `HOST` (default `0.0.0.0`), `TRUST_PROXY=1`.
+- Env (street-level imagery, both optional): `STREETVIEW_API_KEY` — **absent means the feature is off**, which is
+  the default; when set it stays on the server and is never served to the browser. `STREETVIEW_PROVIDER` —
+  `google` (the default and currently the only accepted value; a zod enum, so a typo fails boot rather than
+  silently disabling the feature).
+- The API makes exactly one kind of outbound HTTP request: the Street View provider call above, via
+  `app.httpFetch` (`globalThis.fetch`, injectable so the test suite stubs it and never makes a billed call).
 - Logging: pino, request ids; never log request bodies on auth routes.
 
 ## Implementation notes (Phase 1 backend — clarifications, no shape changes)
@@ -439,3 +543,33 @@ about. So it has different rules from the list:
   which is true only for a row that statement actually inserted — no second query.
 - `voter_contact.collected_by` references `app_user` without `ON DELETE`, so the test suite deletes the
   voter contacts it collected before the users that collected them (and before the contacts they cite).
+
+## Implementation notes (street-level imagery)
+- **No migration, no table, no file on disk.** The feature adds one route, one library
+  (`api/src/lib/streetview.ts`) and one audit action; nothing about it is persisted anywhere except the
+  `audit_log` row saying somebody looked.
+- `buildApp` now decorates `app.httpFetch`. It is the only outbound HTTP in the stack and it is injectable
+  (`BuildOptions.fetchImpl`) so the test suite hands in a stub — the suite asserts that the stub is only ever
+  given two numbers as `location`, and no test makes a real, billed request.
+- Order of checks in the handler is load-bearing: parse → **feature switch** → **turf scope** → row → provider.
+  The switch is global state (identical for every id and every role), so answering `503` before touching the
+  database discloses nothing about the household and costs nothing when nobody has enabled the feature. Scope is
+  still checked before the row is loaded, so an out-of-turf volunteer gets `403` and never learns whether the id
+  exists — and their `403` is issued before any coordinate is sent anywhere.
+- The image request deliberately sends **no `heading`**. Given a `location` rather than a `pano`, Google aims the
+  camera from the nearest photograph towards that point, which is exactly "look at this door". It also sends
+  `source=outdoor` (an indoor business photosphere is not a door anyone can find), `radius=100` (Google's default
+  is 50 m, which misses farmhouses set well back from the road allowance where the camera car actually drove —
+  and rural doors are the ones a canvasser most needs to recognise) and `return_error_code=true` (so a panorama
+  that vanished between the metadata check and the image call is a 404, not a billed grey placeholder).
+- There is exactly one cache and it holds **panorama ids**, not pixels: `coordinate → pano_id | null`,
+  insertion-ordered with a hard 2,000-entry cap and a 6 h TTL. A remembered `null` short-circuits the whole
+  request, which matters because "no imagery here" is the answer for a lot of Middlesex Centre; a remembered id
+  only saves the (free) metadata round trip, because the image must be re-fetched every time.
+  `clearStreetViewCache()` drops it and is what the tests call between cases. An earlier draft of this feature
+  cached the image bytes for 30 minutes to avoid double-billing; ToS §3.2.3 is what removed it, and the test
+  "checks the free metadata endpoint before the billed image" now asserts the second view really does re-fetch.
+- `web/src/map/StreetView.tsx` is a plain `<img>` at the endpoint — the session cookie rides along, so there is no
+  fetch/blob dance and the browser's own cache honours `Cache-Control: private`. Every failure mode (503, 404,
+  502, offline) reaches it as one image `error` event and it renders `null`: no broken frame, no error message,
+  and no space taken. Like the sign photos it offers no download, share or open-in-new-tab affordance.

@@ -1,10 +1,17 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { currentSession, requireAuth, requireRole } from '../auth/guard.js';
 import { one, q } from '../db.js';
 import { audit } from '../lib/audit.js';
-import { notFound } from '../lib/errors.js';
+import { ApiError, notFound } from '../lib/errors.js';
 import { assertHouseholdAccess } from '../lib/scope.js';
+import {
+  requestDoorImage,
+  STREETVIEW_DEFAULT_H,
+  STREETVIEW_DEFAULT_W,
+  STREETVIEW_MAX_DIM,
+  STREETVIEW_MIN_DIM,
+} from '../lib/streetview.js';
 import {
   isOrganizer,
   serializeHousehold,
@@ -50,6 +57,42 @@ const pointsQuery = z.object({
 const legalQuery = z.object({ ward: csvList(/^\d{2}$/, 10) });
 
 const idParams = z.object({ id: z.string().regex(/^H-[A-Z]+-\d{1,8}$/, 'invalid household id') });
+
+/**
+ * Street View size. Capped hard, because every accepted pixel size is a separately billed image
+ * and an uncapped `w`/`h` is a way for a signed-in volunteer — or anyone who gets a session — to
+ * spend the campaign's money at will. 640 is also the provider's own unsigned ceiling, so asking
+ * for more would not even get you more.
+ */
+const streetviewQuery = z.object({
+  w: z.coerce.number().int().min(STREETVIEW_MIN_DIM).max(STREETVIEW_MAX_DIM).default(STREETVIEW_DEFAULT_W),
+  h: z.coerce.number().int().min(STREETVIEW_MIN_DIM).max(STREETVIEW_MAX_DIM).default(STREETVIEW_DEFAULT_H),
+});
+
+/**
+ * Per-user, not per-IP: this limit exists to bound spending and a canvassing team shares one LTE
+ * NAT often enough that an IP bucket would throttle the wrong people. 40/min is far more doors
+ * than anyone can look at, and the browser's `Cache-Control: private` means scrolling back through
+ * a turf costs nothing at all.
+ */
+const STREETVIEW_RATE_LIMIT = {
+  rateLimit: {
+    max: 40,
+    timeWindow: '1 minute',
+    keyGenerator: (req: FastifyRequest) => req.session?.user.id ?? req.ip,
+  },
+};
+
+/**
+ * Deliberately SHORT. The imagery itself barely changes, so a long max-age would be the obvious
+ * choice — but Google's Maps Platform ToS §3.2.3(b) is a flat "No Caching" of Maps Content, with
+ * an express carve-out only for `pano_ID` values, so nothing here treats the bytes as something to
+ * keep. Fifteen minutes is the window in which a volunteer scrolls back to a door they just looked
+ * at, which is transport behaviour rather than a stored copy; `private` keeps it in that
+ * volunteer's own browser and out of any shared cache in between. Set it to `no-store` if the
+ * campaign wants to be maximally conservative — every re-view then costs an image request.
+ */
+const STREETVIEW_CACHE_CONTROL = 'private, max-age=900';
 
 // ---------------------------------------------------------------- SQL fragments
 
@@ -212,5 +255,98 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
       voters: voters.map((v) => serializeVoter(v, role)),
       status: status ?? { last_result: null, last_contact_at: null, last_user_name: null },
     };
+  });
+
+  /**
+   * GET /api/households/:id/streetview → the image bytes for that door.
+   *
+   * Scoped exactly like GET /api/households/:id above (same helper, not a second implementation):
+   * organizer/admin anywhere, volunteers only inside their assigned turfs.
+   *
+   * What crosses the wire to the provider is two numbers — see lib/streetview.ts for why that
+   * matters and for the rest of the privacy argument. Nothing is written to disk.
+   */
+  app.get('/:id/streetview', { preHandler: requireAuth, config: STREETVIEW_RATE_LIMIT }, async (req, reply) => {
+    const { id } = idParams.parse(req.params);
+    const { w, h } = streetviewQuery.parse(req.query);
+    const sess = currentSession(req);
+
+    // The feature switch is checked first because it is global: the answer is identical for every
+    // id, every role and every caller, so it discloses nothing about this household — and when
+    // nobody has configured a key there is no reason to touch the database at all.
+    const apiKey = app.config.STREETVIEW_API_KEY;
+    if (!apiKey) {
+      throw new ApiError(503, 'streetview_disabled', 'street-level imagery is not configured');
+    }
+
+    // Scope before the row is loaded, exactly as on GET /:id — an out-of-turf volunteer gets 403
+    // and never learns whether the id exists.
+    await assertHouseholdAccess(app.db, sess.user.role, id, sess.user.id);
+
+    const hh = await one<{ lat: number | null; lon: number | null }>(
+      app.db,
+      `SELECT h.lat, h.lon FROM household h WHERE h.id = $1`,
+      [id],
+    );
+    if (!hh) throw notFound('household not found');
+    // Legal descriptions (concession/lot) and the handful of unmatched civic rows have no point.
+    // There is nothing to photograph and nothing to send, so this is the same clean 404 as a door
+    // the provider has simply never driven past.
+    if (hh.lat === null || hh.lon === null) {
+      throw notFound('no street-level imagery for this door', 'no_imagery');
+    }
+
+    const result = await requestDoorImage({
+      fetchImpl: app.httpFetch,
+      apiKey,
+      provider: app.config.STREETVIEW_PROVIDER,
+      lat: hh.lat,
+      lon: hh.lon,
+      width: w,
+      height: h,
+    });
+
+    if (result.kind === 'error') {
+      // The provider's own status (REQUEST_DENIED, OVER_QUERY_LIMIT, an HTTP code) is operational
+      // detail: it goes to the log where ops can see it, not to the volunteer at the door.
+      req.log.error({ provider: app.config.STREETVIEW_PROVIDER, status: result.status }, 'streetview request failed');
+      throw new ApiError(502, 'streetview_unavailable', 'street-level imagery is temporarily unavailable');
+    }
+
+    // A 404 is the honest answer on most rural concession roads, and the UI renders nothing for it.
+    if (result.kind === 'unavailable') {
+      // Audited anyway: "we asked about this door and there was nothing" is still a lookup that
+      // sent this door's coordinates to a third party, and the log should say so.
+      await audit(app.db, req.log, {
+        userId: sess.user.id,
+        action: 'view_streetview',
+        target: id,
+        detail: { available: false, provider: app.config.STREETVIEW_PROVIDER },
+        ip: req.ip,
+      });
+      reply.header('Cache-Control', STREETVIEW_CACHE_CONTROL);
+      throw notFound('no street-level imagery for this door', 'no_imagery');
+    }
+
+    await audit(app.db, req.log, {
+      userId: sess.user.id,
+      action: 'view_streetview',
+      target: id,
+      // No `cached` flag: every 200 here is a fresh, billed image request, because the bytes are
+      // never kept (Google ToS §3.2.3 — see lib/streetview.ts note 3). One row, one charge.
+      detail: { available: true, provider: app.config.STREETVIEW_PROVIDER, size: `${w}x${h}` },
+      ip: req.ip,
+    });
+
+    reply.header('Cache-Control', STREETVIEW_CACHE_CONTROL);
+    reply.header('Content-Length', String(result.image.bytes.length));
+    reply.header('Content-Disposition', 'inline');
+    // Attribution is the CALLER's job, not something to rely on being burned into the pixels:
+    // Google's Street View policies require the app to display Google Maps attribution alongside
+    // the content. web/src/map/StreetView.tsx renders it; this header tells any other consumer
+    // which source it has to credit.
+    reply.header('X-Streetview-Provider', app.config.STREETVIEW_PROVIDER);
+    reply.type(result.image.contentType);
+    return reply.send(result.image.bytes);
   });
 };

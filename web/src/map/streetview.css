@@ -1,0 +1,95 @@
+/* Street-level view of a door. Every colour, radius and shadow comes from src/styles.css —
+   nothing is redefined here, so the component inherits light/dark with the rest of the app.
+
+   The rule this file exists to keep: the component must never break the layout of whatever
+   embeds it. So the root is a plain block that fills its container's width and no more, the
+   picture lives in one box of a fixed aspect ratio from first paint (no reflow when the image
+   arrives), and `contain` stops anything inside from affecting the page around it. */
+
+.sv {
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0; /* survives being dropped into a flex or grid child without forcing it wider */
+  contain: layout paint;
+}
+
+.sv__frame {
+  position: relative;
+  width: 100%;
+  /* 8:5 — the shape the API asks the provider for, so the photo is never letterboxed or cropped. */
+  aspect-ratio: 8 / 5;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.sv__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border: 0;
+  /* Held invisible until it has actually decoded, so a half-painted image never flashes over the
+     skeleton. `visibility` rather than `display` — the image must still load while hidden. */
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 160ms ease-in;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none; /* no long-press "save image" on a photo of somebody's house */
+}
+
+.sv[data-state='shown'] .sv__img {
+  visibility: visible;
+  opacity: 1;
+}
+
+.sv__skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, var(--surface-2) 30%, var(--surface-3) 50%, var(--surface-2) 70%);
+  background-size: 240% 100%;
+  animation: sv-shimmer 1.4s ease-in-out infinite;
+}
+
+.sv__credit {
+  margin: 0.25rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+/* The caption is meaningless while there is nothing to credit, but it must not change the box
+   height when it appears — so it is hidden, not removed. */
+.sv[data-state='loading'] .sv__credit {
+  visibility: hidden;
+}
+
+@keyframes sv-shimmer {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sv__skeleton {
+    animation: none;
+  }
+  .sv__img {
+    transition: none;
+  }
+}
+
+/* The brand name Google requires us to render. Kept legible rather than styled down to nothing:
+   attribution that nobody can read is not attribution. */
+.sv__attr {
+  font-weight: 600;
+  color: var(--text);
+}

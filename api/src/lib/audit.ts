@@ -8,6 +8,10 @@ export type AuditAction =
   | 'accept_invite'
   | 'change_password'
   | 'view_household'
+  // Looking at a photograph of somebody's front door is a read of that door, and it is also the
+  // one action in this API that sends anything at all to a third party — so it is audited like any
+  // other read of personal data, with a note of whether the bytes came from cache or from Google.
+  | 'view_streetview'
   | 'search'
   | 'invite'
   | 'reinvite'
