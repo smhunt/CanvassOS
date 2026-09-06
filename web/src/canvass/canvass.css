@@ -879,25 +879,50 @@
  * able to ignore it while it is green — but it is never hidden, and it is a real 44px target
  * because the panel behind it is where a stuck result gets sorted out.
  */
+/* Sync state is only worth a volunteer's attention when something is wrong. "Synced" is the boring
+   case and should read as quietly as the metadata beside it — the loud styling below is reserved
+   for queued, offline and parked, which are the states that actually change what someone does. */
 .cv-sync__pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  min-height: var(--tap);
-  padding: 0.2rem 0.7rem;
-  border: 1px solid var(--border);
+  gap: 0.35rem;
+  /* Not var(--tap): the 44px rule protects primary actions, and enforcing it on a status chip made
+     it as tall as the address above it. 28px still clears WCAG 2.5.8's 24px minimum for a target,
+     which is the right bar for a secondary control that only reports state. */
+  min-height: 28px;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text);
-  font-size: 0.8rem;
-  font-weight: 650;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
 }
+/* Anything that is not "everything is fine" gets its outline and its weight back. */
+.cv-sync__pill--queued,
+.cv-sync__pill--offline,
+.cv-sync__pill--attention {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 650;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.7rem;
+}
 .cv-sync__pill--compact {
   /* Inside the door sheet it shares a line with "Door 4 of 26", so it drops to that line's weight. */
-  font-size: 0.78rem;
-  padding-inline: 0.55rem;
+  font-size: 0.7rem;
+  padding-inline: 0.45rem;
+}
+.cv-sync__pill--ok .cv-sync__dot {
+  /* A 6px dot is enough to confirm at a glance; it does not need to compete with the result buttons.
+     The background has to be restated here — this rule replaced the one that set it. */
+  background: var(--ok);
+  width: 6px;
+  height: 6px;
+  opacity: 0.7;
 }
 .cv-sync__dot {
   width: 9px;
@@ -906,9 +931,6 @@
   background: var(--muted);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22);
   flex: none;
-}
-.cv-sync__pill--ok .cv-sync__dot {
-  background: var(--ok);
 }
 .cv-sync__pill--queued .cv-sync__dot {
   background: var(--warn);
