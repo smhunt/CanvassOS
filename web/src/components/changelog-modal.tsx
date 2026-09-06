@@ -176,13 +176,25 @@ export const ROADMAP: RoadmapGroup[] = [
     ],
   },
   {
-    category: 'Planned — Phase 3: field hardening',
-    icon: '📋',
+    category: 'Shipped — Phase 3: field hardening',
+    icon: '✅',
     items: [
-      { label: 'Offline cache of the assigned turf with a sync queue for queued writes', priority: 'high' },
-      { label: 'Walking order along the street, so doors come in the order you pass them', priority: 'high' },
-      { label: '"Near me" ordering from device GPS', priority: 'medium' },
-      { label: 'Printable turf sheet as a paper fallback', priority: 'low' },
+      { label: 'Works offline: results queue on the phone and sync when you get signal back', priority: 'high', done: true },
+      { label: 'Your assigned turf is cached, so the door list works with no connection', priority: 'high', done: true },
+      { label: 'Walking order along the street, and nearest-first ordering from your GPS', priority: 'high', done: true },
+      { label: 'Printable paper turf sheet, for a dead battery or no signal at all', priority: 'medium', done: true },
+      { label: 'Add to home screen, so it opens like an app', priority: 'medium', done: true },
+      { label: 'Street-level image of a door — optional, off unless a key is configured', priority: 'low', done: true },
+    ],
+  },
+  {
+    category: 'Next — telling people things',
+    icon: '🔔',
+    items: [
+      { label: 'Notify a volunteer when a turf is assigned to them, or taken off them', priority: 'high' },
+      { label: 'Messages between organisers and volunteers, in the app', priority: 'high' },
+      { label: 'Push notifications to an installed phone — no SMS provider, no per-message cost', priority: 'medium' },
+      { label: 'Nudge an organiser when a door is flagged for follow-up, or a sign is requested', priority: 'medium' },
     ],
   },
   {
@@ -192,6 +204,7 @@ export const ROADMAP: RoadmapGroup[] = [
       { label: 'Coverage and support reports by ward, community, turf and day', priority: 'high' },
       { label: 'Diff-based re-import of a newer list — new, removed and moved voters, keeping contacts', priority: 'high' },
       { label: 'CSV export with an audit entry for every download', priority: 'medium' },
+      { label: 'Aerial imagery layer from the county GIS — current, free, and covers the rural roads', priority: 'low' },
     ],
   },
 ];

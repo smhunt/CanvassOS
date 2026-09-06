@@ -18,6 +18,29 @@ detail; `docs/README.md` describes what the code actually does now.
 | 3. Field hardening | **shipped** (landing at the time of writing — in the working tree, not yet committed) | PWA install and the app-shell service worker shipped back in Phase 1; walking order along the street shipped with turfs. Now added: the offline turf cache and write queue (`web/src/offline/` — IndexedDB, backoff, parked entries surfaced to the volunteer), nearest-first ordering from device GPS (`web/src/canvass/nearMe.ts`, with walk order still the default), and the printable turf sheet at `/turfs/:turfId/sheet`. |
 | 4. Reporting + admin | **partly** | Encrypted backup/restore and `make purge` shipped in Phase 1; the audit log and admin user management with it. **Not landed:** coverage/support reports beyond `/api/stats/overview` and `/reports`, CSV export with audit entries, and the diff-based list re-import (today `make import-force` deletes canvass data instead — see CLAUDE.md). |
 
+### Requested, not yet built — 2026-09-06
+
+- **Notifications of events**, starting with "a turf was assigned to you" / "taken off you", and
+  nudges to an organiser when a door is flagged for follow-up or a sign is requested.
+- **Messages between organisers and volunteers** in the app — "can you take Ward 3 tonight?",
+  "I can't finish this turf". Distinct from notifications, but a message *is* an event, so the two
+  should share one delivery path rather than growing separately.
+
+Design notes before anyone starts:
+
+- **Web Push is the right channel and it is free.** The app already ships a service worker, and the
+  "add to home screen" path landed with Phase 3 — which matters, because iOS only delivers web push
+  to an *installed* PWA (16.4+). So the prerequisite is already done. No SMS provider, no per-message
+  cost, no CASL exposure, because these are campaign workers with accounts rather than electors.
+- **Messages between users are not voters-list data, but they will contain it.** "The man at 297
+  George St was rude" is a canvasser's note about an elector sitting in a chat table. So messages
+  need the same audit, retention and `make purge` treatment as everything else, and must not become
+  a side channel that escapes the export rules.
+- One `notification` table keyed by user with a `kind` and a jsonb payload, and a separate `message`
+  table, is probably the shape — a message generates a notification, but a system event does not
+  need to pretend to be a message.
+- Assignment already emits an `assign_turf` audit row, so the event exists; nothing listens to it.
+
 ### Added outside the original plan
 
 - **Lawn signs.** Not in this document at all. Place a sign from a phone with the device's GPS and its
