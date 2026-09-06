@@ -75,7 +75,7 @@ export function ApproveDialog({ campaign, onClose, onApproved }: Props) {
           <dt>Takes</dt>
           <dd>
             {a ? describeDays(a.estimated_days) : '—'}
-            {finish && a && a.estimated_days > 0 && <> — the last message lands around {fmtDate(finish.toISOString(), false)}</>}
+            {finish && a && (a.estimated_days ?? 0) > 0 && <> — the last message lands around {fmtDate(finish.toISOString(), false)}</>}
           </dd>
           {a && a.sms > 0 && (
             <>

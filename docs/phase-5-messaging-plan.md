@@ -65,10 +65,20 @@ unresolved — **it is the first thing to confirm with a provider, in writing, b
 
 ### 1.4 One content trap that costs real money
 
-A single `é`, `à` or curly apostrophe forces UCS-2 encoding: the segment limit drops from **160
-characters to 70**, silently tripling the cost of every message in the send. The composer must show
-segment count and encoding live, and warn before a smart-quote turns a 2,000-person send into three
-sends' worth of billing.
+**Corrected 2026-09-06.** An earlier draft of this document — and the research it came from — said a
+single `é` or `à` forces UCS-2. That is wrong: GSM 03.38's basic alphabet *includes* `è é ù ì ò Ç Ø
+Å Æ ß É Ä Ö Ñ Ü à ä ö ñ ü`, so ordinary French accents cost one character each. Verified against the
+alphabet in `api/src/lib/segments.ts`.
+
+The real trap is **smart punctuation**: the curly apostrophe `’`, curly quotes `“ ”`, the em dash `—`
+and lowercase `ç` are all outside GSM-7 and force UCS-2, dropping the segment limit from **160
+characters to 70** and tripling the cost of every message in the send. These are exactly what Word,
+Pages and iOS silently substitute for `'`, `"` and `-` as you type — so the likeliest way to triple a
+bill is to draft the message somewhere else and paste it in.
+
+The composer therefore shows characters, segments and encoding live, names the offending character
+when it flips, and offers to replace smart punctuation. It never strips accents, because it does not
+need to.
 
 ---
 

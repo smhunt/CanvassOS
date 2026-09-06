@@ -433,8 +433,9 @@ export interface AudienceCount {
   /** Consented but withdrawn, or consented to the other purpose — counted so the gap is visible. */
   unreachable: number;
   total: number;
-  /** Days the send will take at the current pool's combined daily cap. The throttle is the ceiling. */
-  estimated_days: number;
+  /** Days the send will take at the current pool's combined daily cap. The throttle is the ceiling.
+   *  null when there is no sending capacity at all — no active number, so it would never finish. */
+  estimated_days: number | null;
   daily_capacity: number;
 }
 
@@ -455,7 +456,10 @@ export interface Campaign {
   approved_by_name: string | null;
   approved_at: string | null;
   /** Counts by send status — how a silent throttle is detected. */
-  progress: { queued: number; sent: number; delivered: number; failed: number; skipped: number };
+  progress: { queued: number; sent: number; delivered: number; failed: number; skipped: number; total: number };
+  /** Server-computed segment maths for the stored body — the biller's answer, not the composer's. */
+  sms_segments?: number;
+  sms_encoding?: 'GSM-7' | 'UCS-2';
 }
 
 export interface CampaignInput {

@@ -1,7 +1,7 @@
 import { useCampaigns } from '../api/hooks';
 import { EmptyState, ErrorBox, LoadingRows, fmtDate, n } from '../components/ui';
 import { ProgressBar } from './ProgressBar';
-import { PURPOSE_LABELS, STATUS_TONE, statusLabel, totals } from './format';
+import { PURPOSE_LABELS, awaitingStart, statusLabel, statusTone, totals } from './format';
 
 interface Props {
   onOpen: (id: string) => void;
@@ -38,7 +38,7 @@ export function CampaignList({ onOpen, onNew }: Props) {
     <ul className="msg-list">
       {campaigns.map((c) => {
         const t = totals(c.progress);
-        const started = c.status !== 'draft' && c.status !== 'scheduled';
+        const started = !awaitingStart(c) && c.status !== 'draft';
         return (
           <li key={c.id} className="card msg-camp">
             <div className="msg-camp__head">
@@ -47,7 +47,7 @@ export function CampaignList({ onOpen, onNew }: Props) {
                   {c.name}
                 </button>
               </h3>
-              <span className={`tag tag--${STATUS_TONE[c.status]}`}>{statusLabel(c)}</span>
+              <span className={`tag tag--${statusTone(c)}`}>{statusLabel(c)}</span>
             </div>
 
             <p className="muted small msg-camp__meta">
@@ -72,7 +72,7 @@ export function CampaignList({ onOpen, onNew }: Props) {
               </>
             ) : (
               <p className="muted small">
-                {c.status === 'draft' ? 'Not tested, approved or sent.' : 'Approved and waiting to be started.'}
+                {awaitingStart(c) ? 'Approved and waiting to be started.' : 'Not tested, approved or sent.'}
               </p>
             )}
           </li>

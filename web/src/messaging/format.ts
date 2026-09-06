@@ -34,9 +34,27 @@ export const STATUS_TONE: Record<CampaignStatus, 'neutral' | 'ok' | 'warn'> = {
   cancelled: 'warn',
 };
 
-export function statusLabel(c: Pick<Campaign, 'status' | 'scheduled_for'>): string {
-  if (c.status === 'scheduled' && c.scheduled_for) return 'Scheduled';
+/**
+ * Approval does not move the campaign out of `draft` — it stamps `approved_by`/`approved_at`, and
+ * the send endpoint checks that stamp. So "Draft" and "Approved" are the same status wearing two
+ * different faces, and the label has to read the stamp rather than the enum.
+ */
+export type CampaignState = Pick<Campaign, 'status' | 'scheduled_for' | 'approved_at'>;
+
+export function statusLabel(c: CampaignState): string {
+  if (c.status === 'draft') return c.approved_at ? 'Approved' : 'Draft';
+  if (c.status === 'scheduled') return c.scheduled_for ? 'Scheduled' : 'Approved';
   return STATUS_LABELS[c.status];
+}
+
+export function statusTone(c: CampaignState): 'neutral' | 'ok' | 'warn' {
+  if (c.status === 'draft') return c.approved_at ? 'ok' : 'neutral';
+  return STATUS_TONE[c.status];
+}
+
+/** Approved and not yet started: the only state in which "start the drip" is offered. */
+export function awaitingStart(c: CampaignState): boolean {
+  return (c.status === 'draft' && c.approved_at !== null) || c.status === 'scheduled';
 }
 
 export const PURPOSE_LABELS = { gotv: 'Get out the vote', updates: 'Campaign updates' } as const;
@@ -107,8 +125,10 @@ export function finishEstimate(remaining: number, cap: Capacity, now = new Date(
   return { days: extra, date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + extra) };
 }
 
-export function describeDays(days: number): string {
-  if (!Number.isFinite(days)) return 'never — there is no sending capacity';
+export function describeDays(days: number | null): string {
+  // The API sends null for estimated_days when there is no capacity to divide by; Infinity is what
+  // the local estimate produces for the same situation. Both mean "this never finishes".
+  if (days === null || !Number.isFinite(days)) return 'never — there is no sending capacity';
   if (days <= 0) return 'under a day';
   if (days === 1) return 'about a day';
   return `about ${days} days`;

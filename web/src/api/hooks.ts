@@ -676,8 +676,17 @@ export function useUpdateCampaign() {
 export function useCampaignAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action }: { id: string; action: 'approve' | 'send' | 'pause' | 'resume' | 'cancel' }) =>
-      api.post<{ campaign: Campaign }>(`/messaging/campaigns/${id}/${action}`),
+    // `override_max_audience` is the only way past the MESSAGING_MAX_AUDIENCE guard on /send. It is
+    // a deliberate second key, not a default — an organiser has to choose to exceed the cap.
+    mutationFn: ({ id, action, override_max_audience }: {
+      id: string;
+      action: 'approve' | 'send' | 'pause' | 'resume' | 'cancel';
+      override_max_audience?: boolean;
+    }) =>
+      api.post<{ campaign: Campaign }>(
+        `/messaging/campaigns/${id}/${action}`,
+        override_max_audience ? { override_max_audience: true } : {},
+      ),
     onSuccess: (_r, v) => {
       void qc.invalidateQueries({ queryKey: CAMPAIGNS_KEY });
       void qc.invalidateQueries({ queryKey: ['campaign', v.id] });

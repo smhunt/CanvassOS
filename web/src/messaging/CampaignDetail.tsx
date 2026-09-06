@@ -11,11 +11,12 @@ import { TestSendPanel } from './TestSendPanel';
 import {
   PURPOSE_CONSENT,
   PURPOSE_LABELS,
-  STATUS_TONE,
+  awaitingStart,
   describeDays,
   finishEstimate,
   poolCapacity,
   statusLabel,
+  statusTone,
   totals,
 } from './format';
 
@@ -78,8 +79,11 @@ export function CampaignDetail({ id, onBack }: Props) {
   const t = totals(campaign.progress);
   const cap = poolCapacity(numbers.data);
   const est = finishEstimate(t.remaining, cap);
-  const isDraft = campaign.status === 'draft';
-  const isApproved = campaign.status === 'scheduled';
+  // Approval stamps `approved_at` and leaves the status at 'draft' (the API refuses to edit an
+  // approved campaign and refuses to send an unapproved one), so the stamp — not the enum — is
+  // what decides whether this screen is still a composer or already a launch pad.
+  const isDraft = campaign.status === 'draft' && campaign.approved_at === null;
+  const isApproved = awaitingStart(campaign);
   const running = campaign.status === 'sending' || campaign.status === 'paused';
   const finished = campaign.status === 'done' || campaign.status === 'cancelled';
   const canApprove = testedAt !== null || testedAnyway;
@@ -102,7 +106,7 @@ export function CampaignDetail({ id, onBack }: Props) {
       <header className="card msg-detail__head">
         <div className="msg-detail__title">
           <h2 className="msg-h">{campaign.name}</h2>
-          <span className={`tag tag--${STATUS_TONE[campaign.status]}`}>{statusLabel(campaign)}</span>
+          <span className={`tag tag--${statusTone(campaign)}`}>{statusLabel(campaign)}</span>
         </div>
         <p className="muted small">
           {PURPOSE_LABELS[campaign.purpose]} — {PURPOSE_CONSENT[campaign.purpose]}
@@ -196,6 +200,18 @@ export function CampaignDetail({ id, onBack }: Props) {
               Approved{campaign.approved_by_name ? ` by ${campaign.approved_by_name}` : ''}. Starting it queues one row
               per person and hands them to the number pool at its daily cap — steadily, over hours or days, not at once.
             </p>
+            <p className="muted small">
+              An approved campaign can no longer be edited. If the wording is wrong, cancel this one and write another —
+              that is the trade for having a signed-off version of exactly what went out.
+            </p>
+            {/* Still available here: the last chance to read it on a handset costs one message. */}
+            <TestSendPanel
+              campaignId={campaign.id}
+              disabled={!campaign.body_sms}
+              testedAt={testedAt}
+              onTested={() => setTestedAt(new Date())}
+            />
+
             <div className="msg-actions">
               <button type="button" className="btn btn--danger-outline" disabled={busy} onClick={() => setDialog('cancel')}>
                 Cancel campaign
@@ -228,9 +244,15 @@ export function CampaignDetail({ id, onBack }: Props) {
             )}
           </div>
 
-          <ProgressBar progress={campaign.progress} label={campaign.name} />
+          {/* A campaign cancelled before it started has no send rows at all — a bar of zeros would
+              imply it went out to nobody, which is a different thing from never having been queued. */}
+          {t.total === 0 ? (
+            <p className="muted">Nothing was ever queued — this campaign was stopped before it started.</p>
+          ) : (
+            <ProgressBar progress={campaign.progress} label={campaign.name} />
+          )}
 
-          <div className="msg-counts">
+          <div className="msg-counts" hidden={t.total === 0}>
             <p className="num">
               <strong>{n(t.handled)}</strong> of <strong>{n(t.total)}</strong> recipients handled ·{' '}
               <strong>{n(t.remaining)}</strong> still waiting

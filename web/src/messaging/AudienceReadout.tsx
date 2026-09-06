@@ -12,8 +12,8 @@ export function audienceSentence(a: AudienceCount): string {
 }
 
 /** Days from today, as a calendar date — what "about 5 days" actually means on a wall calendar. */
-export function finishDate(days: number): Date | null {
-  if (!Number.isFinite(days)) return null;
+export function finishDate(days: number | null): Date | null {
+  if (days === null || !Number.isFinite(days)) return null;
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate() + Math.max(0, days));
 }
@@ -74,12 +74,12 @@ export function AudienceReadout({ purpose, audience, headingId = 'msg-audience-h
             </div>
           </div>
 
-          <p className={`msg-throughput${a.estimated_days > 1 || noCapacity ? ' msg-throughput--slow' : ''}`}>
+          <p className={`msg-throughput${a.estimated_days === null || a.estimated_days > 1 || noCapacity ? ' msg-throughput--slow' : ''}`}>
             <strong className="msg-throughput__days">{describeDays(a.estimated_days)}</strong>
             <span className="msg-throughput__rate">
               {' '}
               at {n(a.daily_capacity)} messages a day
-              {finish && a.estimated_days > 0 && <> — the last one lands around {fmtDate(finish.toISOString(), false)}</>}
+              {finish && (a.estimated_days ?? 0) > 0 && <> — the last one lands around {fmtDate(finish.toISOString(), false)}</>}
             </span>
           </p>
 
