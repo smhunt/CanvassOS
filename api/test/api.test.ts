@@ -2,7 +2,7 @@
  * Integration tests — run against the test database AFTER the importer has loaded it:
  *
  *   python3 importer/import.py --voters data/voters_final.csv --households data/households.csv \
- *       --label test --database-url postgresql://canvass:canvass@localhost:5433/canvass
+ *       --label test --database-url postgresql://canvass:canvass@localhost:5443/canvass
  *   cd api && npm test
  *
  * The suite TRUNCATES app_user / session / audit_log on the test DB (it needs a known admin).
@@ -19,7 +19,7 @@ import { loadConfig } from '../src/config.js';
 import { createPool, type Db } from '../src/db.js';
 
 const DATABASE_URL =
-  process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgresql://canvass:canvass@localhost:5433/canvass';
+  process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgresql://canvass:canvass@localhost:5443/canvass';
 const DATA_DIR = process.env.CANVASS_DATA_DIR ?? resolve(import.meta.dirname, '../../data');
 const ADMIN_EMAIL = 'admin@test.local';
 const ADMIN_PASSWORD = 'test-admin-password-1';

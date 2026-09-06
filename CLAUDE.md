@@ -40,24 +40,24 @@ Local development:
 
 ```bash
 # db: plain Postgres 16 is enough in Phase 1; apply db/schema.sql once
-psql postgresql://canvass:canvass@localhost:5433/canvass -f db/schema.sql
+psql postgresql://canvass:canvass@localhost:5443/canvass -f db/schema.sql
 # reset: DROP SCHEMA public CASCADE; CREATE SCHEMA public;  then re-apply
 
 # importer (needs `pip install 'psycopg[binary]'`)
 python3 importer/import.py --voters data/voters_final.csv --households data/households.csv \
-  --label dev --database-url postgresql://canvass:canvass@localhost:5433/canvass
+  --label dev --database-url postgresql://canvass:canvass@localhost:5443/canvass
 
 cd api && npm install
-DATABASE_URL=postgresql://canvass:canvass@localhost:5433/canvass SESSION_SECRET=$(openssl rand -hex 32) \
-  DOMAIN=localhost ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=dev-password-1 COOKIE_SECURE=false PORT=3001 \
+DATABASE_URL=postgresql://canvass:canvass@localhost:5443/canvass SESSION_SECRET=$(openssl rand -hex 32) \
+  DOMAIN=localhost ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=dev-password-1 COOKIE_SECURE=false PORT=3130 \
   npm run dev            # tsx watch
 npm run typecheck        # tsc --noEmit (also `npm run build`)
 npm test                 # tsx --test test/*.test.ts
 npm test -- --test-name-pattern 'points'   # single test / describe block (node:test filter)
 
-cd web && npm install && npm run dev        # vite; /api is proxied to localhost:3001
+cd web && npm install && npm run dev        # https://dev.ecoworks.ca:3030; /api proxied to 3130
 npm run typecheck && npm run build          # tsc then vite build (must emit /app/dist for the image)
-python3 tools/e2e.py                        # Playwright smoke run against `vite preview` (4173) + API 3001
+python3 tools/e2e.py                        # Playwright smoke run against `vite preview` (4173) + API 3130
 ```
 
 `npm test` is an **integration** suite: it needs a database already loaded by the importer, truncates
@@ -66,9 +66,11 @@ python3 tools/e2e.py                        # Playwright smoke run against `vite
 rules — assertions check that volunteer responses carry none of `mailing_address`, `mail_city`,
 `mail_postal`, `resident_class`, `n_nonresident`, `n_po_box`.
 
-Ports: the repo's documented dev defaults are **API 3001, Vite 5173, Postgres 5433**, which predate this
-project's entry in `~/.claude/PORTS.md` (3001 is listed there for another project). Check `PORTS.md` and
-`lsof -i :<port>` before starting a server, and register whatever you settle on.
+Ports (registered in `~/.claude/PORTS.md`): **web 3030, API 3130, Postgres 5443**, `vite preview` 4173.
+Vite serves HTTPS from the shared mkcert cert at `~/Code/.traefik/certs/`, so dev is
+`https://dev.ecoworks.ca:3030` — never `localhost`. Production is unaffected: Caddy owns 80/443 and the
+API keeps its internal 3000. Note that PORTS.md's "Available Ports" table is stale (it lists 3081/3083/3090
+as free while the same file assigns them elsewhere), so grep the whole file before claiming a number.
 
 ## Architecture
 

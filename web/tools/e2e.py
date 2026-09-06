@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end smoke run against `vite preview` (4173) + the API (3001) with Playwright.
+"""End-to-end smoke run against `vite preview` (4173) + the API (3130) with Playwright.
 External hosts (tiles) are blocked; we judge the UI, not the basemap.
 
     python3 tools/e2e.py
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-BASE = "http://localhost:4173"
+BASE = "https://dev.ecoworks.ca:4173"
 OUT = Path(__file__).resolve().parent.parent / "screenshots"
 OUT.mkdir(exist_ok=True)
 ADMIN = ("sean@ecoworks.ca", "changeme-changeme")
@@ -109,7 +109,7 @@ def click_first_point(page: Page) -> dict:
 
 def run_admin_desktop(browser) -> str:
     print("\n== admin / desktop 1400x900")
-    ctx = browser.new_context(viewport={"width": 1400, "height": 900}, device_scale_factor=1)
+    ctx = browser.new_context(ignore_https_errors=True, viewport={"width": 1400, "height": 900}, device_scale_factor=1)
     page = ctx.new_page()
     wire(page, "admin-desktop")
 
@@ -309,7 +309,7 @@ def run_admin_desktop(browser) -> str:
 
 def run_admin_mobile(browser) -> None:
     print("\n== admin / mobile 390x844")
-    ctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
+    ctx = browser.new_context(ignore_https_errors=True, viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
     page = ctx.new_page()
     wire(page, "admin-mobile")
     login(page, *ADMIN)
@@ -351,7 +351,7 @@ def run_admin_mobile(browser) -> None:
 def run_volunteer(browser, invite_url: str) -> None:
     print("\n== volunteer / invite + map 390x844")
     token = invite_url.rsplit("/", 1)[1]
-    ctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
+    ctx = browser.new_context(ignore_https_errors=True, viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
     page = ctx.new_page()
     wire(page, "volunteer")
     page.goto(f"{BASE}/invite/{token}")
@@ -407,7 +407,7 @@ def run_volunteer(browser, invite_url: str) -> None:
 
 def run_dark(browser) -> None:
     print("\n== dark scheme")
-    ctx = browser.new_context(viewport={"width": 1200, "height": 800}, color_scheme="dark")
+    ctx = browser.new_context(ignore_https_errors=True, viewport={"width": 1200, "height": 800}, color_scheme="dark")
     page = ctx.new_page()
     wire(page, "dark")
     login(page, *ADMIN)

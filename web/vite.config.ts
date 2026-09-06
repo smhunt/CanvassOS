@@ -1,7 +1,23 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
-const API_PROXY = { '/api': { target: 'http://localhost:3001', changeOrigin: false } };
+// Ports are registered in ~/.claude/PORTS.md: web 3030, API 3130, Postgres 5443.
+const API_PROXY = { '/api': { target: 'http://localhost:3130', changeOrigin: false } };
+
+// Shared mkcert cert for *.dev.ecoworks.ca, so dev runs on https://dev.ecoworks.ca:3030 like the
+// rest of the machine's projects. Serving TLS in dev also means the session cookie keeps its
+// Secure flag (no COOKIE_SECURE=false), which is how production behaves. Falls back to plain
+// HTTP when the cert is absent, so the config stays portable.
+const certDir = resolve(homedir(), 'Code/.traefik/certs');
+const certPath = resolve(certDir, 'cert.pem');
+const keyPath = resolve(certDir, 'key.pem');
+const https =
+  existsSync(certPath) && existsSync(keyPath)
+    ? { cert: readFileSync(certPath), key: readFileSync(keyPath) }
+    : undefined;
 
 /** Files copied verbatim from public/ that belong to the app shell (not part of the Rollup bundle). */
 const PUBLIC_SHELL_FILES = [
@@ -62,8 +78,8 @@ self.addEventListener('fetch', (event) => {
 
 export default defineConfig({
   plugins: [react(), appShellServiceWorker()],
-  server: { port: 5173, proxy: API_PROXY },
-  preview: { port: 4173, proxy: API_PROXY },
+  server: { port: 3030, strictPort: true, host: true, https, proxy: API_PROXY },
+  preview: { port: 4173, strictPort: true, host: true, https, proxy: API_PROXY },
   build: {
     target: 'es2020',
     sourcemap: false,

@@ -118,23 +118,46 @@ rm -f backups/*.gpg         # and any off-site copies
 
 ## Development
 
-Test database (plain Postgres 16 is fine in Phase 1): `postgresql://canvass:canvass@localhost:5433/canvass`
+Test database (plain Postgres 16 is fine in Phase 1): `postgresql://canvass:canvass@localhost:5443/canvass`
 with `db/schema.sql` applied (`psql -f db/schema.sql`; reset with `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`).
 
 ```bash
 pip install 'psycopg[binary]'
 python3 importer/import.py --voters data/voters_final.csv --households data/households.csv \
-    --label "voters list export 2026-09-03" --database-url postgresql://canvass:canvass@localhost:5433/canvass
+    --label "voters list export 2026-09-03" --database-url postgresql://canvass:canvass@localhost:5443/canvass
 
 cd api && npm install
-DATABASE_URL=postgresql://canvass:canvass@localhost:5433/canvass SESSION_SECRET=$(openssl rand -hex 32) \
-  DOMAIN=localhost ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=dev-password-1 COOKIE_SECURE=false PORT=3001 \
-  npm run dev                # tsx watch; http://localhost:3001/api/health
+DATABASE_URL=postgresql://canvass:canvass@localhost:5443/canvass SESSION_SECRET=$(openssl rand -hex 32) \
+  DOMAIN=localhost ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=dev-password-1 COOKIE_SECURE=false PORT=3130 \
+  npm run dev                # tsx watch; http://localhost:3130/api/health
 npm test                     # integration tests against TEST_DATABASE_URL (default: the URL above)
 ```
 
 `npm test` truncates `app_user`/`session`/`audit_log` on the test database (it creates its own admin,
 organizer and volunteer) and computes expected counts from `../data/*.csv`.
+
+```bash
+cd web && npm install
+npm run dev                  # https://dev.ecoworks.ca:3030 — /api is proxied to the API on 3130
+npm run build && npm run preview   # https://dev.ecoworks.ca:4173 (what tools/e2e.py drives)
+```
+
+### Dev ports
+
+Registered in `~/.claude/PORTS.md`; production is unaffected (Caddy owns 80/443 and the API stays on
+its internal 3000).
+
+| Service | Port | URL |
+|---------|------|-----|
+| Web (Vite dev) | 3030 | https://dev.ecoworks.ca:3030 |
+| Web (Vite preview) | 4173 | https://dev.ecoworks.ca:4173 |
+| API | 3130 | http://localhost:3130 |
+| Postgres | 5443 | `postgresql://canvass:canvass@localhost:5443/canvass` |
+
+The Vite dev and preview servers serve HTTPS using the shared mkcert cert at
+`~/Code/.traefik/certs/{cert,key}.pem` (falling back to plain HTTP if it is missing). Because dev is
+TLS, the session cookie keeps its `Secure` flag end to end — `COOKIE_SECURE=false` is only needed if
+you hit the API directly over plain http rather than through the Vite proxy.
 
 API env: `DATABASE_URL`, `SESSION_SECRET` (≥ 32 chars), `DOMAIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`,
 `PORT` (3000), `TRUST_PROXY` (1), `COOKIE_SECURE` (true; set `false` for plain-http dev),
