@@ -607,9 +607,48 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  min-width: 0;
+  /* Deliberately no `flex` here. A field is used in two places: side by side in a .form-row, and
+     stacked in a column form (sign-in, invite, the composer, every dialog). `flex: 1 1 12rem` reads
+     as "share the width" in a row — but in a COLUMN container flex-basis is the HEIGHT, so each
+     field claimed 12rem of vertical space and the sign-in form grew ~190px of blank gap between
+     every input. The horizontal sharing is restored on .form-row's children below, where it means
+     what it was written to mean. */
+}
+.form-row > .field,
+.form-row > label.field {
   flex: 1 1 12rem;
+}
+.pw {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+.pw__input {
+  flex: 1 1 auto;
   min-width: 0;
 }
+.pw__toggle {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pw__toggle[aria-pressed='true'] {
+  color: var(--text);
+  border-color: var(--brand);
+}
+.pw__toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 .field--short {
   flex: 0 1 9rem;
 }

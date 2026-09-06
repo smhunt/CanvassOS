@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { errorMessage, isApiError } from '../api/client';
 import { useChangePassword, useLogout, useMeta } from '../api/hooks';
+import { PasswordField } from '../components/PasswordField';
 import { APP_VERSION, ChangelogModal, REPO_URL, type AboutTab } from '../components/changelog-modal';
 import { useUser } from '../components/Shell';
 import { RoleChip, fmtDate, n } from '../components/ui';
@@ -76,38 +77,35 @@ export function AccountPage() {
         <h2 id="pw-h">Change password</h2>
         <p className="muted small">Changing your password signs out every other device.</p>
         <form onSubmit={onSubmit} noValidate className="stack">
-          <label className="field">
-            <span className="field__label">Current password</span>
-            <input type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field__label">New password</span>
-            <input
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={MIN_PASSWORD}
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-              aria-invalid={tooShort || undefined}
-              aria-describedby="npw-hint"
-            />
-            <span id="npw-hint" className={`field__hint${tooShort ? ' field__hint--error' : ''}`}>
-              At least {MIN_PASSWORD} characters.
-            </span>
-          </label>
-          <label className="field">
-            <span className="field__label">Confirm new password</span>
-            <input
-              type="password"
-              autoComplete="new-password"
-              required
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              aria-invalid={mismatch || undefined}
-            />
-            {mismatch && <span className="field__hint field__hint--error">Passwords do not match.</span>}
-          </label>
+          <PasswordField
+            label="Current password"
+            name="current"
+            value={current}
+            onChange={setCurrent}
+            autoComplete="current-password"
+            required
+          />
+          <PasswordField
+            label="New password"
+            name="next"
+            value={next}
+            onChange={setNext}
+            autoComplete="new-password"
+            required
+            minLength={MIN_PASSWORD}
+            invalid={tooShort}
+            hint={`At least ${MIN_PASSWORD} characters.`}
+          />
+          <PasswordField
+            label="Confirm new password"
+            name="confirm"
+            value={confirm}
+            onChange={setConfirm}
+            autoComplete="new-password"
+            required
+            invalid={mismatch}
+            hint={mismatch ? 'Passwords do not match.' : undefined}
+          />
           {error && (
             <div className="alert alert--danger" role="alert">
               {error}

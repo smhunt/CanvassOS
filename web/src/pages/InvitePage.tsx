@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { errorMessage, isApiError } from '../api/client';
 import { useAcceptInvite } from '../api/hooks';
+import { PasswordField } from '../components/PasswordField';
 import { Wordmark } from '../components/Shell';
 
 const MIN_PASSWORD = 10;
@@ -62,36 +63,27 @@ export function InvitePage() {
           <span className="field__label">Your name</span>
           <input type="text" name="name" autoComplete="name" required autoFocus value={name} onChange={(e) => setName(e.target.value)} />
         </label>
-        <label className="field">
-          <span className="field__label">Password</span>
-          <input
-            type="password"
-            name="password"
-            autoComplete="new-password"
-            required
-            minLength={MIN_PASSWORD}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            aria-describedby="pw-hint"
-            aria-invalid={tooShort || undefined}
-          />
-          <span id="pw-hint" className={`field__hint${tooShort ? ' field__hint--error' : ''}`}>
-            At least {MIN_PASSWORD} characters{tooShort ? ` (${MIN_PASSWORD - password.length} more)` : ''}.
-          </span>
-        </label>
-        <label className="field">
-          <span className="field__label">Confirm password</span>
-          <input
-            type="password"
-            name="confirm"
-            autoComplete="new-password"
-            required
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            aria-invalid={mismatch || undefined}
-          />
-          {mismatch && <span className="field__hint field__hint--error">Passwords do not match.</span>}
-        </label>
+        <PasswordField
+          label="Password"
+          name="password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="new-password"
+          required
+          minLength={MIN_PASSWORD}
+          invalid={tooShort}
+          hint={`At least ${MIN_PASSWORD} characters${tooShort ? ` (${MIN_PASSWORD - password.length} more)` : ''}.`}
+        />
+        <PasswordField
+          label="Confirm password"
+          name="confirm"
+          value={confirm}
+          onChange={setConfirm}
+          autoComplete="new-password"
+          required
+          invalid={mismatch}
+          hint={mismatch ? 'Passwords do not match.' : undefined}
+        />
         {error && (
           <div className="alert alert--danger" role="alert">
             {error}

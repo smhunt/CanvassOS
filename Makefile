@@ -18,7 +18,7 @@ STAMP := $(shell date +%Y%m%d-%H%M%S)
 # read one value out of .env without `include` (passwords may contain $ or # which make would mangle)
 envval = $$(sed -n 's/^$(1)=//p' $(ENV_FILE) 2>/dev/null | tail -1)
 
-.PHONY: help up up-tunnel devdb demo migrate migrate-status down restart restart-tunnel build logs ps import import-force backup restore purge psql test tunnel-status
+.PHONY: help up up-tunnel devdb demo migrate migrate-status reset-password down restart restart-tunnel build logs ps import import-force backup restore purge psql test tunnel-status
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -122,6 +122,9 @@ migrate: ## apply pending db/migrations/*.sql to the running database
 
 migrate-status: ## list applied and pending migrations
 	./db/migrate.sh status
+
+reset-password: ## issue a password-reset link (EMAIL=someone@example.com)
+	@./scripts/reset-password.sh "$(EMAIL)"
 
 psql: ## psql shell inside the db container
 	$(COMPOSE) exec db psql -U canvass canvass

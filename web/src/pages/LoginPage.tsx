@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { errorMessage, isApiError } from '../api/client';
 import { useLogin } from '../api/hooks';
+import { PasswordField } from '../components/PasswordField';
 import { Wordmark } from '../components/Shell';
 
 export function LoginPage() {
@@ -49,17 +50,13 @@ export function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </label>
-        <label className="field">
-          <span className="field__label">Password</span>
-          <input
-            type="password"
-            name="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
+        <PasswordField
+          label="Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          required
+        />
         {error && (
           <div className="alert alert--danger" role="alert">
             {error}
@@ -68,6 +65,10 @@ export function LoginPage() {
         <button type="submit" className="btn btn--primary btn--block" disabled={login.isPending || !email || !password}>
           {login.isPending ? 'Signing in…' : 'Sign in'}
         </button>
+        <p className="muted small auth-card__note">
+          Forgotten your password? There is no self-serve reset — ask an organiser to re-invite you,
+          or whoever runs the server can issue a link with <code>make reset-password</code>.
+        </p>
         <p className="muted small auth-card__note">
           Accounts are by invitation. The voters list is provided under the <em>Municipal Elections Act</em> for election
           purposes only; every sign-in and lookup is logged.
