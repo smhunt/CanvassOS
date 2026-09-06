@@ -1,0 +1,37 @@
+# Tunnel mode (see README "Deploying behind a Cloudflare Tunnel").
+#
+# TLS terminates at the Cloudflare edge, so Caddy serves plain HTTP here and compose publishes it
+# on 127.0.0.1 only — the tunnel is the sole route in from the internet. Same routing as the public
+# Caddyfile; the differences are the site address (:80, no Let's Encrypt) and the client-IP fix below.
+:80 {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:3000 {
+			# Without this the API sees the tunnel's address for every request and audit_log records
+			# one meaningless IP for the whole campaign. cloudflared passes the real client address
+			# in CF-Connecting-IP; hand that to Fastify (TRUST_PROXY=1) as the forwarded-for value.
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		# Browsers reach Cloudflare over HTTPS, so HSTS is still meaningful end to end.
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

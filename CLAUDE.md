@@ -83,6 +83,13 @@ importer (one-shot python) ─────────────────�
 
 Five compose services in `docker-compose.yml`: `db`, `api`, `web`, `caddy`, `importer` (profile `import`).
 
+**Two deployment shapes.** `make up` is the public-host form: Caddy binds 80/443 and gets its own
+Let's Encrypt cert. `make up-tunnel` overlays `docker-compose.tunnel.yml` + `Caddyfile.tunnel` for the
+current setup — the stack runs on the office Mac, Caddy serves plain HTTP on `127.0.0.1:3031`, and a
+Cloudflare Tunnel publishes it as canvass.sean-hunt.com with TLS at the edge. In tunnel mode Caddy
+rewrites `X-Forwarded-For` from `CF-Connecting-IP`; without that every `audit_log` row would record
+the tunnel's own address. See README "Deploying behind a Cloudflare Tunnel".
+
 **`web` is build-only and this is easy to break.** It runs
 `sh -c "rm -rf /srv/* && cp -r /app/dist/. /srv/"` into the shared `webroot` volume and exits; Caddy
 `depends_on` it with `service_completed_successfully`. So `web/Dockerfile`'s final stage must contain

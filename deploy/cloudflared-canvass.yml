@@ -1,0 +1,20 @@
+# Cloudflare Tunnel config for canvass.sean-hunt.com.
+#
+# Copy to ~/.cloudflared/canvass.yml and fill in the tunnel UUID printed by
+# `cloudflared tunnel create canvass`. Contains no secrets — the credentials live in the
+# separate <UUID>.json that command writes. Do NOT commit that file.
+#
+#   cloudflared tunnel --config ~/.cloudflared/canvass.yml run
+#
+# A dedicated tunnel (rather than an ingress entry on an existing one) keeps the voters-list
+# service on its own credential and lifecycle: stopping it takes the canvass app offline
+# without touching anything else.
+
+tunnel: REPLACE-WITH-TUNNEL-UUID
+credentials-file: /Users/seanhunt/.cloudflared/REPLACE-WITH-TUNNEL-UUID.json
+
+ingress:
+  # `make up-tunnel` publishes Caddy here (loopback only). Caddy serves the SPA and proxies /api.
+  - hostname: canvass.sean-hunt.com
+    service: http://localhost:3031
+  - service: http_status:404

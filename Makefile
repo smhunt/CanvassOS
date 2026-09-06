@@ -6,6 +6,8 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose
+# Tunnel mode: Caddy on 127.0.0.1:3031, TLS at the Cloudflare edge (see README).
+COMPOSE_TUNNEL := docker compose -f docker-compose.yml -f docker-compose.tunnel.yml
 ENV_FILE := .env
 LABEL ?= voters list import $(shell date +%F)
 BACKUP_DIR ?= backups
@@ -14,7 +16,7 @@ STAMP := $(shell date +%Y%m%d-%H%M%S)
 # read one value out of .env without `include` (passwords may contain $ or # which make would mangle)
 envval = $$(sed -n 's/^$(1)=//p' $(ENV_FILE) 2>/dev/null | tail -1)
 
-.PHONY: help up down restart build logs ps import import-force backup restore purge psql test
+.PHONY: help up up-tunnel down restart restart-tunnel build logs ps import import-force backup restore purge psql test tunnel-status
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -23,6 +25,20 @@ up: ## build images and start db + api + web(build) + caddy
 	@test -f $(ENV_FILE) || { echo "missing $(ENV_FILE) — cp .env.example .env and edit it"; exit 1; }
 	$(COMPOSE) up -d --build --remove-orphans
 	$(COMPOSE) ps
+
+up-tunnel: ## build and start in TUNNEL mode — Caddy on 127.0.0.1:3031, no 80/443, no Let's Encrypt
+	@test -f $(ENV_FILE) || { echo "missing $(ENV_FILE) — cp .env.example .env and edit it"; exit 1; }
+	$(COMPOSE_TUNNEL) up -d --build --remove-orphans
+	$(COMPOSE_TUNNEL) ps
+	@echo
+	@echo "origin is http://127.0.0.1:3031 — point the Cloudflare Tunnel at it:"
+	@echo "  cloudflared tunnel run <name>   (ingress: $(call envval,DOMAIN) -> http://localhost:3031)"
+
+restart-tunnel: ## rebuild + restart the tunnel-mode stack (e.g. after editing .env)
+	$(COMPOSE_TUNNEL) up -d --build api web caddy
+
+tunnel-status: ## is the tunnel-mode origin answering on 127.0.0.1:3031?
+	@curl -fsS http://127.0.0.1:3031/api/health && echo || echo "origin not answering on 127.0.0.1:3031"
 
 down: ## stop the stack (keeps volumes/data)
 	$(COMPOSE) --profile import down --remove-orphans
@@ -78,5 +94,5 @@ purge: ## AFTER THE ELECTION: stop the stack, delete ALL volumes (database, web,
 psql: ## psql shell inside the db container
 	$(COMPOSE) exec db psql -U canvass canvass
 
-test: ## run the API integration tests against TEST_DATABASE_URL (default localhost:5433)
+test: ## run the API integration tests against TEST_DATABASE_URL (default localhost:5443)
 	cd api && npm test

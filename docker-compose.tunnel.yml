@@ -1,0 +1,19 @@
+# Tunnel-mode overlay. Use together with the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
+#   (or simply `make up-tunnel`)
+#
+# Caddy stops binding 80/443 and doing Let's Encrypt; it serves plain HTTP on 127.0.0.1:3031,
+# and a Cloudflare Tunnel on the host maps canvass.sean-hunt.com to that port. DOMAIN is still
+# read from .env because the API builds invite URLs from it.
+
+services:
+  caddy:
+    volumes:
+      - ./Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+      - webroot:/srv:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    # `!override` replaces the base list instead of appending to it, so 80/443 stay unbound.
+    ports: !override
+      - "127.0.0.1:3031:80"

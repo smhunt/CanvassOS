@@ -63,6 +63,54 @@ make import LABEL="voters list export 2026-09-03"
 The importer prints the `hh_flag` values it saw, per-ward / per-community counts, legal and institution
 counts, and refuses to run twice on identical files (sha256 recorded in `import_run`). See "Re-importing".
 
+## Deploying behind a Cloudflare Tunnel (current setup)
+
+The campaign runs the stack on the office Mac and publishes it through a Cloudflare Tunnel, so no
+router port-forward is needed and the home IP is never exposed. TLS terminates at the Cloudflare
+edge; Caddy therefore serves plain HTTP on `127.0.0.1:3031` and nothing binds a public port.
+
+```bash
+make up-tunnel      # same stack as `make up`, but Caddy -> 127.0.0.1:3031, no 80/443, no Let's Encrypt
+make tunnel-status  # is the origin answering?
+```
+
+`docker-compose.tunnel.yml` overlays the base compose file and swaps in `Caddyfile.tunnel`.
+
+**Client IPs.** `Caddyfile.tunnel` rewrites `X-Forwarded-For` from `CF-Connecting-IP` before proxying
+to the API. Without it every `audit_log` row would record the tunnel's own address, which would
+defeat the point of the log under the Municipal Elections Act.
+
+### DNS: delegate only the subdomain
+
+`sean-hunt.com` is on OpenSRS nameservers (`ns1/2/3.systemdns.com`) and carries the campaign's
+**Google Workspace MX records**. Do **not** move the whole zone to Cloudflare just for this app — a
+mistake there takes down campaign email. Instead delegate the single subdomain:
+
+1. Cloudflare dashboard → **Add a site** → enter `canvass.sean-hunt.com` (a subdomain zone, not the
+   apex). Cloudflare assigns two nameservers. If your plan will not accept a subdomain zone, see the
+   fallbacks below.
+2. At OpenSRS, add **NS** records on the parent zone delegating `canvass` to those two nameservers.
+   The apex, `www` and MX are untouched.
+3. Authorise this machine and create the tunnel:
+   ```bash
+   cloudflared tunnel login                      # browser OAuth, writes ~/.cloudflared/cert.pem
+   cloudflared tunnel create canvass             # prints the tunnel UUID + writes <UUID>.json
+   cp deploy/cloudflared-canvass.yml ~/.cloudflared/canvass.yml
+   $EDITOR ~/.cloudflared/canvass.yml            # paste the UUID in both places
+   cloudflared tunnel route dns canvass canvass.sean-hunt.com
+   cloudflared tunnel --config ~/.cloudflared/canvass.yml run
+   ```
+4. To keep it up across reboots: `sudo cloudflared --config ~/.cloudflared/canvass.yml service install`.
+
+**Fallbacks if a subdomain zone is not available:** point `canvass.sean-hunt.com` at the home IP with
+an A record at OpenSRS and forward ports 80/443 on the router (then use plain `make up`, and Caddy
+gets a Let's Encrypt cert itself) — or move the stack to a small VPS, which is what
+"Deploying on an Ubuntu Docker host" below describes.
+
+**Operational caveats of hosting on the Mac:** the app is unreachable whenever the machine sleeps or
+leaves the network, and the voters list lives on that disk — so keep FileVault on, keep `make backup`
+running, and remember `make purge` after October 26, 2026.
+
 ### First login
 
 Browse to `https://canvass.sean-hunt.com`, sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. The admin
