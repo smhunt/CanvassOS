@@ -19,6 +19,8 @@ const DoorScreen = lazy(() => import('./pages/DoorScreen').then((m) => ({ defaul
 const TurfsPage = lazy(() => import('./pages/TurfsPage').then((m) => ({ default: m.TurfsPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SignsPage = lazy(() => import('./pages/SignsPage').then((m) => ({ default: m.SignsPage })));
+// A paper turf sheet is the fallback when a phone dies or the signal never arrives.
+const TurfSheetPage = lazy(() => import('./pages/TurfSheetPage').then((m) => ({ default: m.TurfSheetPage })));
 
 export default function App() {
   return (
@@ -67,6 +69,14 @@ export default function App() {
                   <TurfsPage />
                 </Suspense>
               </RequireRole>
+            }
+          />
+          <Route
+            path="/turfs/:turfId/sheet"
+            element={
+              <Suspense fallback={<FullPageSpinner label="Building the sheet…" />}>
+                <TurfSheetPage />
+              </Suspense>
             }
           />
           <Route
