@@ -7,6 +7,7 @@ import { AccountPage } from './pages/AccountPage';
 import { AuditPage } from './pages/AuditPage';
 import { InvitePage } from './pages/InvitePage';
 import { LoginPage } from './pages/LoginPage';
+import { SubscribePage } from './pages/SubscribePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { StatsPage } from './pages/StatsPage';
 import { UsersPage } from './pages/UsersPage';
@@ -20,6 +21,7 @@ const TurfsPage = lazy(() => import('./pages/TurfsPage').then((m) => ({ default:
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SignsPage = lazy(() => import('./pages/SignsPage').then((m) => ({ default: m.SignsPage })));
 // A paper turf sheet is the fallback when a phone dies or the signal never arrives.
+const CampaignsPage = lazy(() => import('./pages/CampaignsPage').then((m) => ({ default: m.CampaignsPage })));
 const TurfSheetPage = lazy(() => import('./pages/TurfSheetPage').then((m) => ({ default: m.TurfSheetPage })));
 
 export default function App() {
@@ -34,6 +36,15 @@ export default function App() {
         }
       />
       <Route path="/invite/:token" element={<InvitePage />} />
+      {/* Public — an elector opting in has no account and must not need one. */}
+      <Route
+        path="/subscribe"
+        element={
+          <Suspense fallback={<FullPageSpinner label="Loading…" />}>
+            <SubscribePage />
+          </Suspense>
+        }
+      />
       <Route element={<RequireAuth />}>
         <Route element={<Shell />}>
           <Route index element={<Navigate to="/map" replace />} />
@@ -85,6 +96,16 @@ export default function App() {
               <Suspense fallback={<FullPageSpinner label="Loading signs…" />}>
                 <SignsPage />
               </Suspense>
+            }
+          />
+          <Route
+            path="/messaging"
+            element={
+              <RequireRole min="organizer">
+                <Suspense fallback={<FullPageSpinner label="Loading messaging…" />}>
+                  <CampaignsPage />
+                </Suspense>
+              </RequireRole>
             }
           />
           <Route

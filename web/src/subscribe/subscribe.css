@@ -1,0 +1,268 @@
+/*
+ * The public opt-in page (/subscribe).
+ *
+ * Sized for the worst realistic case rather than the average one: an older phone, held in one hand,
+ * outdoors, after scanning a QR code off a lawn sign in the rain. So the type is a step larger than
+ * the rest of the app, every target clears var(--tap) with room to spare, and there is exactly one
+ * column at every width — a page a stranger reads once has nothing to gain from a second one.
+ *
+ * Everything sizes in rem off the root, and nothing is given a fixed height, so at 200% browser
+ * zoom the card simply grows taller and no line is clipped or pushed sideways.
+ *
+ * Colours are the shared custom properties from styles.css, so this page follows the same light and
+ * dark palettes as everything else; the `.btn` classes are shared too, and this file only adds size.
+ */
+
+.sub-page {
+  min-height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1rem 0.75rem 3rem;
+  /* Same brand wash as the sign-in page: a passer-by should feel they landed somewhere on purpose. */
+  background:
+    radial-gradient(1200px 500px at 50% -10%, var(--brand-soft), transparent 70%),
+    var(--bg);
+}
+
+.sub-card {
+  width: 100%;
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  margin-top: 1rem;
+  padding: 1.5rem 1.25rem 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 1.0625rem; /* ~17px: a step up from the app's 15px, which is a desk-and-mouse size */
+  line-height: 1.5;
+  color: var(--text);
+}
+/* The success panel takes focus programmatically; the ring would otherwise say "this is a button". */
+.sub-card--done:focus {
+  outline: none;
+}
+.sub-card--done:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* ------------------------------------------------------------------ who is asking */
+.sub-masthead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.sub-masthead__name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--brand);
+}
+.sub-masthead__role {
+  font-weight: 600;
+}
+.sub-masthead__day {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.sub-title {
+  margin: 0;
+  font-size: 1.6rem;
+  line-height: 1.2;
+}
+.sub-lede {
+  margin: 0;
+  color: var(--text);
+}
+.sub-note,
+.sub-hint {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ the number */
+.sub-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.sub-label {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.sub-input {
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.6rem 0.85rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  /* Big and slightly tracked out: digits are read back and checked, not skimmed. 1rem or more also
+     stops iOS Safari zooming the viewport the moment the field takes focus. */
+  font-family: var(--font);
+  font-size: 1.35rem;
+  letter-spacing: 0.02em;
+}
+.sub-input:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+  border-color: var(--focus);
+}
+.sub-input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.sub-error {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+/* ------------------------------------------------------------------ the two opt-ins */
+.sub-fs {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.sub-legend {
+  padding: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.sub-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  /* The whole row is the label, so the target is the row and not a 20px square — this is the tap
+     that carries the consent, and it is the one that must not be missed with a wet thumb. */
+  min-height: var(--tap);
+  padding: 0.75rem 0.85rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.sub-check:has(input:checked) {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.sub-check:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.sub-check input {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin: 0.1rem 0 0;
+  accent-color: var(--brand);
+}
+.sub-check__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.sub-check__label {
+  font-weight: 600;
+}
+.sub-check__detail {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ what they are agreeing to */
+.sub-terms {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.95rem;
+}
+.sub-terms__intro {
+  margin: 0;
+}
+.sub-terms__list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ result and failure */
+.sub-alert {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  background: var(--warn-bg);
+  color: var(--text);
+  font-size: 0.98rem;
+}
+.sub-alert__detail {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+/* The line that stops the success panel reading as "done". */
+.sub-warn {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--brand);
+  background: var(--brand-soft);
+  font-weight: 700;
+}
+.sub-number {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ actions and the way out */
+.sub-btn {
+  min-height: 3.5rem;
+  font-size: 1.05rem;
+}
+.sub-btn--go {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.sub-stop {
+  margin: 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+/* COMPACT — iPhone SE and the like. Give the edges back to the content; never shrink a target. */
+@media (max-width: 479.98px) {
+  .sub-card {
+    padding: 1.25rem 1rem 1.5rem;
+    gap: 1rem;
+  }
+  .sub-title {
+    font-size: 1.45rem;
+  }
+}

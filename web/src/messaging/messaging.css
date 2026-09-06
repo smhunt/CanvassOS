@@ -1,0 +1,548 @@
+/* Organiser messaging: compose, approve, watch a send drain.
+   Tokens, tones and primitives (.page, .card, .tile, .table, .tag, .check, .fs) all come from
+   src/styles.css — nothing is redefined here, only laid out. Phone-first, like the rest: the
+   unqualified rules are the phone and the four documented stops say what extra width buys. */
+
+.msg-h {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* ------------------------------------------------------------------ the throughput ceiling */
+
+/* Sits above the tabs. It is the first thing on the screen because it is the constraint every
+   other decision on this page runs into (plan §1.1). */
+.msg-strip {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius);
+  background: var(--info-bg);
+  padding: 0.7rem 0.9rem;
+}
+.msg-strip--none {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+}
+.msg-strip__line {
+  margin: 0 0 0.15rem;
+  font-size: 1.05rem;
+}
+.msg-strip p:last-child {
+  margin-bottom: 0;
+}
+
+.msg-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+}
+.msg-toolbar p {
+  flex: 1 1 20rem;
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ audience + days */
+
+.msg-audience {
+  border-left: 4px solid var(--brand);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.msg-audience__h {
+  margin: 0;
+  font-size: 1rem;
+}
+/* The live region. Kept as one readable sentence so a screen reader gets the whole picture in one
+   announcement rather than four disconnected numbers. */
+.msg-audience__sentence {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.msg-audience__tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.msg-audience__foot {
+  margin: 0;
+}
+
+/* How many days the transport needs. Deliberately the largest thing in the card. */
+.msg-throughput {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.msg-throughput__days {
+  font-size: 1.25rem;
+}
+.msg-throughput--slow {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.msg-throughput__rate {
+  color: var(--muted);
+}
+.msg-throughput--slow .msg-throughput__rate {
+  color: inherit;
+}
+
+/* ------------------------------------------------------------------ notes */
+
+/* Never colour alone: every warn note also carries a ⚑ and a visually-hidden "Warning:". */
+.msg-note {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.92rem;
+}
+.msg-note--warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+}
+.msg-note--ok {
+  background: var(--ok-bg);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+}
+.msg-note .btn {
+  margin-top: 0.5rem;
+}
+.msg-note p {
+  margin: 0;
+}
+
+.msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.msg-actions__note {
+  flex: 1 1 16rem;
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ composer */
+
+.msg-composer {
+  margin: 0;
+}
+.msg-textarea {
+  width: 100%;
+  min-height: 6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.msg-purpose {
+  display: grid;
+  gap: 0.5rem;
+}
+.msg-purpose__opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  min-height: var(--tap);
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+.msg-purpose__opt--on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.msg-purpose__opt input {
+  width: 20px;
+  height: 20px;
+  margin: 0.15rem 0 0;
+  accent-color: var(--brand);
+  flex: 0 0 auto;
+}
+.msg-purpose__opt > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.msg-purpose__note {
+  display: block;
+}
+
+.msg-filters {
+  display: grid;
+  gap: 0.75rem;
+}
+.msg-filters__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.1rem 0.75rem;
+}
+/* Communities are a long list; it scrolls rather than pushing the audience readout off-screen —
+   the counts have to stay visible while the narrowing changes them. */
+.msg-filters__grid--scroll {
+  max-height: 15rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.msg-filters__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.msg-filters__foot p {
+  margin: 0;
+  flex: 1 1 16rem;
+}
+
+/* ------------------------------------------------------------------ segment meter */
+
+.msg-seg {
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 0.5rem 0.7rem;
+}
+.msg-seg--ucs2 {
+  background: var(--warn-bg);
+}
+.msg-seg__line {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.msg-seg__enc {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+.msg-seg--ucs2 .msg-seg__enc {
+  background: var(--warn);
+  color: #fff;
+}
+.msg-seg__warn {
+  margin-top: 0.5rem;
+  color: var(--warn);
+}
+.msg-seg__warn-head {
+  margin: 0 0 0.3rem;
+  font-weight: 600;
+}
+.msg-seg__chars {
+  margin: 0 0 0.4rem;
+  padding-left: 1.1rem;
+  font-size: 0.9rem;
+}
+.msg-seg__chars code {
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text);
+}
+.msg-seg__cost {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.msg-test {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.msg-test .field--short {
+  flex: 0 1 14rem;
+}
+
+/* ------------------------------------------------------------------ progress */
+
+.msg-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.msg-bar {
+  display: flex;
+  width: 100%;
+  height: 16px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+.msg-progress--compact .msg-bar {
+  height: 10px;
+}
+.msg-bar__seg {
+  display: block;
+  height: 100%;
+}
+/* Delivered and sent are different colours AND different weights of the same idea; failed and
+   skipped carry a hatch as well, so the bar still parses in greyscale or with a colour deficiency
+   — and every count is written out in the legend beside it. */
+.msg-bar__seg--delivered {
+  background: var(--ok);
+}
+.msg-bar__seg--sent {
+  background: var(--bar-2);
+}
+.msg-bar__seg--failed {
+  background: repeating-linear-gradient(45deg, var(--danger), var(--danger) 3px, #fff 3px, #fff 6px);
+}
+.msg-bar__seg--skipped {
+  background: repeating-linear-gradient(-45deg, var(--muted), var(--muted) 2px, transparent 2px, transparent 5px);
+}
+.msg-bar__seg--queued {
+  background: var(--surface-3);
+}
+
+.msg-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  font-size: 0.85rem;
+}
+.msg-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.msg-legend__item .num {
+  font-weight: 700;
+}
+.msg-legend__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+}
+.msg-legend__swatch--delivered {
+  background: var(--ok);
+}
+.msg-legend__swatch--sent {
+  background: var(--bar-2);
+}
+.msg-legend__swatch--failed {
+  background: repeating-linear-gradient(45deg, var(--danger), var(--danger) 3px, #fff 3px, #fff 6px);
+}
+.msg-legend__swatch--skipped {
+  background: repeating-linear-gradient(-45deg, var(--muted), var(--muted) 2px, transparent 2px, transparent 5px);
+}
+.msg-legend__swatch--queued {
+  background: var(--surface-3);
+}
+
+.msg-counts p {
+  margin: 0 0 0.25rem;
+}
+
+/* ------------------------------------------------------------------ campaign list */
+
+.msg-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.msg-camp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.msg-camp__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.msg-camp__name {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.msg-camp__name .linkbtn {
+  font-weight: 700;
+  font-size: 1rem;
+}
+.msg-camp__meta,
+.msg-camp__nums {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ detail */
+
+.msg-detail__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.msg-detail__head p {
+  margin: 0;
+}
+.msg-detail__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.msg-detail__top {
+  margin-bottom: -0.25rem;
+}
+
+.msg-steps {
+  border-left: 4px solid var(--brand);
+}
+.msg-step {
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.msg-step:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.msg-step__h {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.98rem;
+}
+.msg-step__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.msg-step p {
+  margin: 0;
+}
+.msg-steps__override {
+  align-self: flex-start;
+}
+.msg-step .btn {
+  align-self: flex-start;
+}
+
+.msg-preview {
+  margin: 0.4rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-preview--email {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+/* ------------------------------------------------------------------ sender pool */
+
+.msg-cap {
+  width: 100%;
+  min-width: 5rem;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.msg-cap__fill {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+.msg-cap--full .msg-cap__fill {
+  background: repeating-linear-gradient(45deg, var(--warn), var(--warn) 3px, #fff 3px, #fff 6px);
+}
+.msg-cap__cell {
+  width: 30%;
+  vertical-align: middle;
+}
+.msg-cap__tag {
+  margin-left: 0.3rem;
+}
+
+/* ------------------------------------------------------------------ COMPACT (max-width 479.98px) */
+
+@media (max-width: 479.98px) {
+  /* Four tiles at 150px minimum would be two cramped columns; one honest column instead. */
+  .msg-audience__tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .msg-strip__line {
+    font-size: 0.98rem;
+  }
+  .msg-throughput__days {
+    font-size: 1.1rem;
+  }
+}
+
+/* ------------------------------------------------------------------ TABLET (min-width 720px) */
+
+@media (min-width: 720px) {
+  .msg-audience__tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .msg-list {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+  /* The actions row can put its explanation on the left and the buttons on the right. */
+  .msg-actions {
+    justify-content: flex-end;
+  }
+}
+
+/* ------------------------------------------------------------------ DESKTOP (min-width 1100px) */
+
+@media (min-width: 1100px) {
+  /* Wards and communities side by side: the narrowing and the audience readout it drives then fit
+     on one screen, which is the point of showing the days before the message box. */
+  .msg-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  }
+  .msg-filters__foot {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Empty until a save lands, so it takes no space and announces nothing on first render. */
+.msg-saved:empty {
+  display: none;
+}
+.msg-saved {
+  margin: 0;
+  color: var(--ok);
+  font-weight: 600;
+}

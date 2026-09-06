@@ -419,3 +419,71 @@ export interface VoterContactInput {
   consent_note?: string | null;
   contact_id?: string | null;
 }
+
+// ------------------------------------------------------------------ Phase 5: messaging
+
+export type CampaignPurpose = 'gotv' | 'updates';
+export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'paused' | 'done' | 'cancelled';
+export type SendStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'skipped';
+
+/** What a campaign can actually reach, before it is sent. SMS wins when someone gives both. */
+export interface AudienceCount {
+  sms: number;
+  email: number;
+  /** Consented but withdrawn, or consented to the other purpose — counted so the gap is visible. */
+  unreachable: number;
+  total: number;
+  /** Days the send will take at the current pool's combined daily cap. The throttle is the ceiling. */
+  estimated_days: number;
+  daily_capacity: number;
+}
+
+export interface Campaign {
+  id: string;
+  name: string;
+  purpose: CampaignPurpose;
+  body_sms: string | null;
+  email_subject: string | null;
+  body_email: string | null;
+  status: CampaignStatus;
+  scheduled_for: string | null;
+  audience: { ward?: string[]; community?: string[] };
+  created_by_name: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
+  /** Counts by send status — how a silent throttle is detected. */
+  progress: { queued: number; sent: number; delivered: number; failed: number; skipped: number };
+}
+
+export interface CampaignInput {
+  name: string;
+  purpose: CampaignPurpose;
+  body_sms?: string | null;
+  email_subject?: string | null;
+  body_email?: string | null;
+  scheduled_for?: string | null;
+  audience?: { ward?: string[]; community?: string[] };
+}
+
+export interface SenderNumber {
+  id: string;
+  e164: string;
+  provider: string;
+  label: string | null;
+  daily_cap: number;
+  sent_today: number;
+  active: boolean;
+}
+
+/** Segment maths, computed server-side so the composer and the biller agree.
+ *  One accented character forces UCS-2: 160 chars per segment becomes 70. */
+export interface SegmentInfo {
+  chars: number;
+  segments: number;
+  encoding: 'GSM-7' | 'UCS-2';
+  /** The characters that forced UCS-2, so the composer can point at them. */
+  offending: string[];
+}

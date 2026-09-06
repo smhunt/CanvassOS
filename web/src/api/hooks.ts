@@ -25,6 +25,12 @@ import type {
   PickupSign,
   SignRequest,
   SignStatus,
+  AudienceCount,
+  Campaign,
+  CampaignInput,
+  CampaignPurpose,
+  SegmentInfo,
+  SenderNumber,
   StatsOverview,
   Street,
   VoterContact,
@@ -607,5 +613,98 @@ export function useUpdateVoterContact(householdId: string) {
     mutationFn: ({ id, ...body }: { id: string; consent_gotv?: boolean; consent_updates?: boolean; withdrawn?: boolean; withdrawn_note?: string }) =>
       api.patch<{ voter_contact: VoterContact }>(`/voter-contacts/${id}`, body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['voter-contacts', householdId] }),
+  });
+}
+
+// ------------------------------------------------------------------ Phase 5: messaging
+
+export const CAMPAIGNS_KEY = ['campaigns'] as const;
+
+export function useAudience(purpose: CampaignPurpose, audience: { ward?: string[]; community?: string[] } = {}) {
+  return useQuery({
+    queryKey: ['audience', purpose, audience.ward?.join(',') ?? '', audience.community?.join(',') ?? ''],
+    queryFn: () =>
+      api.get<AudienceCount>('/messaging/audience', {
+        purpose,
+        ward: audience.ward,
+        community: audience.community,
+      }),
+    staleTime: 30_000,
+  });
+}
+
+export function useCampaigns() {
+  return useQuery({
+    queryKey: CAMPAIGNS_KEY,
+    queryFn: () => api.get<{ campaigns: Campaign[] }>('/messaging/campaigns').then((r) => r.campaigns),
+    staleTime: 15_000,
+  });
+}
+
+export function useCampaign(id: string | undefined, poll = false) {
+  return useQuery({
+    queryKey: ['campaign', id ?? ''],
+    queryFn: () => api.get<{ campaign: Campaign }>(`/messaging/campaigns/${id}`).then((r) => r.campaign),
+    enabled: !!id,
+    // While a send is draining, progress is the only signal that the carrier throttle is not
+    // silently dropping messages — so it is worth polling.
+    refetchInterval: poll ? 5_000 : false,
+  });
+}
+
+export function useCreateCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CampaignInput) => api.post<{ campaign: Campaign }>('/messaging/campaigns', body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: CAMPAIGNS_KEY }),
+  });
+}
+
+export function useUpdateCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: Partial<CampaignInput> & { id: string }) =>
+      api.patch<{ campaign: Campaign }>(`/messaging/campaigns/${id}`, body),
+    onSuccess: (_r, v) => {
+      void qc.invalidateQueries({ queryKey: CAMPAIGNS_KEY });
+      void qc.invalidateQueries({ queryKey: ['campaign', v.id] });
+    },
+  });
+}
+
+/** approve → send is deliberately two calls: approving is the human speed bump before a real send. */
+export function useCampaignAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: 'approve' | 'send' | 'pause' | 'resume' | 'cancel' }) =>
+      api.post<{ campaign: Campaign }>(`/messaging/campaigns/${id}/${action}`),
+    onSuccess: (_r, v) => {
+      void qc.invalidateQueries({ queryKey: CAMPAIGNS_KEY });
+      void qc.invalidateQueries({ queryKey: ['campaign', v.id] });
+    },
+  });
+}
+
+/** Send the draft to one number first. Nobody should discover a typo 2,000 messages in. */
+export function useTestSend() {
+  return useMutation({
+    mutationFn: ({ id, to }: { id: string; to: string }) => api.post(`/messaging/campaigns/${id}/test`, { to }),
+  });
+}
+
+export function useSegments(text: string) {
+  return useQuery({
+    queryKey: ['segments', text],
+    queryFn: () => api.post<SegmentInfo>('/messaging/segments', { text }),
+    enabled: text.trim().length > 0,
+    staleTime: 60_000,
+  });
+}
+
+export function useSenderNumbers() {
+  return useQuery({
+    queryKey: ['sender-numbers'],
+    queryFn: () => api.get<{ numbers: SenderNumber[] }>('/messaging/numbers').then((r) => r.numbers),
+    staleTime: 30_000,
   });
 }
