@@ -47,11 +47,13 @@ export function MapPage() {
       'ward',
     ),
   );
+  // 'streets' (OSM), not 'light': CARTO's basemap CDN now watermarks every tile with
+  // "API KEY REQUIRED" for anonymous use. OSM and the Esri satellite layers need no key.
   const [base, setBase] = useState<BaseLayer>(() =>
     readLS(
       LS_BASE,
       BASE_LAYERS.map((b) => b.id),
-      'light',
+      'streets',
     ),
   );
   const [filtersOpen, setFiltersOpen] = useState(false);

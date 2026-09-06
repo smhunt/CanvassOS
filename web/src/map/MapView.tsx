@@ -3,7 +3,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { Meta, PointProps, PointsCollection } from '../api/types';
 import type { BaseLayer, ColourMode } from './palette';
-import { EMPTY_FC, buildStyle, colourExpression, setBaseLayer } from './style';
+import { EMPTY_FC, buildStyle, clusterColourExpression, colourExpression, setBaseLayer } from './style';
 
 export interface ViewportStats {
   doors: number;
@@ -242,6 +242,7 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     const map = mapRef.current;
     if (!map || !ready || !map.getLayer('points')) return;
     map.setPaintProperty('points', 'circle-color', colourExpression(colourMode, communities));
+    map.setPaintProperty('clusters', 'circle-color', clusterColourExpression(colourMode));
   }, [colourMode, communities, ready]);
 
   // ---- base layer

@@ -70,7 +70,9 @@ export const COLOUR_MODES: { id: ColourMode; label: string; organizerOnly?: bool
 
 export type BaseLayer = 'light' | 'streets' | 'satellite';
 export const BASE_LAYERS: { id: BaseLayer; label: string }[] = [
-  { id: 'light', label: 'Light' },
+  // CARTO watermarks anonymous tiles with "API KEY REQUIRED"; kept for anyone who adds a
+  // key, but 'streets' is the default because OSM and Esri need none.
+  { id: 'light', label: 'Light (needs a CARTO key)' },
   { id: 'streets', label: 'Streets' },
   { id: 'satellite', label: 'Satellite' },
 ];

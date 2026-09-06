@@ -72,7 +72,12 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
         cluster: true,
         clusterMaxZoom: 12,
         clusterRadius: 44,
-        clusterProperties: { voters: ['+', ['get', 'n']] },
+        clusterProperties: {
+          voters: ['+', ['get', 'n']],
+          // One accumulator per ward: how many doors in this cluster belong to each. Used by
+          // clusterColourExpression() to paint the cluster in its dominant ward's colour.
+          ...WARD_ACCUMULATORS,
+        },
       },
     },
     layers: [
@@ -94,7 +99,7 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
         source: 'households',
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': CLUSTER_COLOUR,
+          'circle-color': clusterColourExpression('ward'),
           'circle-opacity': 0.88,
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2,
@@ -113,7 +118,8 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
           'text-allow-overlap': true,
           'text-ignore-placement': true,
         },
-        paint: { 'text-color': '#ffffff' },
+        // Ward 2's orange and ward 3's green are too light for unhaloed white text.
+        paint: { 'text-color': '#ffffff', 'text-halo-color': 'rgba(0,0,0,0.45)', 'text-halo-width': 1 },
       },
       {
         id: 'points',
@@ -165,6 +171,34 @@ function baseRadius(): ExpressionSpecification {
 
 function zoomScaled(r: ExpressionSpecification): ExpressionSpecification {
   return ['interpolate', ['linear'], ['zoom'], 12, ['*', r, 0.7], 14, r, 17, ['*', r, 1.5]];
+}
+
+/** `{ w01: ['+', ['case', ['==', ['get','ward'], '01'], 1, 0]], ... }` — one count per ward. */
+export const WARD_ACCUMULATORS: Record<string, unknown> = Object.fromEntries(
+  Object.keys(WARD_COLOURS).map((w) => [
+    `w${w}`,
+    ['+', ['case', ['==', ['get', 'ward'], w], 1, 0]],
+  ]),
+);
+
+/**
+ * Colour a cluster by the ward holding the most doors in it. Clusters straddle ward lines, so
+ * this is a majority colour, not an exact one — the count label and drilling in stay authoritative.
+ * Ties fall to the lowest-numbered ward, which keeps the colour stable as the map is panned.
+ */
+export function clusterColourExpression(mode: ColourMode): ExpressionSpecification | string {
+  if (mode !== 'ward') return CLUSTER_COLOUR;
+  const wards = Object.keys(WARD_COLOURS);
+  const cases: unknown[] = [];
+  for (const w of wards) {
+    cases.push(['==', ['get', `w${w}`], ['var', 'top']], WARD_COLOURS[w] as string);
+  }
+  return [
+    'let',
+    'top',
+    ['max', ...wards.map((w) => ['get', `w${w}`])],
+    ['case', ...cases, CLUSTER_COLOUR],
+  ] as unknown as ExpressionSpecification;
 }
 
 export function colourExpression(mode: ColourMode, communities: string[]): ExpressionSpecification | string {
