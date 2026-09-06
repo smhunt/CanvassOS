@@ -15,6 +15,12 @@ import type {
   Quality,
   Role,
   SearchResult,
+  Sign,
+  SignDetail,
+  SignInput,
+  PickupSign,
+  SignRequest,
+  SignStatus,
   StatsOverview,
   Street,
   TurfSummary,
@@ -344,5 +350,92 @@ export function useActivity(days = 14) {
     queryKey: ['activity', days],
     queryFn: () => api.get<Activity>('/activity', { days }),
     staleTime: 60_000,
+  });
+}
+
+// ------------------------------------------------------------------ lawn signs
+
+export const SIGNS_KEY = ['signs'] as const;
+
+export function useSigns(filters: { status?: SignStatus[]; ward?: string[] } = {}) {
+  return useQuery({
+    queryKey: [...SIGNS_KEY, filters.status?.join(',') ?? '', filters.ward?.join(',') ?? ''],
+    queryFn: () =>
+      api.get<{ signs: Sign[] }>('/signs', { status: filters.status, ward: filters.ward }).then((r) => r.signs),
+    staleTime: 30_000,
+  });
+}
+
+export function useSign(id: string | undefined) {
+  return useQuery({
+    queryKey: ['sign', id ?? ''],
+    queryFn: () => api.get<{ sign: SignDetail }>(`/signs/${id}`).then((r) => r.sign),
+    enabled: !!id,
+  });
+}
+
+/** The post-election retrieval worklist: everything still standing. */
+export function usePickupList() {
+  return useQuery({
+    queryKey: ['signs', 'pickup'],
+    queryFn: () => api.get<{ signs: PickupSign[] }>('/signs/pickup').then((r) => r.signs),
+    staleTime: 30_000,
+  });
+}
+
+/** Doors that asked for a sign at the door and have not got one yet. */
+export function useSignRequests() {
+  return useQuery({
+    queryKey: ['signs', 'requests'],
+    queryFn: () => api.get<{ requests: SignRequest[] }>('/signs/requests').then((r) => r.requests),
+    staleTime: 30_000,
+  });
+}
+
+export function usePlaceSign() {
+  const qc = useQueryClient();
+  return useMutation({
+    // Same idempotency contract as a door contact: retrying on a bad rural signal must not plant a
+    // second sign in the database.
+    mutationFn: (body: SignInput) =>
+      api.post<{ sign: Sign }>('/signs', { client_id: body.client_id ?? crypto.randomUUID(), ...body }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: SIGNS_KEY }),
+  });
+}
+
+export function useUpdateSign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; status?: SignStatus; label?: string; size?: string; note?: string }) =>
+      api.patch<{ sign: SignDetail }>(`/signs/${id}`, body),
+    onSuccess: (_r, v) => {
+      void qc.invalidateQueries({ queryKey: SIGNS_KEY });
+      void qc.invalidateQueries({ queryKey: ['sign', v.id] });
+    },
+  });
+}
+
+/** Photo upload is multipart, so it bypasses the JSON `api` helper. */
+export function useUploadSignPhoto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ signId, file }: { signId: string; file: File }) => {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`/api/signs/${signId}/photo`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: form,
+      });
+      if (!res.ok) {
+        const e = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        throw new Error(e?.error?.message ?? `Upload failed (${res.status})`);
+      }
+      return res.json();
+    },
+    onSuccess: (_r, v) => {
+      void qc.invalidateQueries({ queryKey: SIGNS_KEY });
+      void qc.invalidateQueries({ queryKey: ['sign', v.signId] });
+    },
   });
 }

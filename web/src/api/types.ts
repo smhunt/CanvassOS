@@ -270,3 +270,110 @@ export interface Street {
   min_num: number | null;
   max_num: number | null;
 }
+
+// ------------------------------------------------------------------ lawn signs
+
+export const SIGN_STATUSES = ['requested', 'placed', 'removed', 'missing', 'damaged'] as const;
+export type SignStatus = (typeof SIGN_STATUSES)[number];
+
+export const SIGN_STATUS_LABELS: Record<SignStatus, string> = {
+  requested: 'Requested',
+  placed: 'Standing',
+  removed: 'Picked up',
+  missing: 'Missing',
+  damaged: 'Damaged',
+};
+
+export interface Sign {
+  id: string;
+  household_id: string | null;
+  /** Joined from the household; null for a road-allowance or corner-lot sign. */
+  address: string | null;
+  ward: string | null;
+  status: SignStatus;
+  lat: number;
+  lon: number;
+  /** The device's reported GPS accuracy in metres — how big a circle to search in November. */
+  accuracy_m: number | null;
+  label: string | null;
+  size: string | null;
+  note: string | null;
+  permission_by: string | null;
+  requested_at: string | null;
+  requested_from: string | null;
+  placed_by: string | null;
+  placed_by_name: string | null;
+  placed_at: string | null;
+  removed_by: string | null;
+  removed_by_name: string | null;
+  removed_at: string | null;
+  created_at: string;
+  client_id: string | null;
+  photo_count: number;
+}
+
+export interface SignPhoto {
+  id: string;
+  sign_id: string;
+  content_type: string;
+  bytes: number;
+  width: number | null;
+  height: number | null;
+  taken_by: string | null;
+  taken_by_name: string | null;
+  taken_at: string;
+}
+
+export type SignDetail = Sign & { photos: SignPhoto[] };
+
+export interface SignInput {
+  household_id?: string | null;
+  lat: number;
+  lon: number;
+  accuracy_m?: number | null;
+  label?: string | null;
+  size?: string | null;
+  note?: string | null;
+  permission_by?: string | null;
+  status?: SignStatus;
+  requested_from?: string | null;
+  client_id?: string;
+}
+
+/** A door that asked for a sign and has not got one yet — the delivery list.
+ *  Shape mirrors the SELECT in api/src/routes/signs.ts, not the prose in API.md. */
+export interface SignRequest {
+  household_id: string;
+  address: string;
+  ward: string;
+  community: string | null;
+  lat: number | null;
+  lon: number | null;
+  contact_id: string;
+  /** When the door asked — this is the contact's timestamp, there is no separate requested_at. */
+  last_contact_at: string;
+  last_result: ContactResult;
+  note: string | null;
+  user_id: string | null;
+  user_name: string | null;
+  voter_id: string | null;
+  voter_name: string | null;
+}
+
+/** GET /api/signs/pickup returns a narrower row than `Sign` — see serializePickup in the API.
+ *  It carries `photo_ids` (which `Sign` does not) and drops the fields a retrieval crew cannot use. */
+export interface PickupSign {
+  id: string;
+  status: SignStatus;
+  ward: string | null;
+  address: string | null;
+  label: string | null;
+  size: string | null;
+  note: string | null;
+  lat: number | null;
+  lon: number | null;
+  accuracy_m: number | null;
+  placed_at: string | null;
+  placed_by_name: string | null;
+  photo_ids: string[];
+}

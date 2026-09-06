@@ -4,6 +4,53 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-05
+
+Lawn signs, and the rest of Phase 2.
+
+### Added
+
+**Lawn signs** (new — not in the original plan)
+
+- Place a sign from a phone with the device's GPS. The reported **accuracy** is shown as prominently
+  as the coordinate and can be re-taken before saving: a 60 m fix on a back concession is the
+  difference between finding a sign in November and driving past it three times.
+- Coordinates outside Middlesex Centre are refused. A fix that lands in Ottawa or on Null Island
+  sends the retrieval crew to the wrong concession while the real sign stays up.
+- Optional photo per sign, downscaled in the browser before upload. The API sniffs magic bytes
+  rather than trusting the declared type, stores under a generated name, and serves only to an
+  authenticated session — a photo of a sign is a photo of someone's house.
+- Pickup list: every sign still standing, with coordinate, accuracy, photo and a link that opens the
+  phone's map app, plus a "Picked up" action.
+- Delivery list of doors that asked for a sign at the door and have not had one. This is the loop
+  back from `contact.wants_sign`, which existed since Phase 1 and led nowhere. It is the one sign
+  endpoint carrying voter data, so it is turf-scoped for volunteers and audited.
+- Signs are their own object, not a household flag: many go on road allowances and corners that are
+  not doors on the voters list. Those have no ward and sort last rather than disappearing.
+
+**Finishing Phase 2**
+
+- Draw a turf as a polygon on the map, with the door and voter count updating live as you tap out
+  the shape. The preview uses the same ray cast as the server, so it cannot promise a different turf
+  from the one that gets saved.
+- Follow-up queue and volunteer activity screens at `/reports`.
+- The turf builder flags streets already covered by another turf, naming the turf, so two organisers
+  cannot silently cut overlapping walks and knock the same doors twice.
+- `/map?household=<id>` opens straight onto a door, so the follow-up queue and delivery list can
+  link to one.
+
+**Infrastructure**
+
+- `db/migrations/` and `make migrate`. `db/schema.sql` only ever runs against an empty database, so
+  with real data loaded there had been no way to change the schema at all.
+
+### Fixed
+
+- `useFollowUps` unwrapped the wrong key, so the follow-up queue would have rendered permanently
+  empty with no error.
+- `GET /api/turfs` ignored its `archived` parameter, so archived turfs kept claiming their streets.
+- `make restart-tunnel` silently dropped the database's loopback port, taking the local API offline.
+
 ## [0.2.0] - 2026-09-05
 
 Phase 2: canvassing core — turfs, assignments and the door screen.

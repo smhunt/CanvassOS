@@ -47,6 +47,7 @@ export function Shell() {
     { to: '/map', label: 'Map', show: true },
     { to: '/canvass', label: 'Canvass', show: true },
     { to: '/turfs', label: 'Turfs', show: isOrganizer(user) },
+    { to: '/signs', label: 'Signs', show: true },
     { to: '/reports', label: 'Reports', show: isOrganizer(user) },
     { to: '/stats', label: 'Stats', show: isOrganizer(user) },
     { to: '/admin/users', label: 'Users', show: isAdmin(user) },

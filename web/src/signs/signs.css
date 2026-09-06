@@ -1,0 +1,359 @@
+/*
+ * Lawn sign surfaces (/signs).
+ *
+ * Two of the three tabs are used outdoors on a phone — placing a sign, and working the pickup list
+ * in November — so tap targets are at least var(--tap), the action that gets pressed hundreds of
+ * times sits at the bottom of its card inside thumb reach, and nothing depends on hover. Tokens,
+ * tones and primitives (.page, .card, .tabs, .tag, .chip, .btn, .field, .alert) all come from
+ * src/styles.css; nothing there is redefined, only laid out. Ward colours arrive inline from
+ * map/palette.ts as --ward so a sign reads the same colour here as on the map.
+ */
+
+/* The placing form is a single column of decisions; a wide desktop line length just makes the
+   accuracy number harder to find. */
+.page--signs {
+  max-width: 760px;
+}
+
+/* ------------------------------------------------------------------ shared list furniture */
+
+.sg-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+}
+.sg-toolbar__count {
+  margin-left: auto;
+}
+
+.sg-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.sg-row {
+  border-left: 4px solid var(--ward, var(--border));
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.sg-row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+}
+.sg-row__title {
+  margin: 0;
+  font-size: 1rem;
+}
+.sg-row__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.sg-row__addr,
+.sg-row__meta {
+  margin: 0;
+}
+.sg-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+.sg-row__actions .btn {
+  min-height: var(--tap);
+}
+
+/* Notes are what a volunteer wrote to make the spot findable, so they are never clamped. */
+.sg-note {
+  margin: 0.15rem 0 0;
+  padding: 0.5rem 0.7rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sg-note--none {
+  background: transparent;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------------------ the GPS fix */
+
+.sg-fix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.sg-fix__readout {
+  min-height: 3.5rem;
+  display: flex;
+  align-items: center;
+}
+.sg-fix__readout p {
+  margin: 0;
+}
+.sg-fix__pending {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.sg-fix__grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  width: 100%;
+}
+
+/* The accuracy is the single number that decides whether this record is any use in November, so it
+   is the biggest thing on the screen and it is colour-coded. */
+.sg-acc {
+  display: flex;
+  flex-direction: column;
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  min-width: 8rem;
+}
+.sg-acc__value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.sg-acc__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sg-acc--good {
+  background: var(--ok-bg);
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+}
+.sg-acc--poor {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+
+.sg-fix__coords {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.1rem 0.6rem;
+  font-size: 0.9rem;
+}
+.sg-fix__coords > div {
+  display: contents;
+}
+.sg-fix__coords dt {
+  color: var(--muted);
+}
+.sg-fix__coords dd {
+  margin: 0;
+}
+.sg-fix__btn {
+  min-height: var(--tap);
+}
+.sg-fix__advice {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--warn);
+}
+
+/* ------------------------------------------------------------------ the placing form */
+
+.sg-place,
+.sg-placed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.sg-fs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+/* .field is written for the horizontal .form-row (`flex: 1 1 12rem`). In a column that basis is a
+   12rem-tall row, so it is reset here; --short becomes a width limit instead of a width. */
+.sg-fs .field {
+  flex: 0 0 auto;
+}
+.sg-fs .field--short {
+  max-width: 12rem;
+}
+.sg-door {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--brand-soft);
+  border-radius: var(--radius-sm);
+}
+.sg-door__addr {
+  margin: 0;
+  font-weight: 600;
+}
+.sg-door__none {
+  margin: 0;
+}
+.sg-textarea {
+  width: 100%;
+  min-height: 84px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.sg-save {
+  min-height: 52px;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.sg-save__hint {
+  margin: -0.4rem 0 0;
+  text-align: center;
+}
+.sg-placed__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.sg-placed__actions .btn {
+  min-height: var(--tap);
+}
+
+/* ------------------------------------------------------------------ photos */
+
+.sg-photo-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.sg-file {
+  min-height: var(--tap);
+  padding: 0.5rem 0;
+  max-width: 100%;
+}
+.sg-photo-capture__state {
+  margin: 0;
+  min-height: 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.sg-ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.sg-photos {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.sg-photos__item--open {
+  flex-basis: 100%;
+}
+.sg-photo {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  width: 96px;
+}
+.sg-photos__item--open .sg-photo {
+  width: 100%;
+}
+.sg-photo__img {
+  display: block;
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+  /* No context menu affordance is offered, but the picture is still somebody's house: it is here to
+     be looked at, not collected. */
+  user-select: none;
+}
+.sg-photos__item--open .sg-photo__img {
+  height: auto;
+  max-height: 70vh;
+  object-fit: contain;
+}
+.sg-photo__hint {
+  display: block;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ pickup list */
+
+.sg-standing {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+}
+.sg-standing__n {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+.sg-standing__label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.sg-fixline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  font-size: 0.9rem;
+}
+.sg-fixline__coord {
+  overflow-wrap: anywhere;
+}
+.sg-fixline__acc {
+  font-weight: 600;
+  color: var(--ok);
+}
+.sg-fixline__acc--poor {
+  color: var(--warn);
+}
+
+@media (max-width: 480px) {
+  .sg-acc {
+    flex: 1 1 100%;
+  }
+  .sg-row__actions .btn,
+  .sg-placed__actions .btn {
+    flex: 1 1 auto;
+  }
+}

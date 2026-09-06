@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.2.0';
+export const APP_VERSION = '0.3.0';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,18 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.3.0',
+    date: '2026-09-05',
+    changes: [
+      'Lawn signs: place one with the phone\u2019s GPS and a photo, and see how accurate the fix is.',
+      'Pickup list of every sign still standing, with a link that opens your phone\u2019s map app.',
+      'Delivery list of doors that asked for a sign at the door.',
+      'Draw a turf as a polygon on the map, with the door count updating as you draw.',
+      'Follow-up queue and volunteer activity under Reports.',
+      'The turf builder now names the turf a street already belongs to, so walks cannot overlap unnoticed.',
+    ],
+  },
   {
     version: '0.2.0',
     date: '2026-09-05',
@@ -155,13 +167,12 @@ export const ROADMAP: RoadmapGroup[] = [
     ],
   },
   {
-    category: 'In progress — finishing Phase 2',
-    icon: '🚧',
+    category: 'Shipped — lawn signs',
+    icon: '✅',
     items: [
-      { label: 'Draw a turf as a polygon on the map — the API accepts one, the map cannot draw it yet', priority: 'high' },
-      { label: 'Follow-up queue screen — the API serves it, nothing shows it yet', priority: 'medium' },
-      { label: 'Per-user activity screen — same: served, not yet shown', priority: 'medium' },
-      { label: 'Flag streets already belonging to another turf, so turfs cannot silently overlap', priority: 'medium' },
+      { label: 'Place a sign with GPS and a photo, accuracy shown and re-takeable', priority: 'high', done: true },
+      { label: 'Pickup list for after election day, with map-app links', priority: 'high', done: true },
+      { label: 'Delivery list of doors that asked for a sign', priority: 'medium', done: true },
     ],
   },
   {
