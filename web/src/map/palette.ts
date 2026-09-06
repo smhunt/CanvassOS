@@ -1,4 +1,4 @@
-import type { Quality } from '../api/types';
+import type { ContactResult, Quality } from '../api/types';
 
 /** Ward colours (1–5) — shared by the map, legend and stats. */
 export const WARD_COLOURS: Record<string, string> = {
@@ -52,13 +52,26 @@ export const QUALITY_LABELS: Record<Quality, string> = {
   legal: 'Legal description (unmapped)',
 };
 
+/** Door status after canvassing. Green = a real conversation, grey = nothing recorded yet. */
+export const RESULT_COLOURS: Record<ContactResult, string> = {
+  spoke: '#2a9d6b',
+  not_home: '#e0871a',
+  left_literature: '#0e9aa7',
+  refused: '#c93c73',
+  moved: '#8451c9',
+  inaccessible: '#a3872a',
+  do_not_knock: '#7a1f3d',
+  deceased: '#6b7280',
+};
+export const NOT_CONTACTED = '#a9b4c0';
+
 export const NONRES_HIGHLIGHT = '#c93c73';
 export const NONRES_MUTED = '#a9b4c0';
 export const CLUSTER_COLOUR = '#1f4e79';
 export const BOUNDARY_COLOUR = '#1f4e79';
 export const SELECTED_COLOUR = '#ffcc33';
 
-export type ColourMode = 'ward' | 'community' | 'doors' | 'quality' | 'nonres';
+export type ColourMode = 'ward' | 'community' | 'doors' | 'quality' | 'nonres' | 'status';
 
 export const COLOUR_MODES: { id: ColourMode; label: string; organizerOnly?: boolean }[] = [
   { id: 'ward', label: 'Ward' },
@@ -66,6 +79,7 @@ export const COLOUR_MODES: { id: ColourMode; label: string; organizerOnly?: bool
   { id: 'doors', label: 'Voters per door' },
   { id: 'quality', label: 'Record quality', organizerOnly: true },
   { id: 'nonres', label: 'Non-resident owners', organizerOnly: true },
+  { id: 'status', label: 'Canvass status' },
 ];
 
 export type BaseLayer = 'light' | 'streets' | 'satellite';

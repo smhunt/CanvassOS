@@ -1,13 +1,15 @@
 import type { CSSProperties } from 'react';
-import type { Meta } from '../api/types';
+import { RESULT_LABELS, type ContactResult, type Meta } from '../api/types';
 import { titleCase, wardLabel } from '../components/ui';
 import {
   CLUSTER_COLOUR,
   DOOR_STEPS,
   NONRES_HIGHLIGHT,
   NONRES_MUTED,
+  NOT_CONTACTED,
   QUALITY_COLOURS,
   QUALITY_LABELS,
+  RESULT_COLOURS,
   communityColour,
   wardColour,
   type ColourMode,
@@ -36,6 +38,14 @@ export function Legend({ mode, meta, zoom }: Props) {
     case 'quality':
       items = (['good', 'approx', 'check'] as const).map((q) => ({ colour: QUALITY_COLOURS[q], label: QUALITY_LABELS[q] }));
       break;
+    case 'status': {
+      // Only the results a canvasser actually records often; the rarer ones would crowd the legend
+      // out of a phone screen without telling anyone anything they cannot get from the door card.
+      const shown: ContactResult[] = ['spoke', 'not_home', 'left_literature', 'refused'];
+      items = shown.map((r) => ({ colour: RESULT_COLOURS[r], label: RESULT_LABELS[r] }));
+      items.push({ colour: NOT_CONTACTED, label: 'Not yet knocked' });
+      break;
+    }
     case 'nonres':
       items = [
         { colour: NONRES_HIGHLIGHT, label: 'Has non-resident owner(s)' },
@@ -71,6 +81,9 @@ export function Legend({ mode, meta, zoom }: Props) {
         </li>
       </ul>
       {mode === 'doors' && <p className="muted small legend__note">Dot size also grows with voters per door.</p>}
+      {mode === 'status' && (
+        <p className="muted small legend__note">Clusters stay ward-coloured; zoom in to see each door&rsquo;s status.</p>
+      )}
     </div>
   );
 }

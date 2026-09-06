@@ -184,6 +184,8 @@ export interface PointRow {
   last_result: string | null;
   lat: number;
   lon: number;
+  /** Volunteers only: true when the door is inside one of the caller's assigned turfs. */
+  in_turf?: boolean;
 }
 
 export interface PointPropsPublic {
@@ -200,8 +202,16 @@ export interface PointPropsOrganizer extends PointPropsPublic {
   status: string | null;
 }
 
+/** Phase 2: a volunteer's own turf is colourable, so those doors (and only those) carry `status`. */
+export interface PointPropsScoped extends PointPropsPublic {
+  status: string | null;
+}
+
 /** Feature.properties for GET /api/households/points — compact keys, per API.md. */
-export function serializePointProps(row: PointRow, role: Role): PointPropsPublic | PointPropsOrganizer {
+export function serializePointProps(
+  row: PointRow,
+  role: Role,
+): PointPropsPublic | PointPropsScoped | PointPropsOrganizer {
   const base: PointPropsPublic = {
     id: row.id,
     ward: row.ward,
@@ -209,8 +219,52 @@ export function serializePointProps(row: PointRow, role: Role): PointPropsPublic
     n: row.n_voters,
     inst: row.is_institution,
   };
-  if (!isOrganizer(role)) return base;
+  if (!isOrganizer(role)) {
+    // Out-of-turf doors stay exactly as anonymous as they were in Phase 1.
+    return row.in_turf ? { ...base, status: row.last_result } : base;
+  }
   return { ...base, nonres: row.n_nonresident, q: row.record_quality, status: row.last_result };
+}
+
+// ------------------------------------------------------------------ turf doors
+
+/**
+ * One door on the walk list (GET /api/turfs/:id/doors). Deliberately a narrow projection of
+ * `household`: no mailing/non-resident columns exist on it at all, so a volunteer's door list
+ * carries nothing that Phase 1 kept from them. `voters` is filled in by the route from
+ * `serializeVoter`, which is what actually strips the organizer-only voter fields.
+ */
+export interface DoorRow {
+  household_id: string;
+  address: string;
+  community: string | null;
+  ward: string;
+  lat: number | null;
+  lon: number | null;
+  n_voters: number;
+  walk_order: number | null;
+  last_result: string | null;
+  last_contact_at: Date | string | null;
+}
+
+export interface Door extends DoorRow {
+  voters: Array<VoterPublic | VoterOrganizer>;
+}
+
+export function serializeDoor(row: DoorRow, voters: VoterRow[], role: Role): Door {
+  return {
+    household_id: row.household_id,
+    address: row.address,
+    community: row.community,
+    ward: row.ward,
+    lat: row.lat,
+    lon: row.lon,
+    n_voters: row.n_voters,
+    walk_order: row.walk_order,
+    last_result: row.last_result,
+    last_contact_at: row.last_contact_at,
+    voters: voters.map((v) => serializeVoter(v, role)),
+  };
 }
 
 // ------------------------------------------------------------------ users
@@ -232,4 +286,43 @@ export interface UserPublic {
 /** `user` object used by /auth/* responses. */
 export function serializeUser(row: UserRow): UserPublic {
   return { id: row.id, email: row.email, name: row.name, role: row.role };
+}
+
+export interface UserListRow extends UserRow {
+  active: boolean;
+  created_at: Date;
+  last_login_at: Date | null;
+  invite_pending: boolean;
+}
+
+/** What an organizer may see of another user: enough to assign a turf, nothing more. */
+export interface UserListPublic {
+  id: string;
+  name: string;
+  role: Role;
+  active: boolean;
+}
+
+export interface UserListAdmin extends UserListPublic {
+  email: string;
+  created_at: Date;
+  last_login_at: Date | null;
+  invite_pending: boolean;
+}
+
+/**
+ * Row projection for GET /api/users. Organizers need the list to fill the "assign a turf" picker,
+ * so they get names and nothing else — no email, no login times, no invite state. Only admins,
+ * who own user management, see the full row.
+ */
+export function serializeUserListRow(row: UserListRow, viewer: Role): UserListPublic | UserListAdmin {
+  const base: UserListPublic = { id: row.id, name: row.name, role: row.role, active: row.active };
+  if (viewer !== 'admin') return base;
+  return {
+    ...base,
+    email: row.email,
+    created_at: row.created_at,
+    last_login_at: row.last_login_at,
+    invite_pending: row.invite_pending,
+  };
 }

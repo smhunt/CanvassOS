@@ -45,6 +45,8 @@ export function Shell() {
 
   const links = [
     { to: '/map', label: 'Map', show: true },
+    { to: '/canvass', label: 'Canvass', show: true },
+    { to: '/turfs', label: 'Turfs', show: isOrganizer(user) },
     { to: '/stats', label: 'Stats', show: isOrganizer(user) },
     { to: '/admin/users', label: 'Users', show: isAdmin(user) },
     { to: '/admin/audit', label: 'Audit', show: isAdmin(user) },

@@ -1,0 +1,214 @@
+/* Organiser turf builder. Laptop/tablet first, but every row collapses to one column on a phone.
+   Custom properties, tones and primitives all come from src/styles.css — nothing is redefined here. */
+
+/* ------------------------------------------------------------------ turf list */
+.turfs__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+}
+.turfs__archived-toggle {
+  flex: 0 0 auto;
+}
+.turfs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+/* The ward colour is set inline from map/palette.ts, so a turf reads the same here as on the map. */
+.turf {
+  border-left: 4px solid var(--ward, var(--border));
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.turf--archived {
+  opacity: 0.65;
+  border-left-style: dashed;
+}
+.turf__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.turf__name {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.turf__ward {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  color: var(--ward, var(--muted));
+  border: 1px solid color-mix(in srgb, var(--ward, var(--border)) 45%, transparent);
+  background: color-mix(in srgb, var(--ward, var(--border)) 12%, transparent);
+  white-space: nowrap;
+}
+.turf__counts {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.turf__bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.turf__bar-fill {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 999px;
+  background: var(--ward, var(--brand));
+}
+.turf__progress {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.turf__assignees {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.turf__meta {
+  margin: 0;
+  margin-top: auto;
+}
+.turf__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-top: 0.2rem;
+}
+
+/* ------------------------------------------------------------------ dialogs */
+.modal--wide {
+  width: min(880px, 100%);
+}
+.modal__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.footnote {
+  margin: 0;
+  margin-right: auto;
+}
+.assignees {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+}
+
+/* ------------------------------------------------------------------ street picker */
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.picker__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+.picker__picked {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+}
+.chipbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 30px;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--brand-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.chipbtn:hover {
+  border-color: var(--danger);
+}
+.picker__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.picker__list {
+  /* Its own scroll box: the running total underneath must stay in view while picking. */
+  max-height: 38vh;
+  overflow-y: auto;
+  margin: 0;
+}
+.street .check__label {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.street__name {
+  font-weight: 600;
+}
+.street__where {
+  font-size: 0.78rem;
+}
+.picker__total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+.tag.picker__hint--ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.tag.picker__hint--warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.tag.picker__hint--over {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+@media (max-width: 600px) {
+  .picker__list {
+    max-height: none;
+  }
+  .turf__actions .btn {
+    flex: 1 1 auto;
+  }
+}

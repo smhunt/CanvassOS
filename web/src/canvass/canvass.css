@@ -1,0 +1,528 @@
+/*
+ * Volunteer canvassing surfaces (/canvass and /canvass/:turfId).
+ * Phones first, outdoors: every control is at least var(--tap) tall, the actions that get used a
+ * hundred times a shift sit at the bottom of the screen inside thumb reach, and nothing depends on
+ * hover. Colours come from the shared custom properties so the screen stays readable in sunlight and
+ * in dark mode; status colours are passed in from map/palette.ts as --dot.
+ */
+
+/* ------------------------------------------------------------------ progress + status */
+.cv-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.cv-progress__track {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.cv-progress__fill {
+  height: 100%;
+  background: var(--brand);
+  border-radius: 999px;
+}
+.cv-progress__text {
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.cv-progress__of {
+  color: var(--muted);
+}
+.cv-status {
+  flex: none;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.cv-status--open {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.cv-status--in_progress {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.cv-status--done {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+/* ------------------------------------------------------------------ my turfs */
+.cv-turfs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.cv-turf {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  text-decoration: none;
+}
+.cv-turf:hover {
+  background: var(--surface-2);
+}
+.cv-turf__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.cv-turf__name {
+  font-size: 1.05rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.cv-turf__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.cv-turf__due {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ door screen header */
+.cv-head {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.cv-head__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cv-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  min-height: var(--tap);
+  padding-right: 0.2rem;
+  color: var(--link);
+  font-weight: 600;
+  text-decoration: none;
+}
+.cv-head__name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+}
+.cv-seg {
+  display: flex;
+  gap: 0.4rem;
+}
+.cv-seg__btn {
+  flex: 1;
+  min-height: var(--tap);
+  padding: 0.4rem 0.5rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
+}
+.cv-seg__btn[aria-pressed='true'] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+
+/* ------------------------------------------------------------------ door list */
+.cv-doors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.cv-door {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 58px;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.cv-door__dot {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22);
+}
+.cv-door__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv-door__addr {
+  font-size: 1rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.cv-door__sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.cv-door__go {
+  flex: none;
+  color: var(--muted);
+}
+/* Knocked doors stay legible but stop competing for attention with the ones still to do. */
+.cv-door--done {
+  background: var(--surface-2);
+}
+.cv-door--done .cv-door__addr {
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ door card (bottom sheet) */
+.cv-sheet-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.cv-sheet__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 20, 30, 0.45);
+}
+.cv-sheet {
+  position: relative;
+  z-index: 1;
+  width: min(520px, 100%);
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow-lg);
+  animation: cv-sheet-up 0.18s ease-out;
+}
+@keyframes cv-sheet-up {
+  from {
+    transform: translateY(10%);
+    opacity: 0.5;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.cv-sheet__handle {
+  width: 40px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 2px;
+  background: var(--border);
+}
+.cv-sheet__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.4rem 0.9rem;
+}
+.cv-sheet__title {
+  min-width: 0;
+}
+.cv-sheet__title h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+}
+.cv-sheet__sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.cv-sheet__nav {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 0.9rem 0.6rem;
+}
+.cv-nav {
+  flex: 1;
+  min-height: var(--tap);
+}
+.cv-sheet__body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.8rem 0.9rem;
+  border-top: 1px solid var(--border);
+}
+.cv-sheet__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem calc(0.8rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.cv-voters {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cv-voter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.cv-voter:last-child {
+  border-bottom: 0;
+}
+.cv-voter__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.cv-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.cv-history__item {
+  padding-left: 0.6rem;
+  border-left: 3px solid var(--border);
+}
+.cv-history__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.cv-history__result {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 650;
+}
+.cv-history__result::before {
+  content: '';
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--dot);
+}
+.cv-history__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+}
+.cv-history__note {
+  margin: 0.3rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ result buttons */
+.cv-results__hint {
+  margin: 0;
+}
+.cv-results {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.cv-result {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 54px;
+  padding: 0.5rem 0.6rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cv-result:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* "Spoke" is the outcome the whole exercise is for, so it gets the full width and the first thumb. */
+.cv-result--spoke {
+  grid-column: 1 / -1;
+  min-height: 62px;
+  font-size: 1.1rem;
+  background: var(--ok-bg);
+  border-color: var(--ok);
+}
+.cv-result__dot {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22);
+}
+
+/* ------------------------------------------------------------------ spoke detail */
+.cv-spoke {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.cv-spoke__intro {
+  margin: 0;
+}
+.cv-fs {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.cv-fs legend {
+  padding: 0;
+  margin-bottom: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.cv-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.cv-pill {
+  min-height: var(--tap);
+  padding: 0.4rem 0.85rem;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.cv-pill--on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+.cv-support {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.4rem;
+}
+.cv-support__btn {
+  min-height: 54px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cv-support__btn--on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+.cv-support__ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.2rem;
+}
+.cv-note {
+  width: 100%;
+  min-height: 84px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.cv-spoke__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.cv-btn {
+  flex: 1;
+  min-height: 54px;
+}
+.cv-btn--save {
+  flex: 2;
+}
+
+@media (min-width: 640px) {
+  .cv-sheet-wrap {
+    align-items: center;
+    padding: 1rem;
+  }
+  .cv-sheet {
+    max-height: 88dvh;
+    border-radius: var(--radius);
+  }
+  .cv-sheet__handle {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv-sheet {
+    animation: none;
+  }
+}

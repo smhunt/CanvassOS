@@ -126,3 +126,134 @@ export interface AuditEntry {
   detail: unknown;
   ip: string | null;
 }
+
+// ------------------------------------------------------------------ Phase 2: canvassing
+
+/** db/schema.sql `contact_result`. Order here is the order the door screen shows the buttons in. */
+export const CONTACT_RESULTS = [
+  'spoke',
+  'not_home',
+  'left_literature',
+  'refused',
+  'moved',
+  'inaccessible',
+  'do_not_knock',
+  'deceased',
+] as const;
+export type ContactResult = (typeof CONTACT_RESULTS)[number];
+
+export const RESULT_LABELS: Record<ContactResult, string> = {
+  spoke: 'Spoke',
+  not_home: 'Not home',
+  left_literature: 'Left literature',
+  refused: 'Refused',
+  moved: 'Moved',
+  inaccessible: 'Inaccessible',
+  do_not_knock: 'Do not knock',
+  deceased: 'Deceased',
+};
+
+export type AssignmentStatus = 'open' | 'in_progress' | 'done';
+
+export interface TurfSummary {
+  id: string;
+  name: string;
+  ward: string | null;
+  archived: boolean;
+  created_at: string;
+  created_by_name: string | null;
+  n_households: number;
+  n_voters: number;
+  contacted: number;
+  assignees: { user_id: string; name: string; status: AssignmentStatus }[];
+}
+
+export interface Assignment {
+  id: string;
+  status: AssignmentStatus;
+  due_date: string | null;
+  assigned_at: string;
+  turf: { id: string; name: string; ward: string | null };
+  n_households: number;
+  contacted: number;
+}
+
+/** One door in a turf, in walking order. Volunteers get voter names but no mailing/resident fields. */
+export interface Door {
+  household_id: string;
+  address: string;
+  community: string | null;
+  ward: string;
+  lat: number | null;
+  lon: number | null;
+  n_voters: number;
+  walk_order: number;
+  last_result: ContactResult | null;
+  last_contact_at: string | null;
+  voters: Voter[];
+}
+
+export interface DoorsResponse {
+  turf: { id: string; name: string; ward: string | null };
+  doors: Door[];
+}
+
+export interface Contact {
+  id: string;
+  at: string;
+  user_name: string | null;
+  result: ContactResult;
+  support: number | null;
+  issues: string[];
+  wants_sign: boolean;
+  wants_volunteer: boolean;
+  needs_ride: boolean;
+  follow_up: boolean;
+  note: string | null;
+  voter_id: string | null;
+  voter_name: string | null;
+}
+
+/** POST /api/contacts. `client_id` makes a retry idempotent — the offline queue in Phase 3 relies on it. */
+export interface ContactInput {
+  household_id: string;
+  voter_id?: string | null;
+  turf_id?: string | null;
+  result: ContactResult;
+  support?: number | null;
+  issues?: string[];
+  wants_sign?: boolean;
+  wants_volunteer?: boolean;
+  needs_ride?: boolean;
+  follow_up?: boolean;
+  note?: string | null;
+  client_id?: string;
+}
+
+export interface FollowUp {
+  household_id: string;
+  address: string;
+  ward: string;
+  community: string | null;
+  last_result: ContactResult;
+  last_contact_at: string;
+  user_name: string | null;
+  note: string | null;
+}
+
+export interface Activity {
+  by_user: { user_id: string; name: string; contacts: number; doors: number; last_at: string | null }[];
+  by_day: { day: string; contacts: number }[];
+}
+
+/** GET /api/streets — the turf builder's street picker and the map's street search. */
+export interface Street {
+  street_sort: string;
+  label: string;
+  ward: string;
+  community: string | null;
+  n_households: number;
+  n_voters: number;
+  min_num: number | null;
+  max_num: number | null;
+}

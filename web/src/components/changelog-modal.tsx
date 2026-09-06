@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.2.0';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,19 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.2.0',
+    date: '2026-09-05',
+    changes: [
+      'Turfs: cut from a list of streets or a drawn polygon, with doors ordered along the street.',
+      'Assign a turf to a volunteer and track it as open, in progress or done.',
+      'Door screen for phones: one-thumb result buttons, support 1-5, issue flags and a note.',
+      'Volunteers see voter names at doors in their own turf — never mailing or resident details.',
+      'Every result carries an idempotency key, so a retry on a bad signal cannot double-count a door.',
+      '"Canvass status" colour mode on the map, and clusters coloured by their dominant ward.',
+      'Default basemap switched to OpenStreetMap — CARTO now watermarks anonymous tiles.',
+    ],
+  },
   {
     version: '0.1.0',
     date: '2026-09-05',
@@ -131,15 +144,24 @@ export const ROADMAP: RoadmapGroup[] = [
     ],
   },
   {
-    category: 'Next up — Phase 2: canvassing core',
+    category: 'Shipped — Phase 2: canvassing core',
+    icon: '✅',
+    items: [
+      { label: 'Turfs cut from a list of streets, with doors in walking order', priority: 'high', done: true },
+      { label: 'Assignments — turf to volunteer, with open / in progress / done', priority: 'high', done: true },
+      { label: 'Door screen: one-thumb result buttons, support, flags and notes', priority: 'high', done: true },
+      { label: 'Volunteers scoped to their assigned turfs, with voter names at the door', priority: 'high', done: true },
+      { label: 'Latest-status colouring on the map', priority: 'medium', done: true },
+    ],
+  },
+  {
+    category: 'In progress — finishing Phase 2',
     icon: '🚧',
     items: [
-      { label: 'Turfs: draw a polygon or pick streets, households joined on save', priority: 'high' },
-      { label: 'Assignments — turf to volunteer, with open / in progress / done', priority: 'high' },
-      { label: 'Door screen: one-thumb result buttons, support, issue tags and notes', priority: 'high' },
-      { label: 'Volunteers scoped to their assigned turfs, with voter names at the door', priority: 'high' },
-      { label: 'Latest-status colouring on the map', priority: 'medium' },
-      { label: 'Follow-up queue and per-user activity', priority: 'medium' },
+      { label: 'Draw a turf as a polygon on the map — the API accepts one, the map cannot draw it yet', priority: 'high' },
+      { label: 'Follow-up queue screen — the API serves it, nothing shows it yet', priority: 'medium' },
+      { label: 'Per-user activity screen — same: served, not yet shown', priority: 'medium' },
+      { label: 'Flag streets already belonging to another turf, so turfs cannot silently overlap', priority: 'medium' },
     ],
   },
   {

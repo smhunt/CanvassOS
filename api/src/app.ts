@@ -11,12 +11,14 @@ import { createPool, type Db } from './db.js';
 import { ApiError } from './lib/errors.js';
 import { auditRoutes } from './routes/audit.js';
 import { authRoutes } from './routes/auth.js';
+import { contactRoutes } from './routes/contacts.js';
 import { healthRoutes } from './routes/health.js';
 import { householdRoutes } from './routes/households.js';
 import { metaRoutes } from './routes/meta.js';
 import { searchRoutes } from './routes/search.js';
 import { statsRoutes } from './routes/stats.js';
 import { streetRoutes } from './routes/streets.js';
+import { assignmentRoutes, turfRoutes } from './routes/turfs.js';
 import { userRoutes } from './routes/users.js';
 
 declare module 'fastify' {
@@ -115,6 +117,9 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       await api.register(searchRoutes);
       await api.register(streetRoutes);
       await api.register(statsRoutes, { prefix: '/stats' });
+      await api.register(turfRoutes, { prefix: '/turfs' });
+      await api.register(assignmentRoutes);
+      await api.register(contactRoutes);
       await api.register(auditRoutes);
     },
     { prefix: '/api' },

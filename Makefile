@@ -100,5 +100,5 @@ purge: ## AFTER THE ELECTION: stop the stack, delete ALL volumes (database, web,
 psql: ## psql shell inside the db container
 	$(COMPOSE) exec db psql -U canvass canvass
 
-test: ## run the API integration tests against TEST_DATABASE_URL (default localhost:5443)
+test: ## run the API tests (needs CANVASS_TEST_DESTRUCTIVE=1 + TEST_DATABASE_URL on a throwaway db — see README)
 	cd api && npm test

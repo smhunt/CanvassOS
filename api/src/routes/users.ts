@@ -6,7 +6,7 @@ import { INVITE_DAYS } from '../config.js';
 import { one, q, withTx } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { conflict, notFound } from '../lib/errors.js';
-import type { Role } from '../lib/serialize.js';
+import { serializeUserListRow, type Role, type UserListRow } from '../lib/serialize.js';
 
 const roleSchema = z.enum(['admin', 'organizer', 'volunteer']);
 
@@ -28,17 +28,6 @@ const patchBody = z
 
 const idParams = z.object({ id: z.string().uuid() });
 
-interface UserListRow {
-  id: string;
-  email: string;
-  name: string;
-  role: Role;
-  active: boolean;
-  created_at: Date;
-  last_login_at: Date | null;
-  invite_pending: boolean;
-}
-
 const USER_SELECT = `
   SELECT id, email, name, role, active, created_at, last_login_at,
          (password_hash IS NULL AND invite_token IS NOT NULL) AS invite_pending
@@ -48,10 +37,12 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   const adminOnly = requireRole('admin');
   const inviteUrl = (token: string): string => `https://${app.config.DOMAIN}/invite/${token}`;
 
-  // GET /api/users
-  app.get('/', { preHandler: adminOnly }, async () => {
-    const users = await q<UserListRow>(app.db, `${USER_SELECT} ORDER BY created_at, email`);
-    return { users };
+  // GET /api/users — organizer/admin. Organizers get a reduced projection (serialize.ts) because
+  // they need the list only to pick someone to assign a turf to.
+  app.get('/', { preHandler: requireRole('organizer') }, async (req) => {
+    const viewer = currentSession(req).user.role;
+    const rows = await q<UserListRow>(app.db, `${USER_SELECT} ORDER BY created_at, email`);
+    return { users: rows.map((u) => serializeUserListRow(u, viewer)) };
   });
 
   // POST /api/users/invite → 201 { user, invite_url }

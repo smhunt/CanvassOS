@@ -4,6 +4,7 @@ import { currentSession, requireAuth, requireRole } from '../auth/guard.js';
 import { one, q } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { notFound } from '../lib/errors.js';
+import { assertHouseholdAccess } from '../lib/scope.js';
 import {
   isOrganizer,
   serializeHousehold,
@@ -72,7 +73,8 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
   // GET /api/households/points — every role; GeoJSON FeatureCollection built in JS from one query.
   app.get('/points', { preHandler: requireAuth }, async (req, reply) => {
     const qp = pointsQuery.parse(req.query);
-    const role = currentSession(req).user.role;
+    const sess = currentSession(req);
+    const role = sess.user.role;
     const organizer = isOrganizer(role);
 
     const params: unknown[] = [];
@@ -95,18 +97,36 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
       where.push(`h.lon BETWEEN $${n - 3} AND $${n - 1}`, `h.lat BETWEEN $${n - 2} AND $${n}`);
     }
 
-    // Volunteers never receive status, so skip the per-row contact lookup for them entirely.
-    const statusJoin = organizer
-      ? `LEFT JOIN LATERAL (SELECT c.result AS last_result FROM contact c
-                            WHERE c.household_id = h.id ORDER BY c.at DESC LIMIT 1) s ON true`
-      : '';
-    const statusCol = organizer ? 's.last_result' : 'NULL::text AS last_result';
+    // Organizers get `status` everywhere. Volunteers get it only for doors inside a turf assigned
+    // to them (Phase 2 — so they can colour their own turf); everything else stays as anonymous as
+    // it was in Phase 1. Their scope is materialised once in a CTE rather than tested per row.
+    let cte = '';
+    let joins: string;
+    let extraCols: string;
+    if (organizer) {
+      joins = `LEFT JOIN LATERAL (SELECT c.result AS last_result FROM contact c
+                                  WHERE c.household_id = h.id ORDER BY c.at DESC LIMIT 1) s ON true`;
+      extraCols = 's.last_result, true AS in_turf';
+    } else {
+      params.push(sess.user.id);
+      cte = `WITH scope AS (
+               SELECT DISTINCT x.household_id
+               FROM turf_household x JOIN assignment a ON a.turf_id = x.turf_id
+               WHERE a.user_id = $${params.length}
+             )`;
+      joins = `LEFT JOIN scope sc ON sc.household_id = h.id
+               LEFT JOIN LATERAL (SELECT c.result AS last_result FROM contact c
+                                  WHERE sc.household_id IS NOT NULL AND c.household_id = h.id
+                                  ORDER BY c.at DESC LIMIT 1) s ON true`;
+      extraCols = 's.last_result, (sc.household_id IS NOT NULL) AS in_turf';
+    }
 
     const rows = await q<PointRow>(
       app.db,
-      `SELECT h.id, h.ward, h.community, h.n_voters, h.is_institution, h.n_nonresident,
-              h.record_quality, h.lat, h.lon, ${statusCol}
-       FROM household h ${statusJoin}
+      `${cte}
+       SELECT h.id, h.ward, h.community, h.n_voters, h.is_institution, h.n_nonresident,
+              h.record_quality, h.lat, h.lon, ${extraCols}
+       FROM household h ${joins}
        WHERE ${where.join(' AND ')}
        ORDER BY h.id`,
       params,
@@ -152,11 +172,15 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
-  // GET /api/households/:id — household card (organizer/admin; volunteer → 403 until Phase 2).
-  app.get('/:id', { preHandler: organizerOnly }, async (req) => {
+  // GET /api/households/:id — household card. Organizer/admin: any door.
+  // Volunteer: only a door inside one of their assigned turfs (Phase 2), else 403.
+  app.get('/:id', { preHandler: requireAuth }, async (req) => {
     const { id } = idParams.parse(req.params);
     const sess = currentSession(req);
     const role = sess.user.role;
+    // Scope is checked before the row is loaded: an out-of-turf volunteer gets 403, never a 404
+    // that would tell them whether the id exists.
+    await assertHouseholdAccess(app.db, role, id, sess.user.id);
 
     const hh = await one<HouseholdRow>(app.db, `SELECT ${HOUSEHOLD_COLS} FROM household h WHERE h.id = $1`, [id]);
     if (!hh) throw notFound('household not found');

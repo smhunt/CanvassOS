@@ -13,7 +13,17 @@ export type AuditAction =
   | 'reinvite'
   | 'update_user'
   | 'export'
-  | 'import';
+  | 'import'
+  // Phase 2 — canvassing
+  | 'create_turf'
+  | 'update_turf'
+  | 'delete_turf'
+  | 'assign_turf'
+  | 'unassign_turf'
+  | 'update_assignment'
+  | 'view_turf_doors'
+  | 'view_follow_ups'
+  | 'contact';
 
 export interface AuditEntry {
   userId: string | null;

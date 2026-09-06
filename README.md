@@ -178,7 +178,7 @@ cd api && npm install
 DATABASE_URL=postgresql://canvass:canvass@localhost:5443/canvass SESSION_SECRET=$(openssl rand -hex 32) \
   DOMAIN=localhost ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=dev-password-1 COOKIE_SECURE=false PORT=3130 \
   npm run dev                # tsx watch; http://localhost:3130/api/health
-npm test                     # integration tests against TEST_DATABASE_URL (default: the URL above)
+npm test                     # see "Running the tests" below — it refuses to run without an opt-in
 ```
 
 `npm test` truncates `app_user`/`session`/`audit_log` on the test database (it creates its own admin,
@@ -189,6 +189,26 @@ cd web && npm install
 npm run dev                  # https://dev.ecoworks.ca:3030 — /api is proxied to the API on 3130
 npm run build && npm run preview   # https://dev.ecoworks.ca:4173 (what tools/e2e.py drives)
 ```
+
+### Running the tests
+
+The API suite writes to the database it is pointed at, so it **refuses to run** unless you opt in
+*and* point it somewhere disposable. It will not touch a database named `canvass`:
+
+```bash
+# one-off: make a throwaway copy of the live database (instant, and it carries the imported list)
+docker compose exec -T db psql -U canvass -d postgres -c 'CREATE DATABASE canvass_test'
+docker compose exec -T db bash -c 'pg_dump -U canvass canvass | psql -U canvass canvass_test'
+
+cd api
+CANVASS_TEST_DESTRUCTIVE=1 \
+  TEST_DATABASE_URL=postgresql://canvass:$POSTGRES_PASSWORD@localhost:5443/canvass_test \
+  npm test
+```
+
+The suite creates users named `<who>+<run id>@test.local` and deletes exactly the rows it created —
+it no longer truncates `app_user` / `session` / `audit_log`. That rule exists because it once wiped
+the admin account and the audit log of a running system; keep it.
 
 ### Dev ports
 

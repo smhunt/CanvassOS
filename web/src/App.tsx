@@ -13,6 +13,10 @@ import { UsersPage } from './pages/UsersPage';
 
 // MapLibre is ~1 MB; only fetch it when the map is actually opened.
 const MapPage = lazy(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })));
+// The door screen is what volunteers open in the field; the turf builder is organiser-only.
+const CanvassPage = lazy(() => import('./pages/CanvassPage').then((m) => ({ default: m.CanvassPage })));
+const DoorScreen = lazy(() => import('./pages/DoorScreen').then((m) => ({ default: m.DoorScreen })));
+const TurfsPage = lazy(() => import('./pages/TurfsPage').then((m) => ({ default: m.TurfsPage })));
 
 export default function App() {
   return (
@@ -35,6 +39,32 @@ export default function App() {
               <Suspense fallback={<FullPageSpinner label="Loading the map…" />}>
                 <MapPage />
               </Suspense>
+            }
+          />
+          <Route
+            path="/canvass"
+            element={
+              <Suspense fallback={<FullPageSpinner label="Loading your turfs…" />}>
+                <CanvassPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/canvass/:turfId"
+            element={
+              <Suspense fallback={<FullPageSpinner label="Loading the doors…" />}>
+                <DoorScreen />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/turfs"
+            element={
+              <RequireRole min="organizer">
+                <Suspense fallback={<FullPageSpinner label="Loading turfs…" />}>
+                  <TurfsPage />
+                </Suspense>
+              </RequireRole>
             }
           />
           <Route

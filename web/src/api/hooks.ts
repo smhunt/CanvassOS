@@ -1,7 +1,13 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, isApiError } from './client';
 import type {
+  Activity,
+  Assignment,
   AuditEntry,
+  Contact,
+  ContactInput,
+  DoorsResponse,
+  FollowUp,
   Household,
   LegalHousehold,
   Meta,
@@ -10,6 +16,8 @@ import type {
   Role,
   SearchResult,
   StatsOverview,
+  Street,
+  TurfSummary,
   User,
   UserRow,
 } from './types';
@@ -213,5 +221,128 @@ export function useAudit(filters: AuditFilters) {
     initialPageParam: 0,
     getNextPageParam: (last) => (last.length < AUDIT_PAGE ? undefined : last[last.length - 1]?.id),
     staleTime: 15_000,
+  });
+}
+
+// ------------------------------------------------------------------ Phase 2: canvassing
+
+/** Streets for the turf builder's picker. Filters are optional; the whole list is ~1k rows. */
+export function useStreets(filters: { ward?: string; community?: string } = {}) {
+  return useQuery({
+    queryKey: ['streets', filters.ward ?? '', filters.community ?? ''],
+    queryFn: () =>
+      api
+        .get<{ streets: Street[] }>('/streets', {
+          ward: filters.ward || undefined,
+          community: filters.community || undefined,
+        })
+        .then((r) => r.streets),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export const TURFS_KEY = ['turfs'] as const;
+export const MINE_KEY = ['assignments', 'mine'] as const;
+
+export function useTurfs(includeArchived = false) {
+  return useQuery({
+    queryKey: [...TURFS_KEY, includeArchived],
+    queryFn: () =>
+      api.get<{ turfs: TurfSummary[] }>('/turfs', { archived: includeArchived || undefined }).then((r) => r.turfs),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateTurf() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; ward?: string | null; streets?: string[]; polygon?: unknown }) =>
+      api.post<{ turf: TurfSummary }>('/turfs', body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: TURFS_KEY }),
+  });
+}
+
+export function useUpdateTurf() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; name?: string; archived?: boolean }) =>
+      api.patch<{ turf: TurfSummary }>(`/turfs/${id}`, body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: TURFS_KEY }),
+  });
+}
+
+export function useAssignTurf() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ turfId, userId }: { turfId: string; userId: string }) =>
+      api.post(`/turfs/${turfId}/assign`, { user_id: userId }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: TURFS_KEY });
+      void qc.invalidateQueries({ queryKey: MINE_KEY });
+    },
+  });
+}
+
+/** The volunteer's own turfs — the entry point to the door screen. */
+export function useMyAssignments() {
+  return useQuery({
+    queryKey: MINE_KEY,
+    queryFn: () => api.get<{ assignments: Assignment[] }>('/assignments/mine').then((r) => r.assignments),
+    staleTime: 30_000,
+  });
+}
+
+export function useDoors(turfId: string | undefined) {
+  return useQuery({
+    queryKey: ['turf-doors', turfId ?? ''],
+    queryFn: () => api.get<DoorsResponse>(`/turfs/${turfId}/doors`),
+    enabled: !!turfId,
+    staleTime: 15_000,
+  });
+}
+
+export function useContacts(householdId: string | undefined) {
+  return useQuery({
+    queryKey: ['contacts', householdId ?? ''],
+    queryFn: () => api.get<{ contacts: Contact[] }>('/contacts', { household_id: householdId }).then((r) => r.contacts),
+    enabled: !!householdId,
+    staleTime: 5_000,
+  });
+}
+
+/**
+ * Record a door result. A `client_id` is generated per submission so a retry after a dropped
+ * connection cannot double-count the door — the API treats it as an idempotency key.
+ */
+export function useRecordContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ContactInput) =>
+      api.post<{ contact: Contact }>('/contacts', {
+        client_id: body.client_id ?? crypto.randomUUID(),
+        ...body,
+      }),
+    onSuccess: (_r, body) => {
+      void qc.invalidateQueries({ queryKey: ['turf-doors'] });
+      void qc.invalidateQueries({ queryKey: ['contacts', body.household_id] });
+      void qc.invalidateQueries({ queryKey: MINE_KEY });
+      void qc.invalidateQueries({ queryKey: ['points'] });
+    },
+  });
+}
+
+export function useFollowUps() {
+  return useQuery({
+    queryKey: ['follow-ups'],
+    queryFn: () => api.get<{ households: FollowUp[] }>('/follow-ups').then((r) => r.households),
+    staleTime: 30_000,
+  });
+}
+
+export function useActivity(days = 14) {
+  return useQuery({
+    queryKey: ['activity', days],
+    queryFn: () => api.get<Activity>('/activity', { days }),
+    staleTime: 60_000,
   });
 }

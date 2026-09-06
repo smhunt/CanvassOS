@@ -1,12 +1,18 @@
-# Canvass API contract — Phase 1
+# Canvass API contract — Phases 1–2
 
 Base path `/api`. JSON in/out. Auth is a session cookie (`canvass_sid`, HttpOnly, Secure, SameSite=Lax) set by `/api/auth/login`.
 Every route except `auth/login`, `auth/accept-invite`, `health` requires a session. Roles: `admin` > `organizer` > `volunteer`.
 Errors: `{ "error": { "code": "string", "message": "string" } }` with 400 / 401 / 403 / 404 / 409 / 500.
 
 Rule for volunteers: they never receive `mailing_address`, `mail_city`, `mail_postal`, `resident_class`, `n_nonresident`,
-`n_po_box`, or any search across the whole municipality. In Phase 1 (no turfs yet) a volunteer can log in and see the
-map with household points but no names or addresses; the household card returns 403 for volunteers until Phase 2 scopes it by turf.
+`n_po_box`, or any search across the whole municipality. In Phase 1 (no turfs yet) a volunteer could log in and see the
+map with household points but no names or addresses at all.
+
+**Phase 2 widens that by exactly one rule: a volunteer may read and write the doors of the turfs assigned to them.**
+Inside an assigned turf they get voter *names* (they need them at the door) and may record contacts; outside it every
+household id still answers `403 { error: { code: "not_your_turf" } }`. The stripped fields above stay stripped
+everywhere, including inside their own turf. Organizers and admins are unscoped. The enforcement lives in
+`api/src/lib/scope.ts` (who may see which door) and `api/src/lib/serialize.ts` (which fields leave the API).
 
 ## Auth
 - `POST /api/auth/login` `{ email, password }` → `200 { user }` and sets cookie. `401` on bad credentials. Rate-limited (10/min/IP). Writes audit `login`.
@@ -15,9 +21,13 @@ map with household points but no names or addresses; the household card returns 
 - `POST /api/auth/accept-invite` `{ token, name, password }` → `200 { user }` + cookie. Password ≥ 10 chars. `410` if expired/used.
 - `POST /api/auth/change-password` `{ current, next }` → `204`.
 
-## Users (admin)
-- `GET  /api/users` → `{ users: [{ id, email, name, role, active, created_at, last_login_at, invite_pending }] }`
-- `POST /api/users/invite` `{ email, name, role }` → `201 { user, invite_url }` — invite_url is `https://$DOMAIN/invite/<token>`; the admin sends it themselves (no email service in Phase 1). Token valid 7 days. Audit `invite`.
+## Users
+- `GET  /api/users` — **organizer/admin** (organizers need it to fill the "assign this turf to…" picker).
+  - admin → `{ users: [{ id, email, name, role, active, created_at, last_login_at, invite_pending }] }`
+  - organizer → `{ users: [{ id, name, role, active }] }` — no email, no login times, no invite state.
+  The projection is `serializeUserListRow(row, viewer)` in `lib/serialize.ts`, not an inline SELECT list.
+  Volunteers → `403`. Every other route in this section stays admin-only.
+- `POST /api/users/invite` (admin) `{ email, name, role }` → `201 { user, invite_url }` — invite_url is `https://$DOMAIN/invite/<token>`; the admin sends it themselves (no email service in Phase 1). Token valid 7 days. Audit `invite`.
 - `POST /api/users/:id/reinvite` → `200 { invite_url }`
 - `PATCH /api/users/:id` `{ role?, active?, name? }` → `{ user }`. Cannot deactivate the last admin.
 
@@ -30,8 +40,12 @@ map with household points but no names or addresses; the household card returns 
   → GeoJSON FeatureCollection of ALL matching households with civic coords (legal ones excluded — they have no point).
   Feature properties, **every role**: `{ id, ward, community, n, inst }` (`n` = n_voters, `inst` = is_institution).
   Organizer/admin additionally get: `{ nonres: n_nonresident, q: record_quality, status: last_result | null }`.
+  Volunteers additionally get `{ status: last_result | null }` **only on the doors inside a turf assigned to them**
+  (so they can colour their own turf); every other feature keeps the five anonymous keys and no `status` key at all.
   Bounded to ~7.1k features; no pagination. Cache-Control: private, max-age=60.
-- `GET /api/households/:id` → household card (organizer/admin; volunteer → 403 in Phase 1):
+- `GET /api/households/:id` → household card (organizer/admin: any door; volunteer: only a door inside one of their
+  assigned turfs, otherwise `403 not_your_turf` — the scope is checked before the row is loaded, so an out-of-turf
+  volunteer never learns whether the id exists):
   ```
   { id, ward, community, postal, locality, address, property_address_raw, civic_num, street, street_type, street_dir, unit,
     lat, lon, addr_match, record_quality, is_legal, is_institution, n_voters,
@@ -48,6 +62,92 @@ map with household points but no names or addresses; the household card returns 
 
 ## Streets (organizer/admin) — used by the map's street picker and the future turf builder
 - `GET /api/streets?ward=&community=` → `{ streets: [{ street_sort, label, ward, community, n_households, n_voters, min_num, max_num }] }`
+
+## Turfs (organizer/admin)
+- `POST /api/turfs` `{ name, ward?, streets?: string[], polygon?: GeoJSON Polygon }` → `201 { turf }`.
+  Exactly one of `streets` or `polygon` (400 otherwise). `streets` are `street_sort` keys from `GET /api/streets`
+  (upper-cased for you); `polygon` is a GeoJSON Polygon, rings of `[lon, lat]`, ≥ 4 positions, holes allowed.
+  **`ward` is a label stored on the turf, never a filter on the selection**: `street_sort` is not unique per ward
+  (a rural road that crosses a ward line is several rows in `GET /api/streets`), and a turf that stops halfway down
+  a road at an invisible boundary is worse to walk than one that takes the whole road — this also keeps the street
+  picker's "n households" preview honest. The same holds for `polygon`: the drawn geometry is the selection.
+  `turf_household` is materialised in the same transaction, with
+  `walk_order = row_number() over (order by street_sort, num_sort, id)` so doors come out in walking order.
+  Audit `create_turf` with `{ name, by: "streets" | "polygon", n_households }`.
+- `GET /api/turfs` → `{ turfs: [{ id, name, ward, archived, created_at, created_by_name, n_households, n_voters,
+  contacted, streets: string[], assignees: [{ id, user_id, name, status, due_date }] }] }`.
+  `contacted` = doors in the turf with at least one `contact` row. `streets` is the distinct `street_sort` of the
+  turf's households (whatever way the turf was built) so the builder can mark streets that already belong to a turf
+  and avoid silent overlaps. Unarchived first, then newest first.
+- `GET /api/turfs/:id` → `{ turf }` — the same object plus `polygon` (the stored GeoJSON, `null` for a street turf).
+  `404` if unknown.
+- `PATCH /api/turfs/:id` `{ name?, archived? }` → `{ turf }`. Audit `update_turf`.
+- `DELETE /api/turfs/:id` → `204`; `404` if unknown. `turf_household` and `assignment` cascade; existing contacts are
+  kept (their `turf_id` becomes NULL). Audit `delete_turf`.
+- `POST /api/turfs/:id/assign` `{ user_id, due_date? }` → `201 { assignment }` where
+  `assignment = { id, turf_id, user_id, user_name, status, assigned_at, due_date }`.
+  **Idempotent** on the `(turf_id, user_id)` unique constraint: re-assigning returns the row that is already there
+  (still `201`, never a `409`/`500`), and only a real insert writes the `assign_turf` audit row.
+  `404` for an unknown turf or an unknown/inactive user. `due_date` is `YYYY-MM-DD`.
+- `DELETE /api/turfs/:id/assign/:user_id` → `204`, idempotent (deleting a non-existent assignment is still `204`).
+  Audit `unassign_turf` when a row was actually removed.
+
+## Assignments
+- `GET /api/assignments/mine` — **any signed-in role**, returns the caller's own assignments (archived turfs omitted) →
+  `{ assignments: [{ id, status, due_date, assigned_at, turf: { id, name, ward }, n_households, contacted }] }`
+- `PATCH /api/assignments/:id` `{ status }` where status ∈ `open` | `in_progress` | `done` → `{ assignment }`.
+  A volunteer may patch **only their own** assignment (`403 not_your_assignment`); organizer/admin may patch any.
+  `404` if unknown. Audit `update_assignment`.
+
+## Door screen
+- `GET /api/turfs/:id/doors` → `{ turf, doors: [...] }`, ordered by `walk_order` (nulls last, then id):
+  ```
+  { household_id, address, community, ward, lat, lon, n_voters, walk_order,
+    last_result, last_contact_at,
+    voters: [ ... same projection as the household card, serialized by role ... ] }
+  ```
+  Organizer/admin: any turf. **Volunteer: only a turf they are assigned to, else `403 not_your_turf`.**
+  `turf` is the `GET /api/turfs/:id` object (including `polygon` and `streets`) so the screen can draw the outline —
+  but without `assignees`: a volunteer has no business knowing who else is on the turf.
+  Volunteers get voter names here — that is the documented Phase 2 intent (prompt_plan.md "Open decisions":
+  *names — needed at the door — but no mailing addresses or non-resident details*) — and still never
+  `mailing_address`, `mail_city`, `mail_postal` or `resident_class`.
+  Audit: **one** `view_turf_doors` entry per call with `{ n_doors }`, not one per door.
+
+## Contacts
+- `POST /api/contacts` → `201 { contact }`
+  ```
+  { household_id, voter_id?, turf_id?, result, support?, issues?, wants_sign?, wants_volunteer?,
+    needs_ride?, follow_up?, note?, client_id? }
+  ```
+  `result` ∈ `not_home` | `spoke` | `refused` | `moved` | `deceased` | `do_not_knock` | `inaccessible` |
+  `left_literature`. `support` 1–5 (only when given). `issues` ≤ 20 tags of ≤ 40 chars. `note` ≤ 2000 chars.
+  `voter_id` NULL/absent means the whole door; when given it must belong to `household_id`
+  (`400 voter_not_in_household`). Unknown household → `404`.
+  Every optional field also accepts an explicit `null` (a serialized door form sends `null` for the boxes nobody
+  ticked); `null` and absent mean the same thing and both fall back to the column default —
+  `issues: []`, the four flags `false`, everything else NULL.
+  **Authorisation:** a volunteer may only record a contact for a household inside one of their assigned turfs
+  (`403 not_your_turf`); organizer/admin may record anywhere.
+  **Idempotency:** when `client_id` is supplied and a contact with it already exists, the stored row is returned with
+  `200` instead of inserting (`ON CONFLICT (client_id) DO NOTHING` + re-select, in one transaction) — this is how the
+  Phase 3 offline queue retries safely. The stored row wins; a replay with a changed body does not update anything.
+  Contacts are append-only: a correction is a new row, never an UPDATE.
+  Audit `contact` with `{ result, household_id }` — on the insert only, not on an idempotent replay.
+  Response `contact = { id, household_id, voter_id, turf_id, at, client_id, result, support, issues, wants_sign,
+  wants_volunteer, needs_ride, follow_up, note, user_id, user_name }`.
+- `GET /api/contacts?household_id=<id>&limit=50` (1–200, default 50) →
+  `{ contacts: [{ id, at, user_name, result, support, issues, wants_sign, wants_volunteer, needs_ride, follow_up,
+  note, voter_id, voter_name }] }`, newest first. Volunteers: only households in their turfs (`403` otherwise).
+- `GET /api/follow-ups?limit=200` (organizer/admin) → `{ follow_ups: [...] }` — doors whose **most recent** contact has
+  `follow_up = true`, newest first:
+  `{ household_id, address, ward, community, lat, lon, contact_id, last_contact_at, last_result, last_support,
+  issues, wants_sign, wants_volunteer, needs_ride, note, user_id, user_name, voter_id, voter_name }`.
+  Audit `view_follow_ups`.
+- `GET /api/activity?days=14` (organizer/admin, 1–365) →
+  `{ by_user: [{ user_id, name, contacts, doors, last_at }], by_day: [{ day, contacts }] }`.
+  `doors` = distinct households contacted; `day` is a `YYYY-MM-DD` string in `America/Toronto` so an evening knock
+  lands on that evening. Aggregates only — no audit row.
 
 ## Stats (organizer/admin)
 - `GET /api/stats/overview` →
@@ -91,7 +191,9 @@ map with household points but no names or addresses; the household card returns 
   Volunteers' features carry only `{ id, ward, community, n, inst }`; the contact lookup is skipped for them.
 - `GET /api/audit` also accepts `user_id=<uuid>` and `action=<name>` filters; entries are
   `{ id, at, user_id, user_email, user_name, action, target, detail, ip }`. Extra audited actions:
-  `login_failed`, `accept_invite`, `change_password`, `reinvite`, `update_user`.
+  `login_failed`, `accept_invite`, `change_password`, `reinvite`, `update_user`. Phase 2 adds `create_turf`,
+  `update_turf`, `delete_turf`, `assign_turf`, `unassign_turf`, `update_assignment`, `view_turf_doors`,
+  `view_follow_ups`, `contact`.
 - `POST /api/users/:id/reinvite` also works for a user who already has a password (acts as an admin-driven
   password reset: accepting the new invite sets a new password and drops old sessions).
 - Invite tokens are stored hashed (sha256) in `app_user.invite_token`; the raw token appears only in `invite_url`.
@@ -99,3 +201,22 @@ map with household points but no names or addresses; the household card returns 
 - Env additions: `COOKIE_SECURE` (default `true`; `false` for plain-http local dev), `BOUNDARY_PATH`, `LOG_LEVEL`, `HOST`.
 - Duplicate list entries (same name + property twice) get `natural_key` suffixed `#2` so the UNIQUE constraint holds
   and every CSV row is kept.
+
+## Implementation notes (Phase 2 backend)
+- **No migration.** The Phase 1 schema already carries `turf`, `turf_household`, `assignment` and `contact`, and it has
+  no PostGIS geometry column on purpose. Polygon turfs are therefore materialised with a bbox pre-filter in SQL plus a
+  ray-casting point-in-polygon test in TypeScript (`api/src/lib/geo.ts`, unit-tested in `api/test/geo.test.ts`) over
+  the ~7k rows — a few hundred microseconds, once, when the turf is saved.
+- The `household_status` / `voter_status` views still exist and are still unused: every route inlines the equivalent
+  `LEFT JOIN LATERAL (... ORDER BY at DESC LIMIT 1)` so the status lookup can be filtered or skipped per role.
+- Volunteer scoping is two helpers in `api/src/lib/scope.ts` (`assertTurfAccess`, `assertHouseholdAccess`); on the
+  7k-row points query the volunteer's set of doors is materialised once in a CTE instead of being tested per row.
+- `GET /api/households/points` for a volunteer with no assignments is byte-for-byte the Phase 1 response.
+- A turf whose `streets`/`polygon` match nothing is still created (`201`, `n_households: 0`).
+- Rows in `turf_household` are not exclusive: the same door may sit in more than one turf.
+- `assignment.due_date` and `activity.by_day[].day` are serialized as `YYYY-MM-DD` strings, never as timestamps.
+- Tests: `api/test/api.test.ts` writes to the database it is pointed at, so it refuses to start unless
+  `CANVASS_TEST_DESTRUCTIVE=1` is set **and** the target database is not `canvass`. It never truncates — it creates
+  its own `<who>+<run id>@test.local` users and deletes exactly the rows it created (users, sessions, audit entries,
+  turfs, assignments, contacts) by id in `after()`. Run it against a throwaway copy:
+  `CANVASS_TEST_DESTRUCTIVE=1 TEST_DATABASE_URL=<...>/canvass_test npm test`.

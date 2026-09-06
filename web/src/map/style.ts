@@ -2,6 +2,8 @@ import type { FeatureCollection } from 'geojson';
 import type { ExpressionSpecification, LayerSpecification, StyleSpecification } from 'maplibre-gl';
 import {
   BOUNDARY_COLOUR,
+  NOT_CONTACTED,
+  RESULT_COLOURS,
   CLUSTER_COLOUR,
   DOOR_STEPS,
   NONRES_HIGHLIGHT,
@@ -227,6 +229,12 @@ export function colourExpression(mode: ColourMode, communities: string[]): Expre
         5,
         s4?.colour ?? '#0b2e5c',
       ];
+    }
+    case 'status': {
+      // `status` is the latest contact result, or null when the door has never been knocked.
+      const pairs: string[] = [];
+      for (const [r, c] of Object.entries(RESULT_COLOURS)) pairs.push(r, c);
+      return ['match', ['coalesce', ['get', 'status'], ''], ...pairs, NOT_CONTACTED] as unknown as ExpressionSpecification;
     }
     case 'quality':
       return [
