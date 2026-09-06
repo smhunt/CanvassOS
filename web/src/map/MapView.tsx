@@ -23,8 +23,12 @@ interface Props {
   communities: string[];
   base: BaseLayer;
   selectedId: string | null;
+  /** While true the map drops its own click handling: no selection, no cluster zoom, crosshair cursor. */
+  drawing?: boolean;
   onSelect: (props: PointProps, lngLat: [number, number]) => void;
   onViewport: (stats: ViewportStats) => void;
+  /** Handed the live map once its style is parsed, and null when the map is torn down. */
+  onMapReady?: (map: maplibregl.Map | null) => void;
 }
 
 /** Middlesex Centre, roughly centred; replaced by a fitBounds once the boundary arrives. */
@@ -51,7 +55,7 @@ function polygonBounds(geom: NonNullable<Meta['boundary']>): LngLatBoundsLike | 
 }
 
 export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
-  { points, boundary, colourMode, communities, base, selectedId, onSelect, onViewport },
+  { points, boundary, colourMode, communities, base, selectedId, drawing = false, onSelect, onViewport, onMapReady },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,9 +67,13 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
   const fittedRef = useRef(false);
   const baseRef = useRef(base);
   const emitViewportRef = useRef<() => void>(() => undefined);
+  const drawingRef = useRef(drawing);
+  const onMapReadyRef = useRef(onMapReady);
   pointsRef.current = points;
   onSelectRef.current = onSelect;
   onViewportRef.current = onViewport;
+  drawingRef.current = drawing;
+  onMapReadyRef.current = onMapReady;
 
   useImperativeHandle(ref, () => ({
     flyTo(lon, lat, zoom) {
@@ -136,6 +144,8 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
       setReady(true);
       emitViewport();
       map.triggerRepaint();
+      // Sources and layers can be added from here on, so anything drawing on top of us can start.
+      onMapReadyRef.current?.(map);
     };
     map.once('style.load', markReady);
     map.once('load', markReady);
@@ -165,6 +175,8 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     };
 
     map.on('click', (e) => {
+      // Drawing a turf owns the clicks; selecting a household mid-ring would be an accident.
+      if (drawingRef.current) return;
       const f = hit(e);
       if (!f || f.geometry.type !== 'Point') return;
       const coords = f.geometry.coordinates as [number, number];
@@ -193,6 +205,7 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
       );
     });
     map.on('mousemove', (e) => {
+      if (drawingRef.current) return; // the crosshair is owned by the drawing effect below
       map.getCanvas().style.cursor = hit(e) ? 'pointer' : '';
     });
 
@@ -200,6 +213,7 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     // Debug handle (used by the Playwright checks and handy in the field): window.__mcMap
     (window as unknown as { __mcMap?: maplibregl.Map }).__mcMap = map;
     return () => {
+      onMapReadyRef.current?.(null);
       map.remove();
       mapRef.current = null;
       delete (window as unknown as { __mcMap?: maplibregl.Map }).__mcMap;
@@ -252,6 +266,13 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     if (!map || !ready) return;
     setBaseLayer(map, base);
   }, [base, ready]);
+
+  // ---- draw mode: crosshair while it lasts, and the normal hover cursor back when it ends
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    map.getCanvas().style.cursor = drawing ? 'crosshair' : '';
+  }, [drawing, ready]);
 
   // ---- selection ring
   useEffect(() => {

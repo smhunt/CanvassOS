@@ -1,9 +1,11 @@
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EMPTY_FILTERS, useMeta, usePoints, type PointFilters } from '../api/hooks';
 import type { PointProps } from '../api/types';
 import { isOrganizer } from '../auth';
 import { useUser } from '../components/Shell';
 import { ErrorBox, Spinner, n } from '../components/ui';
+import { DrawPolygon } from '../map/DrawPolygon';
 import { FiltersDrawer, countActive } from '../map/FiltersDrawer';
 import { HouseholdCard, type Selection } from '../map/HouseholdCard';
 import { LegalList } from '../map/LegalList';
@@ -62,6 +64,9 @@ export function MapPage() {
   const [legendOpen, setLegendOpen] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 720px)').matches : true));
   const [selection, setSelection] = useState<Selection | null>(null);
   const [viewport, setViewport] = useState<ViewportStats>({ doors: 0, voters: 0, zoom: 10 });
+  // The turf drawer needs the live map to add its own layers, so MapView hands it over once ready.
+  const [map, setMap] = useState<MapLibreMap | null>(null);
+  const [drawing, setDrawing] = useState(false);
   const layersRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => writeLS(LS_MODE, mode), [mode]);
@@ -84,6 +89,7 @@ export function MapPage() {
   }, [layersOpen]);
 
   const communities = useMemo(() => meta.data?.communities.map((c) => c.community) ?? [], [meta.data]);
+  const wards = useMemo(() => meta.data?.wards.map((w) => w.ward) ?? [], [meta.data]);
 
   // id → [lon, lat] for search results and "centre on map"
   const coordIndex = useMemo(() => {
@@ -102,6 +108,12 @@ export function MapPage() {
   const closeFilters = useCallback(() => setFiltersOpen(false), []);
   const closeLegal = useCallback(() => setLegalOpen(false), []);
   const onViewport = useCallback((s: ViewportStats) => setViewport(s), []);
+  const onMapReady = useCallback((m: MapLibreMap | null) => setMap(m), []);
+  const onDrawActive = useCallback((a: boolean) => {
+    setDrawing(a);
+    // A household card open over the map would swallow the first corners.
+    if (a) setSelection(null);
+  }, []);
 
   const flyTo = useCallback((lon: number, lat: number) => {
     mapRef.current?.flyTo(lon, lat, 16.5);
@@ -187,6 +199,9 @@ export function MapPage() {
             </div>
           )}
         </div>
+        {organizer && map && (
+          <DrawPolygon map={map} points={points.data} wards={wards} filtersActive={active > 0} onActiveChange={onDrawActive} />
+        )}
       </div>
 
       <MapView
@@ -197,8 +212,10 @@ export function MapPage() {
         communities={communities}
         base={base}
         selectedId={selection?.id ?? null}
+        drawing={drawing}
         onSelect={onSelectPoint}
         onViewport={onViewport}
+        onMapReady={onMapReady}
       />
 
       <div className="map-bottomleft">

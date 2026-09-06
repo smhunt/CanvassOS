@@ -1,0 +1,106 @@
+/* Turf drawing on the map. Every custom property, tone and primitive comes from src/styles.css —
+   nothing is redefined here. The panel and the confirmation hang off .map-toolbar, which is the
+   nearest positioned ancestor, so they stay glued under the toolbar on every breakpoint. */
+
+.draw__toggle {
+  flex: 0 0 auto;
+}
+
+.draw-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(300px, calc(100vw - 20px));
+  padding: 0.7rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: var(--shadow);
+}
+.draw-panel__hint,
+.draw-panel__counts,
+.draw-panel__warn {
+  margin: 0;
+}
+.draw-panel__hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.draw-panel__counts {
+  font-size: 0.95rem;
+}
+.draw-panel__warn {
+  font-size: 0.8rem;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.5rem;
+}
+.draw-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.draw-panel__actions .btn {
+  /* Tablet first: these are tapped mid-draw, often one-handed. */
+  min-height: var(--tap);
+  flex: 1 1 auto;
+}
+
+.draw-done {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  max-width: min(380px, calc(100vw - 20px));
+  gap: 0.5rem;
+  color: var(--ok);
+}
+.draw-done span {
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------ save dialog */
+
+.draw-modal {
+  width: min(440px, 100%);
+}
+.draw-modal__form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.draw-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+}
+.draw-modal__summary {
+  margin: 0;
+}
+.draw-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+}
+.draw-modal__actions .btn {
+  min-height: var(--tap);
+}
+
+@media (max-width: 720px) {
+  .draw-panel,
+  .draw-done {
+    right: auto;
+    left: 0;
+    width: min(320px, calc(100vw - 16px));
+  }
+  .draw-modal__actions {
+    /* Thumb reach beats visual balance on a phone. */
+    flex-direction: column-reverse;
+  }
+  .draw-modal__actions .btn {
+    width: 100%;
+  }
+}
