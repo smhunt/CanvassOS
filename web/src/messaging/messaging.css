@@ -546,3 +546,10 @@
   color: var(--ok);
   font-weight: 600;
 }
+
+/* The save button is disabled until a campaign has a name and a body. Saying which one is missing
+   turns a dead control into an instruction. */
+.msg-actions__note--blocked {
+  color: var(--warn);
+  font-weight: 600;
+}

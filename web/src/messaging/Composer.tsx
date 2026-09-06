@@ -45,7 +45,18 @@ export function Composer({ campaign, onSaved, onCancel }: Props) {
   const counts = useAudience(purpose, audience);
 
   const hasOptOut = /\bstop\b/i.test(bodySms);
-  const ready = name.trim().length > 0 && (bodySms.trim().length > 0 || bodyEmail.trim().length > 0);
+  const needsName = name.trim().length === 0;
+  const needsBody = bodySms.trim().length === 0 && bodyEmail.trim().length === 0;
+  const ready = !needsName && !needsBody;
+  // A disabled button with no stated reason is just a dead control — say what is missing rather than
+  // leaving someone to guess which field is the blocker.
+  const blockedBecause = needsName && needsBody
+    ? 'Add a name and a message to save this draft.'
+    : needsName
+      ? 'Give this campaign a name to save it.'
+      : needsBody
+        ? 'Write the message — an SMS body, or an email body — to save it.'
+        : null;
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -171,9 +182,13 @@ export function Composer({ campaign, onSaved, onCancel }: Props) {
       </p>
 
       <div className="msg-actions">
-        <p className="muted small msg-actions__note" id="msg-save-note">
-          Saving only stores the draft. Nothing is sent until you test it, approve it, and start it — three separate
-          steps.
+        <p
+          className={`small msg-actions__note${blockedBecause ? ' msg-actions__note--blocked' : ' muted'}`}
+          id="msg-save-note"
+          aria-live="polite"
+        >
+          {blockedBecause ??
+            'Saving only stores the draft. Nothing is sent until you test it, approve it, and start it — three separate steps.'}
         </p>
         <button type="button" className="btn" onClick={onCancel} disabled={saving}>
           Cancel
