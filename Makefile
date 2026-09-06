@@ -18,7 +18,7 @@ STAMP := $(shell date +%Y%m%d-%H%M%S)
 # read one value out of .env without `include` (passwords may contain $ or # which make would mangle)
 envval = $$(sed -n 's/^$(1)=//p' $(ENV_FILE) 2>/dev/null | tail -1)
 
-.PHONY: help up up-tunnel devdb down restart restart-tunnel build logs ps import import-force backup restore purge psql test tunnel-status
+.PHONY: help up up-tunnel devdb migrate migrate-status down restart restart-tunnel build logs ps import import-force backup restore purge psql test tunnel-status
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -92,12 +92,23 @@ restore: ## restore FILE=backups/canvass-....sql.gz.gpg into an EMPTY database (
 	  | $(COMPOSE) exec -T db psql -U canvass -v ON_ERROR_STOP=1 canvass
 
 purge: ## AFTER THE ELECTION: stop the stack, delete ALL volumes (database, web, certs) and shred data/*.csv
-	@echo "This permanently destroys the database volume, the web volume, Caddy state and shreds data/*.csv."
+	@echo "This permanently destroys the database volume, the web volume, sign photos, Caddy state and shreds data/*.csv."
 	@echo "Encrypted backups in $(BACKUP_DIR)/ are NOT touched — delete them yourself once they are no longer needed."
 	@read -r -p "Type PURGE to continue: " ans; [ "$$ans" = "PURGE" ] || { echo "aborted"; exit 1; }
 	$(COMPOSE) --profile import down --volumes --remove-orphans
 	find data -maxdepth 1 -type f \( -name '*.csv' -o -name '*.xlsx' \) -print -exec shred -u -z -n 3 {} +
+	# Sign photos show people's houses, so they are destroyed with everything else. The signphotos
+	# volume goes with `down --volumes` above; this catches a local run that wrote to ./data.
+	@if [ -d data/sign-photos ]; then \
+	  find data/sign-photos -type f -print -exec shred -u -z -n 3 {} + ; rmdir data/sign-photos 2>/dev/null || true; \
+	fi
 	@echo "purged. Also remove: $(BACKUP_DIR)/*.gpg, any copies of the list on laptops/phones, and the pipeline outputs."
+
+migrate: ## apply pending db/migrations/*.sql to the running database
+	./db/migrate.sh
+
+migrate-status: ## list applied and pending migrations
+	./db/migrate.sh status
 
 psql: ## psql shell inside the db container
 	$(COMPOSE) exec db psql -U canvass canvass

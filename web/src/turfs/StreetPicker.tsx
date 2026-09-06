@@ -17,6 +17,8 @@ interface Totals {
   streets: number;
   households: number;
   voters: number;
+  /** Picked streets that already belong to a live turf. The door and voter totals include them. */
+  claimed: number;
 }
 
 interface Props {
@@ -24,6 +26,11 @@ interface Props {
   ward: string;
   communities: string[];
   selected: string[];
+  /**
+   * `street_sort` → names of the live turfs already covering it. Empty while the turf list loads or
+   * if it fails, so the picker degrades to its old unflagged behaviour rather than blocking.
+   */
+  claimedBy: Map<string, string[]>;
   onChange: (next: string[]) => void;
 }
 
@@ -49,7 +56,7 @@ function group(rows: Street[]): StreetGroup[] {
   return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function totalsFor(groups: StreetGroup[], selected: string[]): Totals {
+function totalsFor(groups: StreetGroup[], selected: string[], claimedBy: Map<string, string[]>): Totals {
   const picked = new Set(selected);
   let households = 0;
   let voters = 0;
@@ -58,7 +65,12 @@ function totalsFor(groups: StreetGroup[], selected: string[]): Totals {
     households += g.n_households;
     voters += g.n_voters;
   }
-  return { streets: selected.length, households, voters };
+  return {
+    streets: selected.length,
+    households,
+    voters,
+    claimed: selected.filter((k) => claimedBy.has(k)).length,
+  };
 }
 
 /** Rough door counts a canvasser can finish in an evening or two. Advisory only — nothing blocks. */
@@ -69,26 +81,30 @@ function sizeHint(doors: number): { tone: 'ok' | 'warn' | 'over'; text: string }
   return { tone: 'over', text: 'very large — consider splitting' };
 }
 
-export function StreetPicker({ ward, communities, selected, onChange }: Props) {
+export function StreetPicker({ ward, communities, selected, claimedBy, onChange }: Props) {
   const [community, setCommunity] = useState('');
   const [term, setTerm] = useState('');
+  const [hideClaimed, setHideClaimed] = useState(false);
   // Fetched unfiltered so the running total counts every stretch of a picked street; ward and
   // community narrow the view only.
   const streets = useStreets();
 
   const groups = useMemo(() => group(streets.data ?? []), [streets.data]);
+  const picked = useMemo(() => new Set(selected), [selected]);
   const shown = useMemo(() => {
     const q = term.trim().toLowerCase();
     return groups.filter(
       (g) =>
         (!ward || g.wards.includes(ward)) &&
         (!community || g.communities.includes(community)) &&
-        (!q || g.label.toLowerCase().includes(q)),
+        (!q || g.label.toLowerCase().includes(q)) &&
+        // A picked street stays listed even while claimed ones are hidden, or it could not be unpicked.
+        (!hideClaimed || !claimedBy.has(g.key) || picked.has(g.key)),
     );
-  }, [groups, ward, community, term]);
+  }, [groups, ward, community, term, hideClaimed, claimedBy, picked]);
 
-  const picked = new Set(selected);
-  const totals = totalsFor(groups, selected);
+  const claimedTotal = useMemo(() => groups.filter((g) => claimedBy.has(g.key)).length, [groups, claimedBy]);
+  const totals = totalsFor(groups, selected, claimedBy);
   const hint = sizeHint(totals.households);
   const chips = groups.filter((g) => picked.has(g.key));
 
@@ -119,6 +135,13 @@ export function StreetPicker({ ward, communities, selected, onChange }: Props) {
             ))}
           </select>
         </label>
+        <label className="check picker__toggle">
+          <input type="checkbox" checked={hideClaimed} onChange={(e) => setHideClaimed(e.target.checked)} />
+          <span className="check__label">
+            Hide streets already in a turf
+            {claimedTotal > 0 && <span className="muted"> ({n(claimedTotal)})</span>}
+          </span>
+        </label>
       </div>
 
       {selected.length > 0 && (
@@ -127,15 +150,28 @@ export function StreetPicker({ ward, communities, selected, onChange }: Props) {
             Selected
           </span>
           <ul className="chips" aria-labelledby="picked-h">
-            {chips.map((g) => (
-              <li key={g.key}>
-                <button type="button" className="chipbtn" onClick={() => toggle(g.key)}>
-                  {g.label}
-                  <span aria-hidden="true">×</span>
-                  <span className="visually-hidden">— remove from this turf</span>
-                </button>
-              </li>
-            ))}
+            {chips.map((g) => {
+              const claims = claimedBy.get(g.key);
+              return (
+                <li key={g.key}>
+                  <button
+                    type="button"
+                    className={`chipbtn${claims ? ' chipbtn--claimed' : ''}`}
+                    onClick={() => toggle(g.key)}
+                  >
+                    {claims && (
+                      <>
+                        <span aria-hidden="true">⚑</span>
+                        <span className="visually-hidden">already in {claims.join(', ')} —</span>
+                      </>
+                    )}
+                    {g.label}
+                    <span aria-hidden="true">×</span>
+                    <span className="visually-hidden">— remove from this turf</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -156,31 +192,54 @@ export function StreetPicker({ ward, communities, selected, onChange }: Props) {
 
       {streets.isPending && <LoadingRows rows={6} />}
       {streets.isError && <ErrorBox error={streets.error} onRetry={() => void streets.refetch()} compact />}
-      {streets.data && shown.length === 0 && <p className="muted small">No streets match those filters.</p>}
+      {streets.data && shown.length === 0 && (
+        <p className="muted small">
+          No streets match those filters.
+          {hideClaimed && claimedTotal > 0 && ' Untick “Hide streets already in a turf” to see the rest.'}
+        </p>
+      )}
 
       {shown.length > 0 && (
         <fieldset className="fs picker__list">
           <legend className="visually-hidden">Streets in this turf</legend>
-          {shown.map((g) => (
-            <label key={g.key} className="check street">
-              <input type="checkbox" checked={picked.has(g.key)} onChange={() => toggle(g.key)} />
-              <span className="check__label">
-                <span className="street__name">{g.label}</span>
-                <span className="muted small street__where">
-                  {g.wards.map(wardLabel).join(', ')}
-                  {g.communities.length > 0 && ` · ${g.communities.map(titleCase).join(', ')}`}
+          {shown.map((g) => {
+            const claims = claimedBy.get(g.key);
+            // Picking a claimed street is allowed — a long road is sometimes split between two
+            // walkers — so the overlap state only has to be loud, not blocking.
+            const overlap = claims !== undefined && picked.has(g.key);
+            return (
+              <label
+                key={g.key}
+                className={`check street${claims ? ' street--claimed' : ''}${overlap ? ' street--overlap' : ''}`}
+              >
+                <input type="checkbox" checked={picked.has(g.key)} onChange={() => toggle(g.key)} />
+                <span className="check__label">
+                  <span className="street__name">{g.label}</span>
+                  <span className="muted small street__where">
+                    {g.wards.map(wardLabel).join(', ')}
+                    {g.communities.length > 0 && ` · ${g.communities.map(titleCase).join(', ')}`}
+                  </span>
                 </span>
-              </span>
-              {g.wards.length > 1 && (
-                <span className="tag tag--mini tag--warn" title="Picking this street takes in every ward it runs through.">
-                  crosses wards
+                {claims && (
+                  <span
+                    className="tag tag--mini tag--warn street__claim"
+                    title={`Already in ${claims.join(', ')}. A turf drawn as a polygon may cover only part of this street.`}
+                  >
+                    <span aria-hidden="true">⚑ in {claims.join(', ')}</span>
+                    <span className="visually-hidden">already in {claims.join(', ')}</span>
+                  </span>
+                )}
+                {g.wards.length > 1 && (
+                  <span className="tag tag--mini tag--warn" title="Picking this street takes in every ward it runs through.">
+                    crosses wards
+                  </span>
+                )}
+                <span className="check__count muted nowrap">
+                  {n(g.n_households)} doors · {n(g.n_voters)} voters
                 </span>
-              )}
-              <span className="check__count muted nowrap">
-                {n(g.n_households)} doors · {n(g.n_voters)} voters
-              </span>
-            </label>
-          ))}
+              </label>
+            );
+          })}
         </fieldset>
       )}
 
@@ -193,6 +252,11 @@ export function StreetPicker({ ward, communities, selected, onChange }: Props) {
               {n(totals.streets)} street{totals.streets === 1 ? '' : 's'} · {n(totals.households)} doors · {n(totals.voters)} voters
             </strong>
             {hint && <span className={`tag tag--mini picker__hint picker__hint--${hint.tone}`}>{hint.text}</span>}
+            {totals.claimed > 0 && (
+              <span className="muted small picker__total-note">
+                Totals include {n(totals.claimed)} street{totals.claimed === 1 ? '' : 's'} already in another turf.
+              </span>
+            )}
           </>
         )}
       </div>

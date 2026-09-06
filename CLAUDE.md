@@ -97,10 +97,14 @@ the tunnel's own address. See README "Deploying behind a Cloudflare Tunnel".
 anywhere: Caddy serves the files with `try_files {path} /index.html`.
 
 **Schema is applied once, on first boot**, via `db/schema.sql` mounted into
-`/docker-entrypoint-initdb.d/`. There is no migration runner yet — changing the schema on a live stack
-means writing the migration by hand (`prompt_plan.md`/schema comments anticipate `migrations/002` for
-PostGIS in Phase 2). Phase 1 deliberately stores `lat`/`lon` columns rather than PostGIS geometry so the
-schema also runs on bare Postgres in dev.
+`/docker-entrypoint-initdb.d/` — it only ever runs against an empty database. Every change after that
+is a file in `db/migrations/`, applied with `make migrate` (`make migrate-status` to see what is
+pending) and recorded in `schema_migration`. **Never edit `db/schema.sql` to change a live stack**;
+it will not re-run, and the two will silently diverge. Run migrations against `canvass_test` as well.
+
+Phase 1 deliberately stores `lat`/`lon` columns rather than PostGIS geometry so the schema also runs
+on bare Postgres in dev; turf polygons are point-in-polygon'd in `api/src/lib/geo.ts` for the same
+reason. PostGIS is available in the image if a genuinely spatial query ever needs it.
 
 ### API (`api/`, Fastify 4 + TypeScript, ESM, `pg` pool, zod, no ORM)
 

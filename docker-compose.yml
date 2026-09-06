@@ -50,8 +50,12 @@ services:
       TRUST_PROXY: "1"
       COOKIE_SECURE: "true"
       BOUNDARY_PATH: /data/mc_boundary.json
+      # Sign photos are files, not database rows: large, never queried, and keeping them on a
+      # volume means `make purge` can destroy them with everything else after the election.
+      SIGN_PHOTO_DIR: /photos
     volumes:
       - ./data/mc_boundary.json:/data/mc_boundary.json:ro
+      - signphotos:/photos
     expose:
       - "3000"
     healthcheck:
@@ -104,6 +108,7 @@ services:
 
 volumes:
   pgdata:
+  signphotos:
   webroot:
   caddy_data:
   caddy_config:

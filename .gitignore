@@ -4,6 +4,8 @@ data/*.xlsx
 backups/
 # Playwright captures show real voter names/addresses
 web/screenshots/
+# sign photos show people's houses
+data/sign-photos/
 
 # secrets
 .env

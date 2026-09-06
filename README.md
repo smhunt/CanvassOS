@@ -139,6 +139,24 @@ make psql                           # psql inside the db container
 make down                           # stop; data stays in the pgdata volume
 ```
 
+### Database migrations
+
+`db/schema.sql` is applied **only to an empty database**, by the postgres image on first boot. Once a
+stack carries real data, every schema change arrives as a file in `db/migrations/` instead:
+
+```bash
+make migrate-status   # what is applied, what is pending
+make migrate          # apply pending migrations, each in its own transaction
+```
+
+Applied migrations are recorded in `schema_migration`; the migration and its bookkeeping row commit
+together, so a failure leaves nothing half-applied. Migrations run in filename order — prefix new
+ones with the next number. Remember to run them against `canvass_test` too:
+
+```bash
+PSQL="docker compose exec -T db psql -U canvass -d canvass_test" ./db/migrate.sh
+```
+
 ### Backups
 
 `make backup` runs `pg_dump | gzip | gpg --symmetric --cipher-algo AES256` with `BACKUP_PASSPHRASE` from

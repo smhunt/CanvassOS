@@ -165,7 +165,9 @@ export interface TurfSummary {
   n_households: number;
   n_voters: number;
   contacted: number;
-  assignees: { user_id: string; name: string; status: AssignmentStatus }[];
+  /** Distinct `street_sort` of the turf's households — lets the builder flag overlapping turfs. */
+  streets: string[];
+  assignees: { id?: string; user_id: string; name: string; status: AssignmentStatus; due_date?: string | null }[];
 }
 
 export interface Assignment {

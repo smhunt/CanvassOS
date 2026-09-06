@@ -1,0 +1,137 @@
+/* Organiser reports: the follow-up queue and per-canvasser activity.
+   Tokens, tones and primitives (.page, .card, .table, .tabs, .tag, .tile) all come from
+   src/styles.css — nothing is redefined here, only laid out. Laptop/tablet first; every row
+   collapses to one column on a phone. */
+
+.rep-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+}
+.rep-toolbar__count {
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------------------ follow-up queue */
+
+.rep-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* The ward colour is set inline from map/palette.ts so a door reads the same here as on the map. */
+.rep-fu {
+  border-left: 4px solid var(--ward, var(--border));
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.rep-fu__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+}
+.rep-fu__addr {
+  margin: 0;
+  font-size: 1rem;
+}
+.rep-fu__where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.rep-fu__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+}
+/* The note is the whole point of the queue, so it is never clamped — long notes wrap and the
+   canvasser's own line breaks are kept. */
+.rep-fu__note {
+  margin: 0.15rem 0 0;
+  padding: 0.5rem 0.7rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rep-fu__note--none {
+  background: none;
+  padding: 0;
+  color: var(--muted);
+  font-style: italic;
+}
+.rep-fu__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.rep-fu__actions .muted {
+  flex: 1 1 12rem;
+}
+
+/* ------------------------------------------------------------------ activity */
+
+/* Real buttons rather than a <select>: three options that an organiser flips between constantly. */
+.rep-days {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+.rep-days__btn {
+  min-height: var(--tap);
+  padding: 0.4rem 0.9rem;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+.rep-days__btn:first-child {
+  border-left: 0;
+}
+.rep-days__btn:hover {
+  color: var(--text);
+}
+.rep-days__btn--active {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+/* 30 bars do not fit a phone, so the chart scrolls sideways instead of collapsing to slivers. */
+.rep-chart {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.rep-chart .hist {
+  gap: 0.25rem;
+  min-width: calc(var(--rep-cols, 14) * 26px);
+}
+.rep-chart .hist__col {
+  min-width: 22px;
+}
+.rep-chart .hist__value,
+.rep-chart .hist__label {
+  font-size: 0.7rem;
+}
+
+/* A canvasser who has not knocked in a week is the thing this table exists to surface. */
+.rep-stale {
+  color: var(--warn);
+  font-weight: 600;
+}
+.rep-act__name {
+  font-weight: 600;
+}

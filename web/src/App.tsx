@@ -17,6 +17,7 @@ const MapPage = lazy(() => import('./pages/MapPage').then((m) => ({ default: m.M
 const CanvassPage = lazy(() => import('./pages/CanvassPage').then((m) => ({ default: m.CanvassPage })));
 const DoorScreen = lazy(() => import('./pages/DoorScreen').then((m) => ({ default: m.DoorScreen })));
 const TurfsPage = lazy(() => import('./pages/TurfsPage').then((m) => ({ default: m.TurfsPage })));
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 
 export default function App() {
   return (
@@ -63,6 +64,16 @@ export default function App() {
               <RequireRole min="organizer">
                 <Suspense fallback={<FullPageSpinner label="Loading turfs…" />}>
                   <TurfsPage />
+                </Suspense>
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <RequireRole min="organizer">
+                <Suspense fallback={<FullPageSpinner label="Loading reports…" />}>
+                  <ReportsPage />
                 </Suspense>
               </RequireRole>
             }
