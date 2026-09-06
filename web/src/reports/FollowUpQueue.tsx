@@ -103,10 +103,10 @@ function FollowUpRow({ f }: { f: FollowUp }) {
       )}
 
       <div className="rep-fu__actions">
-        <Link className="btn btn--small" to="/map">
-          Open the map
+        {/* /map consumes ?household= and opens straight onto the door card. */}
+        <Link className="btn btn--small" to={`/map?household=${encodeURIComponent(f.household_id)}`}>
+          Show this door on the map
         </Link>
-        <span className="muted small">Search this address on the map to open its door card.</span>
       </div>
     </li>
   );

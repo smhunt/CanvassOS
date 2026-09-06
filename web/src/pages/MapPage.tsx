@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { EMPTY_FILTERS, useMeta, usePoints, type PointFilters } from '../api/hooks';
 import type { PointProps } from '../api/types';
 import { isOrganizer } from '../auth';
@@ -63,6 +64,11 @@ export function MapPage() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 720px)').matches : true));
   const [selection, setSelection] = useState<Selection | null>(null);
+
+  // `/map?household=H-KOMOKA-00123` opens straight onto a door, so anything holding a household id
+  // — the follow-up queue, a turf door list, a link pasted into Signal — can point at it directly.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkId = searchParams.get('household');
   const [viewport, setViewport] = useState<ViewportStats>({ doors: 0, voters: 0, zoom: 10 });
   // The turf drawer needs the live map to add its own layers, so MapView hands it over once ready.
   const [map, setMap] = useState<MapLibreMap | null>(null);
@@ -127,6 +133,20 @@ export function MapPage() {
     },
     [coordIndex, flyTo],
   );
+
+  // Consume the parameter once the points are loaded (we need them to fly to the door), then strip
+  // it from the URL so a later manual selection does not get re-overridden on the next render.
+  const deepLinkDone = useRef<string | null>(null);
+  useEffect(() => {
+    if (!deepLinkId || deepLinkDone.current === deepLinkId || !points.data) return;
+    deepLinkDone.current = deepLinkId;
+    setSelection({ id: deepLinkId });
+    const c = coordIndex.get(deepLinkId);
+    if (c) flyTo(c[0], c[1]);
+    const next = new URLSearchParams(searchParams);
+    next.delete('household');
+    setSearchParams(next, { replace: true });
+  }, [deepLinkId, points.data, coordIndex, flyTo, searchParams, setSearchParams]);
 
   const onLegalPick = useCallback((id: string) => {
     setLegalOpen(false);
