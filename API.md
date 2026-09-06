@@ -65,14 +65,16 @@ map with household points but no names or addresses; the household card returns 
 - `GET /api/audit?limit=200&before=<id>` → `{ entries: [...] }`
 
 ## Health
-- `GET /api/health` → `{ ok: true, db: true, import_id }` (no auth; used by compose healthcheck)
+- `GET /api/health` → `{ ok: true, db: true, import_id }` (no auth; used by compose healthcheck).
+  Returns `503 { ok: false, db: false, import_id: null }` when the database is unreachable — note this is
+  the plain shape, not the `{ error: ... }` envelope, because the container healthcheck only reads the status code.
 
 ## Conventions
 - Fastify 4 + TypeScript, `zod` for input validation, `pg` (node-postgres) with a pool, no ORM.
 - Sessions in `session` table; cookie value is the session id; 30-day sliding expiry.
 - Passwords: `argon2id` via `argon2` package.
 - All `SELECT`s that return voter rows go through one `serializeVoter(row, role)` function that strips organizer-only fields for volunteers — this is the single enforcement point.
-- Env: `DATABASE_URL`, `SESSION_SECRET` (for cookie signing), `DOMAIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` (used ONLY on first boot to create the initial admin if no users exist), `PORT` (default 3000), `TRUST_PROXY=1`.
+- Env: `DATABASE_URL`, `SESSION_SECRET` (for cookie signing), `DOMAIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` (used ONLY on first boot to create the initial admin if no users exist), `PORT` (default 3000), `HOST` (default `0.0.0.0`), `TRUST_PROXY=1`.
 - Logging: pino, request ids; never log request bodies on auth routes.
 
 ## Implementation notes (Phase 1 backend — clarifications, no shape changes)

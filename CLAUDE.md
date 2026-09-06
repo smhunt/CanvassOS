@@ -6,9 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Self-hosted voter map + canvassing tool for the Sean Hunt mayoral campaign (Middlesex Centre, Ontario;
 election day 2026-10-26). `prompt_plan.md` holds the 4-phase build plan; **Phase 1 (import, auth/roles,
-read-only map/search/stats) is what exists today**. Phase 2+ tables (`turf`, `assignment`, `contact`) and
-the `household_status` / `voter_status` views are already in the schema so Phase 1 endpoints can return
-zeroed/null canvass fields without a migration.
+read-only map/search/stats) is what exists today**. Phase 2+ tables (`turf`, `assignment`, `contact`) are already in the
+schema, so Phase 1 endpoints return zeroed/null canvass fields without needing a migration. The
+`household_status` / `voter_status` views exist too but are currently **unused** — routes inline the
+equivalent `LEFT JOIN LATERAL` instead, so if you change one, change the other or drop the views.
 
 Three docs are the contract; keep them in sync when you change behaviour:
 - `API.md` — the full endpoint/role contract (request shapes, response shapes, audit actions, env vars).

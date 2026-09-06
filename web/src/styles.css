@@ -393,6 +393,15 @@ select {
 .tag--q-legal {
   background: #6b7280;
 }
+.tag--prio-high {
+  background: var(--brand-soft);
+  color: var(--text);
+}
+.tag--prio-medium,
+.tag--prio-low {
+  background: var(--surface-3);
+  color: var(--muted);
+}
 .tag--rc-resident {
   background: var(--ok-bg);
   color: var(--ok);
@@ -1488,6 +1497,92 @@ select {
 .modal__body {
   overflow-y: auto;
   padding: 0 1rem 1rem;
+}
+/* Outside the map page nothing positions the wrap, so pin it to the viewport instead. */
+.modal-wrap--fixed {
+  position: fixed;
+}
+
+/* ------------------------------------------------------------------ tabs */
+.tabs {
+  display: flex;
+  gap: 0.15rem;
+  padding: 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+.tab {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  padding: 0.5rem 0.85rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab:hover {
+  color: var(--text);
+}
+.tab--active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+}
+
+/* ------------------------------------------------------------------ about this app */
+.about {
+  padding-top: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+.about__block,
+.about__step {
+  min-width: 0;
+}
+.about__step {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+}
+.about__step p {
+  margin: 0;
+}
+.about__icon {
+  font-size: 1.15rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.about__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+.about__list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.about__list--plain {
+  list-style: none;
+  padding-left: 0;
+}
+.about__item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.about__item > span:first-child {
+  min-width: 0;
 }
 
 @keyframes slide-in-left {

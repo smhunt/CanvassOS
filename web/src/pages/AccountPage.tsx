@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { errorMessage, isApiError } from '../api/client';
 import { useChangePassword, useLogout, useMeta } from '../api/hooks';
+import { APP_VERSION, ChangelogModal, REPO_URL, type AboutTab } from '../components/changelog-modal';
 import { useUser } from '../components/Shell';
 import { RoleChip, fmtDate, n } from '../components/ui';
 
@@ -17,6 +18,7 @@ export function AccountPage() {
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [done, setDone] = useState(false);
+  const [about, setAbout] = useState<AboutTab | null>(null);
 
   const tooShort = next.length > 0 && next.length < MIN_PASSWORD;
   const mismatch = confirm.length > 0 && confirm !== next;
@@ -147,6 +149,30 @@ export function AccountPage() {
           only, keep it confidential, and expect every lookup to be logged. It is destroyed after the election.
         </p>
       </section>
+
+      <section className="card" aria-labelledby="about-app-h">
+        <div className="row row--between">
+          <h2 id="about-app-h">About this app</h2>
+          <span className="tag tag--neutral mono">v{APP_VERSION}</span>
+        </div>
+        <p className="muted small">MC Canvass — Phase 1: the voters list, the map and the numbers. Canvassing itself lands in Phase 2.</p>
+        <div className="row">
+          <button type="button" className="btn btn--small" onClick={() => setAbout('changelog')}>
+            Changelog
+          </button>
+          <button type="button" className="btn btn--small" onClick={() => setAbout('how')}>
+            How it works
+          </button>
+          <button type="button" className="btn btn--small" onClick={() => setAbout('roadmap')}>
+            Roadmap
+          </button>
+          <a className="btn btn--small" href={REPO_URL} target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+        </div>
+      </section>
+
+      <ChangelogModal open={about !== null} tab={about ?? 'changelog'} onTab={setAbout} onClose={() => setAbout(null)} />
     </div>
   );
 }
