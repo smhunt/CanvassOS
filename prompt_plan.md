@@ -18,6 +18,26 @@ detail; `docs/README.md` describes what the code actually does now.
 | 3. Field hardening | **shipped** (landing at the time of writing — in the working tree, not yet committed) | PWA install and the app-shell service worker shipped back in Phase 1; walking order along the street shipped with turfs. Now added: the offline turf cache and write queue (`web/src/offline/` — IndexedDB, backoff, parked entries surfaced to the volunteer), nearest-first ordering from device GPS (`web/src/canvass/nearMe.ts`, with walk order still the default), and the printable turf sheet at `/turfs/:turfId/sheet`. |
 | 4. Reporting + admin | **partly** | Encrypted backup/restore and `make purge` shipped in Phase 1; the audit log and admin user management with it. **Not landed:** coverage/support reports beyond `/api/stats/overview` and `/reports`, CSV export with audit entries, and the diff-based list re-import (today `make import-force` deletes canvass data instead — see CLAUDE.md). |
 
+### Phase 5 planned — 2026-09-06
+
+**SMS and email to electors who opted in.** SMS is the priority channel; email is the fallback; a
+person who gives only one gets that one. Nobody is messaged without an explicit yes, and STOP is
+honoured before the next queued message goes out. Full plan: `docs/phase-5-messaging-plan.md`.
+
+The two facts that shape it, both from `docs/data-sources-research.md` §2.2:
+
+- **Canadian long codes are throttled to ~100-250 messages per day per number and the excess fails
+  silently.** So there is no "text everyone" button — the sender is a drip across a pool of numbers,
+  scheduled days ahead. 17,000 electors is not a deliverable audience at any price; 2,000 subscribers
+  over a weekend is.
+- **Campaign Verify is US-only** and from 17 Feb 2026 gates political traffic to Canada on 10DLC,
+  toll-free and short codes. A Canadian municipal candidate cannot register. A local long code is the
+  route, and confirming that with a provider **in writing** is step zero.
+
+Half of it already exists: `voter_contact` carries per-purpose consent (`consent_gotv` separate from
+`consent_updates`), a withdrawal that is stamped rather than deleted, and `GET /api/voter-contacts/gotv`
+already returns the send list.
+
 ### Requested, not yet built — 2026-09-06
 
 - **Notifications of events**, starting with "a turf was assigned to you" / "taken off you", and
