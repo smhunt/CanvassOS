@@ -4,6 +4,12 @@
  * hundred times a shift sit at the bottom of the screen inside thumb reach, and nothing depends on
  * hover. Colours come from the shared custom properties so the screen stays readable in sunlight and
  * in dark mode; status colours are passed in from map/palette.ts as --dot.
+ *
+ * From the TABLET stop up (see the breakpoint scale at the top of styles.css) the door screen
+ * becomes master-detail — the list on one side, the open door on the other — because an iPad has
+ * the room and covering the list with a sheet on a 744px screen throws it away. That is a layout
+ * change, not a density change: a tablet is still a touch device, so every target below stays at
+ * var(--tap) and nothing becomes hover-only.
  */
 
 /* ------------------------------------------------------------------ progress + status */
@@ -76,8 +82,11 @@
   color: var(--text);
   text-decoration: none;
 }
-.cv-turf:hover {
-  background: var(--surface-2);
+/* See styles.css: a tap would otherwise leave this tint stuck on the last card touched. */
+@media (hover: hover) {
+  .cv-turf:hover {
+    background: var(--surface-2);
+  }
 }
 .cv-turf__top {
   display: flex;
@@ -194,6 +203,18 @@
 }
 
 /* ------------------------------------------------------------------ door list */
+/*
+ * Everything that is "where am I in the turf" — the offline notes, the map, the door list — lives
+ * in one element so that at TABLET it can become a column of its own. On a phone it is transparent
+ * scaffolding: this flex column restates exactly the 1rem gap `.page` was giving these children
+ * when they were its direct descendants, so the phone renders byte for byte as it did.
+ */
+.cv-master {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
 .cv-doors {
   list-style: none;
   margin: 0;
@@ -453,7 +474,11 @@
 }
 .cv-results {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …) and not a bare `1fr`: `1fr` is minmax(AUTO, 1fr), which floors each column at
+     "Left literature" on one line. At 320px — an iPhone SE, or any phone with the system text size
+     turned up — that floor is wider than half the card and the buttons ran off the right edge with
+     nowhere to scroll to. With a zero minimum the label wraps instead, which is what it is for. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
 }
 .cv-result {
@@ -853,7 +878,12 @@
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22);
 }
 
-@media (min-width: 640px) {
+/*
+ * Was `min-width: 640px`, which is why an iPad used to get the desktop treatment. On the scale now,
+ * and mostly a safety net: at TABLET the open door is a pane, not a sheet. It still earns its keep
+ * for a window that is wide but short, and for the moment between a resize and React re-rendering.
+ */
+@media (min-width: 720px) {
   .cv-sheet-wrap {
     align-items: center;
     padding: 1rem;
@@ -1087,12 +1117,311 @@
   gap: 0.5rem;
 }
 
-@media (min-width: 640px) {
+/* The sync panel is a real overlay at every width — it is opened from inside the door card and has
+   to sit above it. Only where it sits changes: bottom sheet on a phone, centred from TABLET up. */
+@media (min-width: 720px) {
   .cv-sync__overlay {
     align-items: center;
     padding: 1rem;
   }
   .cv-sync__panel {
     border-radius: var(--radius);
+  }
+}
+
+/* ==================================================================== TABLET: master–detail ====
+ *
+ * The payoff. On a phone the open door is a bottom sheet over the list, which is right at 390px:
+ * there is no room for both and the door is what matters. From the TABLET stop (720px — see the
+ * scale at the top of styles.css) there IS room for both, and showing both is strictly better:
+ *
+ *   - the volunteer keeps their place in the turf while they record a result, and
+ *   - the auto-advance to the next unknocked door becomes a visible move down a list they can see,
+ *     instead of the address in the sheet header silently changing to somewhere else.
+ *
+ * Because the list is no longer covered, the sticky turf header stays put — the `cv-page--sheet`
+ * modifier that hides it is only applied below this stop. And because a pane beside a list is not
+ * a dialog, DoorScreen also stops rendering the scrim, `aria-modal` and Escape-to-close here; the
+ * flip happens in useBreakpoint.ts on this exact query, and the two must stay in step.
+ *
+ * The `min-height` is the other half of "is this a tablet". A phone on its side is 844x390: wide
+ * enough for two panes and far too short to put anything in them. Every tablet is at least 744px
+ * in its short dimension and no phone in landscape is near 600, so 600 separates them cleanly.
+ */
+@media (min-width: 720px) and (min-height: 600px) {
+  /*
+   * Two panes that scroll themselves need a parent that has stopped growing, otherwise the page
+   * grows instead and both panes scroll as one. `:has()` keeps that in CSS: no page has to reach
+   * up and tell the shell what kind of page it is.
+   */
+  .shell:has(.cv-page--split) {
+    height: 100%;
+    overflow: hidden;
+  }
+  .shell:has(.cv-page--split) .shell__main {
+    min-height: 0;
+    display: flex;
+  }
+  /* The legal notice is not optional furniture; it must not be the thing that gets squeezed. */
+  .shell:has(.cv-page--split) .footer {
+    flex-shrink: 0;
+  }
+
+  /*
+   * Column widths, not fractions. The list column stops at 24rem because a door row is an address
+   * and a voter count and gains nothing from being wider; the door column stops at 34rem for the
+   * same reason a paragraph does. Past ~1000px of content the grid stops stretching and centres,
+   * so a 1366px iPad in landscape reads like a 900px one rather than a spreadsheet.
+   */
+  .page.cv-page--split {
+    max-width: 1100px;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(16rem, 24rem) minmax(19rem, 34rem);
+    grid-template-rows: auto minmax(0, 1fr);
+    justify-content: center;
+    gap: 0.75rem 1.1rem;
+    padding: 0.9rem 1rem 1rem;
+  }
+  /*
+   * The header sits over the LIST, not across both columns, and the door pane runs the full height
+   * beside it. That is not only tidier — it is what makes the pane usable in landscape. An iPad Pro
+   * at 1194x834 has 834px of height, and the top bar, this header and the footer take ~200 of it
+   * between them; spanning the header across the top charged that to the door card as well, and a
+   * card with eight result buttons in it does not have 200px to give. Everything in the header is
+   * a list control anyway — the progress through the turf, the filter, near-me, the map toggle.
+   */
+  .cv-page--split > .cv-head {
+    grid-column: 1;
+    grid-row: 1;
+    /* Nothing scrolls underneath it any more — it is a grid cell of its own. */
+    position: static;
+  }
+  /*
+   * The filter pair still fills the row — the header is a column now, so filling it is no wider
+   * than it is on a phone. The lone map toggle does not: when the filter is gone there is nothing
+   * left to balance it, and a single button stretched across the column is a slab with its label
+   * marooned in the middle.
+   */
+  .cv-page--split .cv-head__controls > :only-child {
+    flex: 0 1 auto;
+  }
+  .cv-page--split .cv-master {
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    gap: 0.7rem;
+    /* Keeps a row's focus ring off the scrollbar gutter. */
+    padding-right: 0.2rem;
+  }
+  .cv-detail {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* The open door as a pane: same card, same order of controls, no scrim and no animation — it is
+     not arriving from anywhere, it is simply the other half of the screen. */
+  .cv-sheet--pane {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    animation: none;
+  }
+  /*
+   * ONE scroll region, with the two things that must never leave the screen stuck to its edges.
+   *
+   * The phone splits the card into a scrolling middle and a fixed foot, which works because the
+   * sheet is as tall as the phone. A pane is only as tall as its grid row, and an iPad in landscape
+   * (1194x834) leaves roughly 350px for a foot whose eight results need 420 — with two fixed
+   * regions the foot cannot shrink below its content, so it was being clipped and the last result
+   * buttons could not be reached at all. Letting the pane scroll and pinning the head and the foot
+   * to its edges keeps the address and the results permanently in view at any height, and puts the
+   * overflow where it belongs: on the reference half, which is the part you read, not the part you
+   * tap. Nothing here can be cut off, at any viewport this layout ever sees.
+   */
+  .cv-sheet--pane {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .cv-sheet--pane .cv-sheet__head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+  }
+  .cv-sheet--pane .cv-sheet__body {
+    flex: 0 0 auto;
+    overflow: visible;
+    min-height: 0;
+  }
+  .cv-sheet--pane .cv-sheet__foot {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    /* Already var(--surface-2); restated because the reference half now scrolls underneath it. */
+    background: var(--surface-2);
+  }
+  .cv-sheet--pane .cv-spoke {
+    max-height: min(56dvh, 520px);
+  }
+  /* A door card 34rem wide would otherwise give each result button ~16rem of empty middle. */
+  .cv-sheet--pane .cv-results,
+  .cv-sheet--pane .cv-walk,
+  .cv-sheet--pane .cv-details__add {
+    max-width: 30rem;
+  }
+  /* Nothing open yet. A named, permanent half of the screen beats a half that appears and
+     disappears — the list does not jump sideways the first time a door is tapped. */
+  .cv-detail__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    border-style: dashed;
+    background: transparent;
+  }
+
+  /*
+   * The map answers "where am I", which is the list column's job, so on a tablet it takes that
+   * column and the door stays open beside it: tap a dot, record it, tap the next dot. It fills the
+   * column rather than keeping the phone's dvh-based height, which was sized for a page that
+   * scrolls.
+   */
+  .cv-page--split .cv-map {
+    flex: 1;
+    min-height: 18rem;
+  }
+  .cv-page--split .cv-map__canvas {
+    flex: 1;
+    height: auto;
+    min-height: 14rem;
+  }
+}
+
+/*
+ * DESKTOP, which on this screen mostly means an iPad in landscape. The door column has reached its
+ * full 34rem by now, so the seven secondary results fit three-up: two rows shorter, and the two
+ * rows go back to the half of the card that says who lives here and what happened last time.
+ * Wider, never shorter — every button is still well over var(--tap).
+ */
+@media (min-width: 1100px) {
+  .cv-sheet--pane .cv-results {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ==================================================================== phone, on its side ====
+ *
+ * 844×390 with the keyboard up is the tightest the app ever gets. The door card is the whole
+ * screen there, and the part that must not scroll away is the results — that is the one tap the
+ * volunteer came to make. So the card takes the full height, the reference half (voters, previous
+ * visits) gives up its space first, and the seven non-"spoke" results go three-up to save a row.
+ * Every target below is still at or above the 44px minimum; this buys height by removing padding
+ * and columns, never by shrinking a thumb target.
+ */
+@media (orientation: landscape) and (max-height: 500px) {
+  /* No width bound: a phone on its side is 844px WIDE, past the tablet stop, and this is exactly
+     the case the tablet layout's own min-height sends back here. Height is what is scarce. */
+  .cv-sheet-wrap {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .cv-sheet {
+    max-height: 100dvh;
+  }
+  .cv-sheet__handle {
+    display: none;
+  }
+  .cv-sheet__head {
+    padding-top: 0.4rem;
+    padding-bottom: 0.2rem;
+  }
+  .cv-sheet__title h2 {
+    font-size: 1rem;
+  }
+  .cv-sheet__nav {
+    padding-bottom: 0.45rem;
+  }
+  .cv-sheet__body {
+    gap: 0.6rem;
+    padding-block: 0.6rem;
+    /* The reference half gives up its space first — it is the half you read, not the half you tap.
+       Capped rather than hidden: the section heading and the first name stay, the rest scrolls. */
+    min-height: 0;
+    max-height: 3.5rem;
+  }
+  /*
+   * "What happened at this door?" costs a line and a half of the little height there is, and the
+   * eight labelled buttons under it say the same thing. Taken out of the layout, kept in the
+   * accessibility tree — it is the only text naming that group of buttons.
+   */
+  .cv-results__hint {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .cv-sheet__foot {
+    padding-top: 0.5rem;
+    gap: 0.45rem;
+    /*
+     * A flex item will not shrink below its own content, so without these two the foot kept its
+     * full height, pushed the sheet past 390px and put the last result buttons off the bottom of
+     * the screen entirely. Now it takes whatever height is left and scrolls inside it: "Walk here"
+     * and "Spoke" are always the first thing in view and nothing is ever unreachable, whatever the
+     * height turns out to be — the phone's text-size setting moves all of these numbers.
+     */
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Four-up rather than the phone's two: 844px of width is the one thing landscape has to spare,
+     and it turns three rows of buttons into two. Still 46px tall, still well past a thumb. */
+  .cv-results {
+    /* minmax(0, …), not 1fr: a bare `1fr` floors each column at "Inaccessible" laid out on one
+       line, which overflows the sheet sideways instead of wrapping the label. */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .cv-result {
+    min-height: 46px;
+    font-size: 0.85rem;
+    padding-inline: 0.35rem;
+  }
+  .cv-result--spoke {
+    min-height: 50px;
+    font-size: 1rem;
+  }
+  /* The form scrolls inside itself with Save pinned; it just gets a smaller box to do it in. */
+  .cv-spoke {
+    max-height: 46dvh;
+  }
+}
+
+/* The turf list has the same problem in miniature: one 640px column of cards down the middle of an
+   iPad wastes the width, and widening the column instead would just make each card's line longer.
+   Two columns of the same-sized card is the answer — more turfs on screen, same measure. */
+@media (min-width: 720px) {
+  .page.cv-turfs-page {
+    max-width: 940px;
+  }
+  .cv-turfs {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  }
+  .cv-turfs > li {
+    display: flex;
+  }
+  .cv-turfs > li > .cv-turf {
+    flex: 1;
   }
 }

@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { useOutbox } from '../offline/useOutbox';
+import { useOutbox, usePhotoQueue } from '../offline/useOutbox';
 import { clearTurfCache, cachedTurfSummaries } from '../offline/turfCache';
 import { discardEntry, retryEntry, syncNow, type OutboxEntry, type OutboxSnapshot } from '../offline/outbox';
 import { n } from '../components/ui';
@@ -75,6 +75,11 @@ export function SyncStatus({ compact = false }: Props) {
 
 function SyncPanel({ snapshot, onClose }: { snapshot: OutboxSnapshot; onClose: () => void }) {
   const headRef = useRef<HTMLHeadingElement>(null);
+  // Read only, and only to tell the truth about what "Clear saved turf data" destroys: clearing the
+  // turf cache also clears held sign photos. Deliberately NOT folded into the pill or the "waiting
+  // to sync" count — those are the door count a volunteer reads a hundred times a shift, and sign
+  // photos are a separate queue precisely so they cannot move that number.
+  const photos = usePhotoQueue();
   const [cached, setCached] = useState<{ turf_id: string; name: string; n_doors: number; cached_at: number }[]>([]);
   const [confirmClear, setConfirmClear] = useState(false);
 
@@ -216,7 +221,12 @@ function SyncPanel({ snapshot, onClose }: { snapshot: OutboxSnapshot; onClose: (
           {confirmClear ? (
             <div className="cv-sync__confirm">
               <p className="small">
-                Clear the saved doors and names? Anything still waiting to sync stays queued.
+                {/* This used to say everything queued survives. It does not: clearing the turf
+                    cache deletes held sign photos with it, and a photo is the only thing that
+                    finds a sign again in November. Say what is actually about to be lost. */}
+                Clear the saved doors and names? Queued door results stay in the queue.
+                {photos.photos.length > 0 &&
+                  ` The ${photos.photos.length === 1 ? 'sign photo' : `${n(photos.photos.length)} sign photos`} still waiting on this phone ${photos.photos.length === 1 ? 'is' : 'are'} deleted with them — send ${photos.photos.length === 1 ? 'it' : 'them'} up first if you can.`}
                 {!snapshot.online && ' You are offline, so the turf will not come back until you have signal.'}
               </p>
               <div className="cv-sync__actions">

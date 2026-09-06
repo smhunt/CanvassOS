@@ -11,6 +11,7 @@ import { formatDistance, orderByDistance, readDoorOrder, useNearMe, writeDoorOrd
 import { Progress } from '../canvass/Progress';
 import { agoLabel, latestResult } from '../canvass/status';
 import { SyncStatus } from '../canvass/SyncStatus';
+import { useIsTablet } from '../canvass/useBreakpoint';
 import { useOutbox, useQueuedResults } from '../offline/useOutbox';
 import { EmptyState, ErrorBox, FullPageSpinner, Spinner, n, wardLabel } from '../components/ui';
 
@@ -39,6 +40,9 @@ export function DoorScreen() {
   const [order, setOrderState] = useState<DoorOrder>(readDoorOrder);
   const near = useNearMe(order === 'near');
   const [openId, setOpenId] = useState<string | null>(null);
+  // Width, not device. An iPad in Split View is 320-678px wide and is a phone as far as this screen
+  // is concerned; the same iPad full-screen is 744-1366 and has room for both halves at once.
+  const tablet = useIsTablet();
   // Results recorded this session, applied on top of the server list so the row and the auto-advance
   // update the moment a door is saved rather than waiting for the refetch to land on a weak signal.
   const [recorded, setRecorded] = useState<Record<string, ContactResult>>({});
@@ -133,10 +137,37 @@ export function DoorScreen() {
   const todo = doors.length - done;
   const cached = doorsQ.data.from_cache === true;
 
+  const door =
+    openDoor && turfId ? (
+      <DoorSheet
+        key={openDoor.household_id}
+        door={openDoor}
+        turfId={turfId}
+        index={openIndex + 1}
+        total={doors.length}
+        from={from}
+        variant={tablet ? 'pane' : 'sheet'}
+        onClose={close}
+        onRecorded={handleRecorded}
+        onPrev={openIndex > 0 ? () => open(doors[openIndex - 1]!.household_id) : null}
+        onNext={openIndex < doors.length - 1 ? () => open(doors[openIndex + 1]!.household_id) : null}
+      />
+    ) : null;
+  // Two panes side by side from the tablet stop up; one column with the door over it below it.
+  const pageClass = [
+    'page',
+    // The 640px column is the right measure for a single list. Split, the grid sets its own widths.
+    tablet ? 'cv-page--split' : 'page--narrow',
+    'cv-page',
+    // Only the sheet covers the header. Beside a pane the header is the one thing telling the
+    // volunteer which turf they are in, so it stays.
+    !tablet && openDoor ? 'cv-page--sheet' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    // While the sheet is open the page behind it is inert backdrop: the modifier stops the sticky
-    // header pinning itself into the strip the sheet does not cover, where it was being sliced.
-    <div className={`page page--narrow cv-page${openDoor ? ' cv-page--sheet' : ''}`}>
+    <div className={pageClass}>
       <header className="cv-head">
         <div className="cv-head__row">
           <Link to="/canvass" className="cv-back">
@@ -196,80 +227,87 @@ export function DoorScreen() {
         </div>
       </header>
 
-      {cached && (
-        // The volunteer has to know they are looking at a copy, and that recording into it is still
-        // safe — otherwise a stale list reads as a broken app and the shift stops.
-        <p className="cv-note cv-note--offline" role="status">
-          <strong>Saved copy</strong> — this turf was stored on your phone {agoLabel(doorsQ.data.cached_at ?? null)}. Doors
-          you record now are queued and go up as soon as there is signal.
-        </p>
-      )}
+      {/* "Where am I in the turf": notes, the map and the list. Its own element so that at tablet
+          width it can become the master column and scroll independently of the open door. */}
+      <div className="cv-master">
+        {cached && (
+          // The volunteer has to know they are looking at a copy, and that recording into it is
+          // still safe — otherwise a stale list reads as a broken app and the shift stops.
+          <p className="cv-note cv-note--offline" role="status">
+            <strong>Saved copy</strong> — this turf was stored on your phone {agoLabel(doorsQ.data.cached_at ?? null)}. Doors
+            you record now are queued and go up as soon as there is signal.
+          </p>
+        )}
 
-      {view === 'list' && order === 'near' && near.failure && (
-        <p className="cv-note cv-note--warn" role="status">
-          {near.failure.message}
-        </p>
-      )}
-      {view === 'list' && order === 'near' && !near.failure && !near.at && (
-        <p className="cv-note muted" role="status">
-          <Spinner size={16} /> Finding you — the doors stay in walking order until the phone has a position.
-        </p>
-      )}
+        {view === 'list' && order === 'near' && near.failure && (
+          <p className="cv-note cv-note--warn" role="status">
+            {near.failure.message}
+          </p>
+        )}
+        {view === 'list' && order === 'near' && !near.failure && !near.at && (
+          <p className="cv-note muted" role="status">
+            <Spinner size={16} /> Finding you — the doors stay in walking order until the phone has a position.
+          </p>
+        )}
 
-      {doors.length === 0 && (
-        <EmptyState title="This turf has no doors">
-          An organiser can add streets to it on the Turfs page.
-        </EmptyState>
-      )}
+        {doors.length === 0 && (
+          <EmptyState title="This turf has no doors">
+            An organiser can add streets to it on the Turfs page.
+          </EmptyState>
+        )}
 
-      {doors.length > 0 && view === 'map' && (
-        <Suspense
-          fallback={
-            <p className="cv-map__none muted">
-              <Spinner size={18} /> Loading the map…
-            </p>
-          }
-        >
-          <TurfMap doors={doors} recorded={known} selectedId={openId} onSelect={open} />
-        </Suspense>
-      )}
+        {doors.length > 0 && view === 'map' && (
+          <Suspense
+            fallback={
+              <p className="cv-map__none muted">
+                <Spinner size={18} /> Loading the map…
+              </p>
+            }
+          >
+            <TurfMap doors={doors} recorded={known} selectedId={openId} onSelect={open} />
+          </Suspense>
+        )}
 
-      {view === 'list' && doors.length > 0 && visible.length === 0 && (
-        <EmptyState title="Every door here is done">
-          Nice work. Switch to “All doors” to look one up again.
-        </EmptyState>
-      )}
+        {view === 'list' && doors.length > 0 && visible.length === 0 && (
+          <EmptyState title="Every door here is done">
+            Nice work. Switch to “All doors” to look one up again.
+          </EmptyState>
+        )}
 
-      {view === 'list' && visible.length > 0 && (
-        <ul className="cv-doors">
-          {visible.map((d) => {
-            const m = distances.get(d.household_id);
-            return (
-              <DoorRow
-                key={d.household_id}
-                door={d}
-                result={resultFor(d)}
-                distance={m === undefined ? null : formatDistance(m)}
-                onOpen={() => open(d.household_id)}
-              />
-            );
-          })}
-        </ul>
-      )}
+        {view === 'list' && visible.length > 0 && (
+          <ul className="cv-doors">
+            {visible.map((d) => {
+              const m = distances.get(d.household_id);
+              return (
+                <DoorRow
+                  key={d.household_id}
+                  door={d}
+                  result={resultFor(d)}
+                  distance={m === undefined ? null : formatDistance(m)}
+                  onOpen={() => open(d.household_id)}
+                />
+              );
+            })}
+          </ul>
+        )}
+      </div>
 
-      {openDoor && turfId && (
-        <DoorSheet
-          key={openDoor.household_id}
-          door={openDoor}
-          turfId={turfId}
-          index={openIndex + 1}
-          total={doors.length}
-          from={from}
-          onClose={close}
-          onRecorded={handleRecorded}
-          onPrev={openIndex > 0 ? () => open(doors[openIndex - 1]!.household_id) : null}
-          onNext={openIndex < doors.length - 1 ? () => open(doors[openIndex + 1]!.household_id) : null}
-        />
+      {/* Split, the detail half is always there — an empty pane rather than a pane that appears and
+          shoves the list sideways the first time a door is tapped. */}
+      {tablet ? (
+        <div className="cv-detail">
+          {door}
+          {!door && (
+            <div className="card cv-detail__empty">
+              <EmptyState title="No door open">
+                Pick a door {view === 'map' ? 'on the map' : 'from the list'} to see who is on the list there and record
+                what happened.
+              </EmptyState>
+            </div>
+          )}
+        </div>
+      ) : (
+        door
       )}
     </div>
   );

@@ -1,5 +1,47 @@
 /* MC Canvass — single stylesheet, custom properties, light default + prefers-color-scheme dark. */
 
+/*
+ * ------------------------------------------------------------------ breakpoint scale
+ *
+ * Four stops. Every media query in this file, in canvass/canvass.css and in anything added later
+ * uses one of them; there is no fifth number. Everything is written phone-first — the unqualified
+ * rules ARE the phone, and each stop only says what extra width buys.
+ *
+ *   (none)              PHONE      the baseline. 320-719px, one column, thumb-zone actions.
+ *   max-width 479.98px  COMPACT    iPhone SE/mini and iPadOS Slide Over (320/375). Tighten labels
+ *                                  and numbers so they still fit; never shrink a tap target.
+ *   min-width 720px     TABLET     iPad mini portrait is 744, iPad 820, iPad Pro 11" 834, 13" 1024,
+ *                                  and every one of those in landscape. Room for two panes: the
+ *                                  door screen becomes master-detail here. Chosen at 720 rather
+ *                                  than 744 so it is a width and not a device, and low enough to
+ *                                  catch a 744 portrait while staying above the widest iPadOS
+ *                                  Split View half (~678px), which genuinely is phone-shaped.
+ *                                  Layouts that need two panes add `and (min-height: 600px)`: a
+ *                                  phone on its side is 844x390 - past this width, and still a
+ *                                  phone. Every tablet's short side is 744 or more.
+ *   min-width 1100px    DESKTOP    mouse and keyboard, or an iPad in landscape. The top-bar nav
+ *                                  (up to nine links plus the user's name) only fits from here.
+ *
+ * Two height qualifiers ride along with the scale — they are the same idea on the other axis, and
+ * there are no others:
+ *
+ *   min-height 600px    added to TABLET by anything that needs two panes (see above).
+ *   max-height 500px    with `orientation: landscape`, a phone on its side. The one case where
+ *                       height, not width, is what has run out; canvass.css compacts the door card.
+ *
+ * Two things the widths alone will not tell you:
+ *
+ *  - A tablet is a TOUCH device. var(--tap), thumb-zone placement and hover-free affordances hold
+ *    at every width, so density is never tightened by width alone. `(pointer: coarse)` is what says
+ *    "a finger is doing this" and `(hover: hover)` is what says a hover tint will not stick.
+ *  - The `.98`: `max-width: 720px` and `min-width: 720px` BOTH match at exactly 720px, and that
+ *    one-pixel overlap is where "the door is a bottom sheet and a side pane at the same time" bugs
+ *    live. Max-width stops therefore sit just under the min-width stop they hand over to.
+ *
+ * The tablet stop is also expressed in TypeScript, in canvass/useBreakpoint.ts, because the open
+ * door's ARIA semantics have to flip with the layout. Change the two together.
+ */
+
 :root {
   --brand: #1f4e79;
   --brand-ink: #ffffff;
@@ -227,9 +269,15 @@ select {
   display: inline-flex;
   align-items: center;
 }
-.navlink:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.12);
+/* Hover tints are wrapped in `(hover: hover)` throughout: on a touch screen a tap leaves :hover
+   stuck on the last thing the finger landed on, so a tablet would wear a phantom highlight all
+   shift. Nothing here is hover-ONLY — these are feedback, and the state they show is also carried
+   by aria-pressed / --active / focus-visible. */
+@media (hover: hover) {
+  .navlink:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.12);
+  }
 }
 .navlink--active {
   opacity: 1;
@@ -258,8 +306,10 @@ select {
   background: transparent;
   border-color: transparent;
 }
-.topbar__menubtn:hover {
-  background: rgba(255, 255, 255, 0.15);
+@media (hover: hover) {
+  .topbar__menubtn:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
 }
 .menu {
   position: absolute;
@@ -299,8 +349,10 @@ select {
   border: 0;
   cursor: pointer;
 }
-.menu__item:hover {
-  background: var(--surface-2);
+@media (hover: hover) {
+  .menu__item:hover {
+    background: var(--surface-2);
+  }
 }
 .menu__item--active {
   background: var(--brand-soft);
@@ -316,13 +368,31 @@ select {
   border-top: 1px solid var(--border);
 }
 
-@media (max-width: 760px) {
+/*
+ * Below DESKTOP the nav collapses into the menu button. It used to collapse at 760px, which put
+ * every iPad in the "small desktop" bucket: nine 36px-tall links and the user's name crammed into
+ * a bar meant for a mouse. The menu's rows are var(--tap) tall and land under a thumb, so a tablet
+ * gets the menu — and at DESKTOP the links have room to be links.
+ */
+@media (max-width: 1099.98px) {
   .topbar__nav,
   .topbar__user {
     display: none;
   }
   .topbar__menu {
     display: block;
+  }
+}
+
+/* A finger is 44px wide whatever the viewport is; an iPad in landscape is past DESKTOP and still
+   touch, so the nav links grow rather than staying at their mouse height. */
+@media (pointer: coarse) {
+  .navlink {
+    min-height: var(--tap);
+    padding-inline: 0.85rem;
+  }
+  .disclosure summary {
+    min-height: var(--tap);
   }
 }
 
@@ -469,8 +539,10 @@ select {
   text-decoration: none;
   line-height: 1.2;
 }
-.btn:hover:not(:disabled) {
-  background: var(--surface-2);
+@media (hover: hover) {
+  .btn:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
 }
 .btn:disabled {
   opacity: 0.55;
@@ -481,9 +553,11 @@ select {
   border-color: var(--brand);
   color: var(--brand-ink);
 }
-.btn--primary:hover:not(:disabled) {
-  filter: brightness(1.08);
-  background: var(--brand);
+@media (hover: hover) {
+  .btn--primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+    background: var(--brand);
+  }
 }
 .btn--block {
   width: 100%;
@@ -503,15 +577,19 @@ select {
   border-color: transparent;
   background: transparent;
 }
-.btn--icon:hover:not(:disabled) {
-  background: var(--surface-2);
+@media (hover: hover) {
+  .btn--icon:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
 }
 .btn--danger-outline {
   color: var(--danger);
   border-color: var(--danger);
 }
-.btn--danger-outline:hover:not(:disabled) {
-  background: var(--danger-bg);
+@media (hover: hover) {
+  .btn--danger-outline:hover:not(:disabled) {
+    background: var(--danger-bg);
+  }
 }
 .linkbtn {
   background: none;
@@ -601,8 +679,10 @@ select {
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.check:hover {
-  background: var(--surface-2);
+@media (hover: hover) {
+  .check:hover {
+    background: var(--surface-2);
+  }
 }
 .check input {
   width: 20px;
@@ -1057,13 +1137,30 @@ select {
   margin-top: 0.25rem;
 }
 
-@media (max-width: 480px) {
+/* COMPACT — see the scale at the top of this file. */
+@media (max-width: 479.98px) {
   .hbars__row {
     grid-template-columns: minmax(5rem, 7rem) 1fr auto;
     gap: 0.4rem;
   }
   .tile__value {
     font-size: 1.35rem;
+  }
+}
+
+/* ------------------------------------------------------------------ TABLET (see the scale above) */
+@media (min-width: 720px) {
+  /*
+   * Line length. A paragraph run edge to edge on a 1366px iPad is unreadable — the eye loses the
+   * return sweep — so prose gets a measure while everything that lays anything out is left alone.
+   */
+  .page p,
+  .page .field__hint,
+  .page .empty {
+    max-width: 70ch;
+  }
+  .page .empty {
+    margin-inline: auto;
   }
 }
 
@@ -1528,8 +1625,10 @@ select {
   cursor: pointer;
   white-space: nowrap;
 }
-.tab:hover {
-  color: var(--text);
+@media (hover: hover) {
+  .tab:hover {
+    color: var(--text);
+  }
 }
 .tab--active {
   color: var(--brand);
@@ -1633,8 +1732,9 @@ select {
   }
 }
 
-/* phones */
-@media (max-width: 720px) {
+/* PHONE — everything below the TABLET stop. Panels are edge-to-edge and rise from the bottom,
+   because that is where the hand already is. */
+@media (max-width: 719.98px) {
   .map-toolbar {
     flex-wrap: wrap;
     top: 8px;

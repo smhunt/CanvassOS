@@ -26,7 +26,7 @@ export function CanvassPage() {
   }, [mine.isError]);
 
   return (
-    <div className="page page--narrow">
+    <div className="page page--narrow cv-turfs-page">
       <header className="page__head cv-page__head">
         <div>
           <h1>Canvass</h1>
