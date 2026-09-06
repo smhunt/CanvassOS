@@ -267,6 +267,213 @@ export function serializeDoor(row: DoorRow, voters: VoterRow[], role: Role): Doo
   };
 }
 
+// ------------------------------------------------------------------ lawn signs
+
+/**
+ * A sign is campaign logistics, not voter data: every signed-in role may place one and see the
+ * whole list, because a sign nobody can find in November is a by-law fine. The only field here
+ * that comes off the voters list is the joined household `address` (and `ward`), and those are
+ * already in `HouseholdPublic` — so this projection gives a volunteer nothing that
+ * `serializeHousehold` would not. It stays an explicit allow-list all the same: the sign queries
+ * join `household`, and a widened join must not become a widened response by accident.
+ */
+export interface SignRow {
+  id: string;
+  household_id: string | null;
+  address: string | null;
+  ward: string | null;
+  status: string;
+  lat: number | null;
+  lon: number | null;
+  accuracy_m: number | null;
+  label: string | null;
+  size: string | null;
+  note: string | null;
+  permission_by: string | null;
+  requested_at: Date | string | null;
+  requested_from: string | null;
+  placed_by: string | null;
+  placed_by_name: string | null;
+  placed_at: Date | string | null;
+  removed_by: string | null;
+  removed_by_name: string | null;
+  removed_at: Date | string | null;
+  created_at: Date | string;
+  client_id: string | null;
+  photo_count: number;
+}
+
+export interface SignPublic {
+  id: string;
+  household_id: string | null;
+  address: string | null;
+  ward: string | null;
+  status: string;
+  lat: number | null;
+  lon: number | null;
+  accuracy_m: number | null;
+  label: string | null;
+  size: string | null;
+  note: string | null;
+  permission_by: string | null;
+  requested_at: Date | string | null;
+  requested_from: string | null;
+  placed_by: string | null;
+  placed_by_name: string | null;
+  placed_at: Date | string | null;
+  removed_by: string | null;
+  removed_by_name: string | null;
+  removed_at: Date | string | null;
+  created_at: Date | string;
+  client_id: string | null;
+  photo_count: number;
+}
+
+export function serializeSign(row: SignRow): SignPublic {
+  return {
+    id: row.id,
+    household_id: row.household_id,
+    address: row.address,
+    ward: row.ward,
+    status: row.status,
+    lat: row.lat,
+    lon: row.lon,
+    accuracy_m: row.accuracy_m,
+    label: row.label,
+    size: row.size,
+    note: row.note,
+    permission_by: row.permission_by,
+    requested_at: row.requested_at,
+    requested_from: row.requested_from,
+    placed_by: row.placed_by,
+    placed_by_name: row.placed_by_name,
+    placed_at: row.placed_at,
+    removed_by: row.removed_by,
+    removed_by_name: row.removed_by_name,
+    removed_at: row.removed_at,
+    created_at: row.created_at,
+    client_id: row.client_id,
+    photo_count: row.photo_count,
+  };
+}
+
+/** Photo metadata only — `path` is never serialized; the bytes come from GET /api/signs/photo/:id. */
+export interface SignPhotoRow {
+  id: string;
+  sign_id: string;
+  path: string;
+  content_type: string;
+  bytes: number;
+  width: number | null;
+  height: number | null;
+  taken_by: string | null;
+  taken_by_name: string | null;
+  taken_at: Date | string;
+}
+
+export interface SignPhotoPublic {
+  id: string;
+  sign_id: string;
+  content_type: string;
+  bytes: number;
+  width: number | null;
+  height: number | null;
+  taken_by: string | null;
+  taken_by_name: string | null;
+  taken_at: Date | string;
+}
+
+export function serializeSignPhoto(row: SignPhotoRow): SignPhotoPublic {
+  return {
+    id: row.id,
+    sign_id: row.sign_id,
+    content_type: row.content_type,
+    bytes: row.bytes,
+    width: row.width,
+    height: row.height,
+    taken_by: row.taken_by,
+    taken_by_name: row.taken_by_name,
+    taken_at: row.taken_at,
+  };
+}
+
+/** One line on the retrieval worklist (GET /api/signs/pickup) — everything needed to find it. */
+export interface PickupRow {
+  id: string;
+  status: string;
+  ward: string | null;
+  address: string | null;
+  label: string | null;
+  size: string | null;
+  note: string | null;
+  lat: number | null;
+  lon: number | null;
+  accuracy_m: number | null;
+  placed_at: Date | string | null;
+  placed_by_name: string | null;
+  photo_ids: string[];
+}
+
+export function serializePickup(row: PickupRow): PickupRow {
+  return {
+    id: row.id,
+    status: row.status,
+    ward: row.ward,
+    address: row.address,
+    label: row.label,
+    size: row.size,
+    note: row.note,
+    lat: row.lat,
+    lon: row.lon,
+    accuracy_m: row.accuracy_m,
+    placed_at: row.placed_at,
+    placed_by_name: row.placed_by_name,
+    photo_ids: row.photo_ids,
+  };
+}
+
+/**
+ * One outstanding sign request (GET /api/signs/requests) — a door whose latest contact ticked
+ * `wants_sign` and which has no sign yet. Unlike the rest of /api/signs this IS voter data, so the
+ * projection is narrow on purpose: household fields limited to what `HouseholdPublic` allows, and
+ * the only voter field is `display_name`, which volunteers already get on their own turf's doors.
+ */
+export interface SignRequestRow {
+  household_id: string;
+  address: string;
+  ward: string;
+  community: string | null;
+  lat: number | null;
+  lon: number | null;
+  contact_id: string;
+  last_contact_at: Date | string;
+  last_result: string;
+  note: string | null;
+  user_id: string;
+  user_name: string;
+  voter_id: string | null;
+  voter_name: string | null;
+}
+
+export function serializeSignRequest(row: SignRequestRow): SignRequestRow {
+  return {
+    household_id: row.household_id,
+    address: row.address,
+    ward: row.ward,
+    community: row.community,
+    lat: row.lat,
+    lon: row.lon,
+    contact_id: row.contact_id,
+    last_contact_at: row.last_contact_at,
+    last_result: row.last_result,
+    note: row.note,
+    user_id: row.user_id,
+    user_name: row.user_name,
+    voter_id: row.voter_id,
+    voter_name: row.voter_name,
+  };
+}
+
 // ------------------------------------------------------------------ users
 
 export interface UserRow {

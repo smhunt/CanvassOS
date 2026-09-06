@@ -1,5 +1,6 @@
 import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyMultipart from '@fastify/multipart';
 import fastifyRateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
@@ -16,6 +17,7 @@ import { healthRoutes } from './routes/health.js';
 import { householdRoutes } from './routes/households.js';
 import { metaRoutes } from './routes/meta.js';
 import { searchRoutes } from './routes/search.js';
+import { MAX_PHOTO_BYTES, signRoutes } from './routes/signs.js';
 import { statsRoutes } from './routes/stats.js';
 import { streetRoutes } from './routes/streets.js';
 import { assignmentRoutes, turfRoutes } from './routes/turfs.js';
@@ -77,6 +79,13 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       new ApiError(429, 'rate_limited', `too many requests, retry in ${Math.ceil(ctx.ttl / 1000)}s`),
   });
 
+  // Sign photos are the one multipart route in the API. @fastify/multipart is fastify-plugin
+  // wrapped, so it applies app-wide however it is registered — declare it here where the other
+  // plugins are, with the limits the photo endpoint enforces (one file, 8 MB).
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: MAX_PHOTO_BYTES, files: 1, fields: 8, parts: 12 },
+  });
+
   // Uniform error envelope: { error: { code, message } }
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ApiError) {
@@ -120,6 +129,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       await api.register(turfRoutes, { prefix: '/turfs' });
       await api.register(assignmentRoutes);
       await api.register(contactRoutes);
+      await api.register(signRoutes, { prefix: '/signs' });
       await api.register(auditRoutes);
     },
     { prefix: '/api' },

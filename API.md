@@ -74,11 +74,13 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
   `turf_household` is materialised in the same transaction, with
   `walk_order = row_number() over (order by street_sort, num_sort, id)` so doors come out in walking order.
   Audit `create_turf` with `{ name, by: "streets" | "polygon", n_households }`.
-- `GET /api/turfs` → `{ turfs: [{ id, name, ward, archived, created_at, created_by_name, n_households, n_voters,
-  contacted, streets: string[], assignees: [{ id, user_id, name, status, due_date }] }] }`.
+- `GET /api/turfs?archived=true` → `{ turfs: [{ id, name, ward, archived, created_at, created_by_name, n_households,
+  n_voters, contacted, streets: string[], assignees: [{ id, user_id, name, status, due_date }] }] }`.
   `contacted` = doors in the turf with at least one `contact` row. `streets` is the distinct `street_sort` of the
   turf's households (whatever way the turf was built) so the builder can mark streets that already belong to a turf
-  and avoid silent overlaps. Unarchived first, then newest first.
+  and avoid silent overlaps. **Archived turfs are omitted unless `archived=true`** (`true`/`1` include them;
+  absent, `false` or `0` do not) — a finished walk must stop claiming its streets in the builder's overlap check.
+  Unarchived first, then newest first.
 - `GET /api/turfs/:id` → `{ turf }` — the same object plus `polygon` (the stored GeoJSON, `null` for a street turf).
   `404` if unknown.
 - `PATCH /api/turfs/:id` `{ name?, archived? }` → `{ turf }`. Audit `update_turf`.
@@ -149,6 +151,84 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
   `doors` = distinct households contacted; `day` is a `YYYY-MM-DD` string in `America/Toronto` so an evening knock
   lands on that evening. Aggregates only — no audit row.
 
+## Lawn signs
+Placement is campaign logistics, not voter data, so **any signed-in role may place a sign and see the whole sign list**.
+Ontario municipal sign by-laws require signs down within a set period after election day (Middlesex Centre: confirm the
+window with the clerk), and a sign nobody can find is a fine — which is why the GPS fix and the photo exist. Signs also
+go on road allowances, corners and business frontages that are not doors on the voters list, so `household_id` is
+nullable and most fields are free text. The two exceptions to "not voter data" are documented below:
+`GET /api/signs/requests` (which lists doors) and the photo bytes (which show somebody's house).
+
+- `POST /api/signs` → `201 { sign }`, or `200 { sign }` on an idempotent replay
+  ```
+  { household_id?, lat, lon, accuracy_m?, label?, size?, note?, permission_by?, status?, requested_from?, client_id? }
+  ```
+  `lat`/`lon` are **required** and must be finite and inside Middlesex Centre's sanity box
+  (lat 42.8–43.2, lon −81.7 to −81.1) — a fix that lands in Ottawa or on Null Island sends the pickup crew to the wrong
+  concession while the real sign stays up, so it is refused with `400 { code: "coordinate_out_of_range" }` and a message
+  telling the volunteer to wait for a better lock. `accuracy_m` is the device's reported accuracy in metres.
+  `status` ∈ `requested` | `placed` | `removed` | `missing` | `damaged`, default `placed`.
+  `label` ≤ 200, `size` ≤ 40, `note` ≤ 2000, `permission_by` ≤ 200 chars; every optional field also accepts `null`.
+  Unknown `household_id` → `404`; `requested_from` must be a known `contact` id (`400 contact_not_found`).
+  **Stamps:** a placement (any status except `requested`) sets `placed_by` = caller and `placed_at` = now;
+  `status: "requested"` sets `requested_at` instead and leaves the placement columns NULL, because a sign that has not
+  been planted yet must not appear on the pickup list as if it had. Supplying `requested_from` also sets `requested_at`.
+  **Idempotency:** identical to `POST /api/contacts` — when `client_id` is supplied and already exists the stored row
+  comes back with `200` instead of a second insert (`ON CONFLICT (client_id) DO NOTHING` + re-select in one
+  transaction). The volunteer standing in a field with one bar of signal can retry safely; the stored row wins and a
+  replay is not audited again. Audit `place_sign` with `{ status, household_id, lat, lon }`.
+  Response `sign = { id, household_id, address, ward, status, lat, lon, accuracy_m, label, size, note, permission_by,
+  requested_at, requested_from, placed_by, placed_by_name, placed_at, removed_by, removed_by_name, removed_at,
+  created_at, client_id, photo_count }`. `address` and `ward` are the joined household's and are `null` for a sign that
+  is not at a door; both are already in the volunteer-visible `HouseholdPublic` projection, so a volunteer learns
+  nothing here they could not already see.
+- `GET /api/signs?status=&ward=&bbox=` → `{ signs: [...] }`, newest first, same `sign` object as above.
+  `status` and `ward` are comma-separated lists; `bbox` is `minLon,minLat,maxLon,maxLat` and is parsed exactly like
+  `GET /api/households/points` (`400` on a malformed or out-of-range box). A sign with no household has no ward, so
+  filtering by `ward` necessarily drops road-allowance signs.
+- `GET /api/signs/:id` → `{ sign: { ...sign, photos: [...] } }`; `404` if unknown.
+  `photo = { id, sign_id, content_type, bytes, width, height, taken_by, taken_by_name, taken_at }`. The on-disk `path`
+  is never serialized. `width`/`height` are `null` when the header could not be parsed.
+- `PATCH /api/signs/:id` `{ status?, label?, size?, note? }` → `{ sign: { ...sign, photos } }`; `400` if the body is
+  empty, `404` if unknown. Setting `status: "removed"` stamps `removed_by`/`removed_at`; moving it back off `removed`
+  clears both, so a sign marked collected by mistake does not carry a removal date while it is still standing. Any
+  status other than `requested` also fills `placed_by`/`placed_at` **if they are still NULL** (a `requested` sign being
+  delivered), never overwriting the volunteer who actually planted it. Audit `update_sign` with the patch plus
+  `from_status`.
+- `DELETE /api/signs/:id` → `204`; `404` if unknown. **Organizer/admin only** — a sign recorded by mistake should be
+  deletable, but the record of where a sign is standing is not a volunteer's to erase. `sign_photo` rows cascade and
+  their files are unlinked. Audit `delete_sign` with `{ label, status, photos }`.
+- `GET /api/signs/pickup` → `{ signs: [...] }` — the post-election retrieval worklist: every sign still `placed` or
+  `damaged`.
+  `{ id, status, ward, address, label, size, note, lat, lon, accuracy_m, placed_at, placed_by_name, photo_ids }`
+  Ordered ward → `label` (falling back to `address`) → latitude, nulls last. That is a "work one ward, then drive up
+  the concession" ordering, deliberately **not** a travelling-salesman solve: it is stable, explainable to the
+  volunteer holding the list, and good enough to collect a few hundred signs in a weekend. Every field needed to find
+  the sign in November is on the line, including `photo_ids` for `GET /api/signs/photo/:photoId`.
+- `GET /api/signs/requests?limit=200` (1–500) → `{ requests: [...] }` — doors whose **most recent** contact set
+  `wants_sign = true` and which have **no `sign` row yet**. This closes the loop from the door screen to sign delivery
+  and is the reason `contact.wants_sign` exists; a door drops off the list the moment a sign is placed against it.
+  `{ household_id, address, ward, community, lat, lon, contact_id, last_contact_at, last_result, note, user_id,
+  user_name, voter_id, voter_name }`, newest first.
+  Unlike the rest of `/api/signs` this **is** voter data, so it follows the ordinary rules: **volunteers see only doors
+  inside their assigned turfs**, organizer/admin see all, and every call writes audit `view_sign_requests` with `{ n }`.
+
+### Sign photos
+- `POST /api/signs/:id/photo` — one `multipart/form-data` file part → `201 { photo }`. Any signed-in role.
+  Accepts `image/jpeg`, `image/png`, `image/webp` only, **verified from the file's magic bytes**, not from the declared
+  `Content-Type`; the sniffed type is what is stored and later served
+  (`400 { code: "unsupported_image" }` otherwise). Max 8 MB (`413 { code: "file_too_large" }`), one file per request.
+  `400 not_multipart` when the request is not multipart, `400 no_file` when the part is missing, `400 empty_file` for a
+  zero-byte upload, `404` for an unknown sign.
+  The client filename is discarded entirely: the file is written to `SIGN_PHOTO_DIR` as `<uuid>.<jpg|png|webp>`, where
+  the uuid is also the `sign_photo.id`. `width`/`height` are read from the header when the API can parse it.
+- `GET /api/signs/photo/:photoId` — streams the bytes. **Auth required**: a photo of a lawn sign is a photo of
+  somebody's house, which makes it personal information however mundane it looks. Sets the stored content-type,
+  `Content-Length`, `Content-Disposition: inline` and `Cache-Control: private`. Audit `view_sign_photo` with
+  `{ sign_id }`. `404 photo_file_missing` when the row survived but the file did not (a half-restored volume).
+- `DELETE /api/signs/photo/:photoId` → `204`. **Organizer/admin only**; removes the row and the file.
+  Audit `delete_sign` with `{ photo_id, sign_id }`.
+
 ## Stats (organizer/admin)
 - `GET /api/stats/overview` →
   ```
@@ -193,12 +273,14 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
   `{ id, at, user_id, user_email, user_name, action, target, detail, ip }`. Extra audited actions:
   `login_failed`, `accept_invite`, `change_password`, `reinvite`, `update_user`. Phase 2 adds `create_turf`,
   `update_turf`, `delete_turf`, `assign_turf`, `unassign_turf`, `update_assignment`, `view_turf_doors`,
-  `view_follow_ups`, `contact`.
+  `view_follow_ups`, `contact`. Lawn signs add `place_sign`, `update_sign`, `delete_sign`, `upload_sign_photo`,
+  `view_sign_photo` and `view_sign_requests`.
 - `POST /api/users/:id/reinvite` also works for a user who already has a password (acts as an admin-driven
   password reset: accepting the new invite sets a new password and drops old sessions).
 - Invite tokens are stored hashed (sha256) in `app_user.invite_token`; the raw token appears only in `invite_url`.
 - `429 { error: { code: "rate_limited" } }` on `auth/login` and `auth/accept-invite` (10/min/IP).
-- Env additions: `COOKIE_SECURE` (default `true`; `false` for plain-http local dev), `BOUNDARY_PATH`, `LOG_LEVEL`, `HOST`.
+- Env additions: `COOKIE_SECURE` (default `true`; `false` for plain-http local dev), `BOUNDARY_PATH`, `LOG_LEVEL`, `HOST`,
+  `SIGN_PHOTO_DIR` (default `../data/sign-photos`, created on boot if absent).
 - Duplicate list entries (same name + property twice) get `natural_key` suffixed `#2` so the UNIQUE constraint holds
   and every CSV row is kept.
 
@@ -220,3 +302,25 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
   its own `<who>+<run id>@test.local` users and deletes exactly the rows it created (users, sessions, audit entries,
   turfs, assignments, contacts) by id in `after()`. Run it against a throwaway copy:
   `CANVASS_TEST_DESTRUCTIVE=1 TEST_DATABASE_URL=<...>/canvass_test npm test`.
+
+## Implementation notes (lawn signs)
+- **No migration to write.** `db/migrations/001_signs.sql` (tables `sign` and `sign_photo`, enum `sign_status`) is
+  already applied; the API adds no DDL.
+- Photos are files on disk under `SIGN_PHOTO_DIR`, not rows: they are large, never queried, and living in `data/`
+  means `make purge` shreds them with the CSVs after the election. `data/sign-photos/` is in `.gitignore`.
+  The directory is created on boot, so the operator only has to provide the volume.
+- Magic-byte sniffing and the width/height readers live in `api/src/lib/images.ts` — no image dependency. A header the
+  parsers do not understand yields `width: null, height: null` rather than an error; only the container check is fatal.
+- `@fastify/multipart` is registered in `app.ts` (it is `fastify-plugin` wrapped, so it applies app-wide however it is
+  registered) with `limits: { fileSize: 8 MB, files: 1 }`. The photo endpoint is the only multipart route.
+- Stored photo filenames are validated against `^[0-9a-f-]{36}\.(jpg|png|webp)$` before every disk operation. The
+  values can only ever be API-generated uuids, but the string makes a round trip through the database and a path that
+  escaped `SIGN_PHOTO_DIR` would read arbitrary files.
+- Serialization goes through `api/src/lib/serialize.ts` like everything else (`serializeSign`, `serializeSignPhoto`,
+  `serializePickup`, `serializeSignRequest`) — explicit allow-lists, so widening a join cannot widen a response.
+  Signs carry no voter data; the joined `address`/`ward` are exactly the fields `serializeHousehold` already gives a
+  volunteer, and `voter_name` on a sign request is `display_name`, which volunteers already get on their turf's doors.
+- The sign list and the pickup list are **not** audited: they are logistics, and auditing every map refresh would bury
+  the entries that matter. `GET /api/signs/requests` and every photo read are audited, because those are voter data.
+- `sign.placed_by` / `removed_by` reference `app_user` without `ON DELETE`, so the test suite deletes the signs it
+  created before the users that created them.

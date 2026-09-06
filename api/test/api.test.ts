@@ -25,7 +25,9 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { parse } from 'csv-parse/sync';
 import type { FastifyInstance } from 'fastify';
@@ -84,6 +86,10 @@ const RESTRICTED_HH_KEYS = ['n_nonresident', 'n_po_box'];
 
 let app: FastifyInstance;
 let db: Db;
+/** Sign photos are written to a throwaway directory, never into the repo's data/ volume. */
+let photoDir: string;
+/** Every sign this run places, so after() can delete exactly those rows (sign_photo cascades). */
+const createdSignIds: string[] = [];
 let adminCookie: string;
 let volunteerCookie: string;
 let organizerCookie: string;
@@ -145,6 +151,7 @@ async function testUserIds(): Promise<string[]> {
 
 before(async () => {
   db = createPool(DATABASE_URL);
+  photoDir = await mkdtemp(join(tmpdir(), 'canvass-sign-photos-'));
   const n = await db.query('SELECT count(*)::int AS n FROM household');
   assert.ok(n.rows[0].n > 0, 'household table is empty — run the importer against the test DB first');
 
@@ -157,6 +164,7 @@ before(async () => {
     DOMAIN: 'canvass.test',
     COOKIE_SECURE: 'false',
     BOUNDARY_PATH: resolve(DATA_DIR, 'mc_boundary.json'),
+    SIGN_PHOTO_DIR: photoDir,
     LOG_LEVEL: 'silent',
   });
   app = await buildApp({ config, db, logger: false });
@@ -181,7 +189,13 @@ after(async () => {
   // Delete exactly what this run created, by id, in FK order. Never TRUNCATE: this database may
   // hold rows (users, turfs, contacts) that belong to somebody else.
   const ids = await testUserIds();
+  // Signs first: sign.placed_by / removed_by reference app_user without ON DELETE, so a sign this
+  // run planted would otherwise block the deletion of the volunteer who planted it.
+  if (createdSignIds.length > 0) {
+    await db.query(`DELETE FROM sign WHERE id = ANY($1::uuid[])`, [createdSignIds]);
+  }
   if (ids.length > 0) {
+    await db.query(`DELETE FROM sign WHERE placed_by = ANY($1::uuid[]) OR removed_by = ANY($1::uuid[])`, [ids]);
     await db.query(`DELETE FROM contact WHERE user_id = ANY($1::uuid[])`, [ids]);
     await db.query(`DELETE FROM turf WHERE created_by = ANY($1::uuid[])`, [ids]); // cascades turf_household, assignment
     await db.query(`DELETE FROM assignment WHERE user_id = ANY($1::uuid[])`, [ids]);
@@ -192,6 +206,7 @@ after(async () => {
   // login_failed rows carry no user_id; they are identified by the address that was tried.
   await db.query(`DELETE FROM audit_log WHERE user_id IS NULL AND target LIKE $1`, [EMAIL_PATTERN]);
   await db.end();
+  await rm(photoDir, { recursive: true, force: true });
 });
 
 describe('auth', () => {
@@ -723,6 +738,31 @@ describe('turfs', () => {
     assert.equal(vol.statusCode, 403);
   });
 
+  it('omits archived turfs unless archived=true', async () => {
+    const arch = await call('PATCH', `/api/turfs/${ctx.polygonTurfId}`, organizerCookie, { archived: true });
+    assert.equal(arch.statusCode, 200, arch.body);
+
+    const active = await call('GET', '/api/turfs', organizerCookie);
+    const activeIds = (active.json() as { turfs: Array<{ id: string }> }).turfs.map((t) => t.id);
+    assert.ok(!activeIds.includes(ctx.polygonTurfId), 'archived turf is absent by default');
+    assert.ok(activeIds.includes(ctx.streetTurfId), 'active turf is still listed');
+
+    const all = await call('GET', '/api/turfs?archived=true', organizerCookie);
+    const allIds = (all.json() as { turfs: Array<{ id: string }> }).turfs.map((t) => t.id);
+    assert.ok(allIds.includes(ctx.polygonTurfId), 'archived turf comes back with archived=true');
+    assert.ok(allIds.includes(ctx.streetTurfId));
+    // archived=false is the default, explicitly
+    const explicit = await call('GET', '/api/turfs?archived=false', organizerCookie);
+    assert.deepEqual(
+      (explicit.json() as { turfs: Array<{ id: string }> }).turfs.map((t) => t.id),
+      activeIds,
+    );
+
+    // restore: the later scope/contact tests expect both turfs to be live
+    const back = await call('PATCH', `/api/turfs/${ctx.polygonTurfId}`, organizerCookie, { archived: false });
+    assert.equal(back.statusCode, 200, back.body);
+  });
+
   it('assigns idempotently, lists the volunteer’s own assignments, and unassigns', async () => {
     const u = await db.query<{ id: string }>(`SELECT id FROM app_user WHERE email = $1`, [email('vol')]);
     ctx.volunteerId = u.rows[0]!.id;
@@ -1051,5 +1091,360 @@ describe('contacts', () => {
     assert.deepEqual(c.issues, []);
     assert.equal(c.wants_sign, false);
     assert.equal(c.follow_up, false);
+  });
+});
+
+// ------------------------------------------------------------------ lawn signs
+// Runs last: it plants signs against the doors the contact tests created, and
+// `GET /api/signs/requests` depends on those `wants_sign` contacts already existing.
+
+/** Inside RECT, and therefore inside the municipality's sanity box. */
+const SIGN_LAT = 43.06;
+const SIGN_LON = -81.38;
+
+/** A 1×1 PNG — real magic bytes and a real IHDR, so the sniffer must accept it and read 1×1. */
+const PNG_1PX = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+/** Build a one-part multipart/form-data body for app.inject(), carrying the caller's session. */
+function upload(cookie: string, filename: string, contentType: string, data: Buffer) {
+  const boundary = `----canvasstest${randomUUID()}`;
+  const head = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="${filename}"\r\n` +
+      `Content-Type: ${contentType}\r\n\r\n`,
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return {
+    headers: { cookie, 'content-type': `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.concat([head, data, tail]),
+  };
+}
+
+interface SignCtx {
+  cornerId: string;
+  strayId: string;
+  doorSignId: string;
+  photoId: string;
+  photoPath: string;
+}
+const signCtx = {} as SignCtx;
+
+/** Remember a sign so after() can delete exactly this run's rows. */
+const track = (id: string): string => {
+  createdSignIds.push(id);
+  return id;
+};
+
+describe('lawn signs', () => {
+  it('places a sign with a GPS fix, defaults to placed, and replays client_id idempotently', async () => {
+    const payload = {
+      lat: SIGN_LAT,
+      lon: SIGN_LON,
+      accuracy_m: 8.5,
+      label: 'corner of Ilderton Rd',
+      size: 'large',
+      note: 'behind the hydro pole',
+      permission_by: 'farm owner',
+      client_id: `test-sign-${RUN}-0001`,
+    };
+    const first = await call('POST', '/api/signs', volunteerCookie, payload);
+    assert.equal(first.statusCode, 201, first.body);
+    const s1 = (first.json() as { sign: Record<string, unknown> }).sign;
+    signCtx.cornerId = track(s1.id as string);
+    assert.equal(s1.status, 'placed', 'status defaults to placed');
+    assert.equal(s1.household_id, null, 'a road-allowance sign has no door');
+    assert.equal(s1.address, null);
+    assert.equal(s1.placed_by_name, 'volunteer accepted');
+    assert.ok(s1.placed_at, 'placed_at is stamped');
+    assert.equal(s1.removed_at, null);
+    assert.equal(s1.photo_count, 0);
+    assert.equal(s1.accuracy_m, 8.5);
+
+    // The volunteer in the field with one bar retries: the same client_id must not plant twice.
+    const replay = await call('POST', '/api/signs', volunteerCookie, { ...payload, note: 'changed' });
+    assert.equal(replay.statusCode, 200, replay.body);
+    const s2 = (replay.json() as { sign: { id: string; note: string } }).sign;
+    assert.equal(s2.id, signCtx.cornerId);
+    assert.equal(s2.note, 'behind the hydro pole', 'the stored row wins');
+    const n = await db.query(`SELECT count(*)::int AS n FROM sign WHERE client_id = $1`, [payload.client_id]);
+    assert.equal(n.rows[0].n, 1);
+
+    const naud = await db.query(
+      `SELECT count(*)::int AS n FROM audit_log
+       WHERE action = 'place_sign' AND user_id IN (SELECT id FROM app_user WHERE email LIKE $1)`,
+      [EMAIL_PATTERN],
+    );
+    assert.equal(naud.rows[0].n, 1, 'the replay is not audited a second time');
+  });
+
+  it('refuses an implausible GPS fix with a clear message', async () => {
+    for (const bad of [
+      { lat: 45.4, lon: -75.7 }, // Ottawa
+      { lat: 43.06, lon: -79.0 }, // Niagara
+      { lat: 0, lon: 0 }, // null island — the classic bad fix
+    ]) {
+      const res = await call('POST', '/api/signs', volunteerCookie, bad);
+      assert.equal(res.statusCode, 400, JSON.stringify(bad));
+      const err = (res.json() as { error: { code: string; message: string } }).error;
+      assert.equal(err.code, 'coordinate_out_of_range', JSON.stringify(bad));
+      assert.match(err.message, /Middlesex Centre/);
+    }
+    // and non-numbers are still a plain validation error
+    const nan = await call('POST', '/api/signs', volunteerCookie, { lat: 'north', lon: SIGN_LON });
+    assert.equal(nan.statusCode, 400);
+    const missing = await call('POST', '/api/signs', volunteerCookie, { lat: SIGN_LAT });
+    assert.equal(missing.statusCode, 400);
+    const unknownDoor = await call('POST', '/api/signs', volunteerCookie, {
+      lat: SIGN_LAT,
+      lon: SIGN_LON,
+      household_id: 'H-ARVA-99999',
+    });
+    assert.equal(unknownDoor.statusCode, 404);
+  });
+
+  it('lists signs with photo_count and filters by status, ward and bbox', async () => {
+    const stray = await call('POST', '/api/signs', organizerCookie, {
+      lat: SIGN_LAT + 0.005,
+      lon: SIGN_LON + 0.005,
+      label: 'church driveway',
+      status: 'damaged',
+    });
+    assert.equal(stray.statusCode, 201, stray.body);
+    signCtx.strayId = track((stray.json() as { sign: { id: string } }).sign.id);
+
+    const all = await call('GET', '/api/signs', volunteerCookie);
+    assert.equal(all.statusCode, 200);
+    const { signs } = all.json() as { signs: Array<Record<string, unknown>> };
+    const mine = signs.filter((s) => createdSignIds.includes(s.id as string));
+    assert.equal(mine.length, 2);
+    assert.deepEqual(Object.keys(mine[0]!).sort(), [
+      'accuracy_m', 'address', 'client_id', 'created_at', 'household_id', 'id', 'label', 'lat', 'lon', 'note',
+      'permission_by', 'photo_count', 'placed_at', 'placed_by', 'placed_by_name', 'removed_at', 'removed_by',
+      'removed_by_name', 'requested_at', 'requested_from', 'size', 'status', 'ward',
+    ]);
+
+    const damaged = await call('GET', '/api/signs?status=damaged', volunteerCookie);
+    const dIds = (damaged.json() as { signs: Array<{ id: string }> }).signs.map((s) => s.id);
+    assert.ok(dIds.includes(signCtx.strayId));
+    assert.ok(!dIds.includes(signCtx.cornerId));
+
+    // Neither sign has a household, so a ward filter necessarily drops both.
+    const byWard = await call('GET', '/api/signs?ward=01,02,03,04', volunteerCookie);
+    const wIds = (byWard.json() as { signs: Array<{ id: string }> }).signs.map((s) => s.id);
+    assert.ok(!wIds.includes(signCtx.cornerId));
+
+    const inBox = await call('GET', `/api/signs?bbox=${RECT.minLon},${RECT.minLat},${RECT.maxLon},${RECT.maxLat}`, volunteerCookie);
+    const bIds = (inBox.json() as { signs: Array<{ id: string }> }).signs.map((s) => s.id);
+    assert.ok(bIds.includes(signCtx.cornerId));
+    const outBox = await call('GET', '/api/signs?bbox=-81.2,42.9,-81.15,42.95', volunteerCookie);
+    assert.ok(!(outBox.json() as { signs: Array<{ id: string }> }).signs.map((s) => s.id).includes(signCtx.cornerId));
+    assert.equal((await call('GET', '/api/signs?bbox=1,2,3', volunteerCookie)).statusCode, 400);
+    assert.equal((await call('GET', '/api/signs?status=eaten', volunteerCookie)).statusCode, 400);
+  });
+
+  it('accepts an image, refuses anything else, and never trusts the client filename', async () => {
+    const good = await app.inject({
+      method: 'POST',
+      url: `/api/signs/${signCtx.cornerId}/photo`,
+      ...upload(volunteerCookie, '../../../etc/passwd.jpg', 'image/jpeg', PNG_1PX), // lying type AND a nasty name
+    });
+    assert.equal(good.statusCode, 201, good.body);
+    const photo = (good.json() as { photo: Record<string, unknown> }).photo;
+    signCtx.photoId = photo.id as string;
+    assert.equal(photo.content_type, 'image/png', 'the sniffed type wins over the declared one');
+    assert.equal(photo.width, 1);
+    assert.equal(photo.height, 1);
+    assert.equal(photo.bytes, PNG_1PX.length);
+    assert.equal(photo.taken_by_name, 'volunteer accepted');
+    assert.equal(photo.sign_id, signCtx.cornerId);
+    assert.equal((photo as { path?: string }).path, undefined, 'the on-disk path never leaves the API');
+
+    const row = await db.query<{ path: string }>(`SELECT path FROM sign_photo WHERE id = $1`, [signCtx.photoId]);
+    signCtx.photoPath = row.rows[0]!.path;
+    assert.match(signCtx.photoPath, /^[0-9a-f-]{36}\.png$/, 'stored under a generated uuid, not the sent filename');
+    const files = await readdir(photoDir);
+    assert.ok(files.includes(signCtx.photoPath));
+
+    // A PDF (or anything else) wearing an image content-type is refused on its magic bytes.
+    const notAnImage = await app.inject({
+      method: 'POST',
+      url: `/api/signs/${signCtx.cornerId}/photo`,
+      ...upload(volunteerCookie, 'sign.jpg', 'image/jpeg', Buffer.from('%PDF-1.4\n%âãÏÓ\nnot a photograph at all\n')),
+    });
+    assert.equal(notAnImage.statusCode, 400, notAnImage.body);
+    assert.equal((notAnImage.json() as { error: { code: string } }).error.code, 'unsupported_image');
+    assert.equal((await readdir(photoDir)).length, 1, 'the rejected upload left nothing on disk');
+
+    const noFile = await app.inject({
+      method: 'POST',
+      url: `/api/signs/${signCtx.cornerId}/photo`,
+      headers: { cookie: volunteerCookie },
+      payload: { not: 'multipart' },
+    });
+    assert.equal(noFile.statusCode, 400);
+
+    const unknownSign = await app.inject({
+      method: 'POST',
+      url: `/api/signs/${randomUUID()}/photo`,
+      ...upload(volunteerCookie, 'a.png', 'image/png', PNG_1PX),
+    });
+    assert.equal(unknownSign.statusCode, 404);
+
+    const one = await call('GET', `/api/signs/${signCtx.cornerId}`, volunteerCookie);
+    const sign = (one.json() as { sign: { photo_count: number; photos: Array<{ id: string }> } }).sign;
+    assert.equal(sign.photo_count, 1);
+    assert.equal(sign.photos.length, 1);
+    assert.equal(sign.photos[0]!.id, signCtx.photoId);
+  });
+
+  it('serves photo bytes only to signed-in users, and audits every view', async () => {
+    const anon = await app.inject({ method: 'GET', url: `/api/signs/photo/${signCtx.photoId}` });
+    assert.equal(anon.statusCode, 401, 'a photo of somebody’s house is not public');
+    assert.equal((anon.json() as { error: { code: string } }).error.code, 'unauthorized');
+
+    const res = await call('GET', `/api/signs/photo/${signCtx.photoId}`, volunteerCookie);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['content-type'], 'image/png');
+    assert.equal(res.headers['cache-control'], 'private');
+    assert.deepEqual(res.rawPayload, PNG_1PX);
+
+    const aud = await db.query(
+      `SELECT target, detail FROM audit_log WHERE action = 'view_sign_photo' ORDER BY id DESC LIMIT 1`,
+    );
+    assert.equal(aud.rows[0].target, signCtx.photoId);
+    assert.equal(aud.rows[0].detail.sign_id, signCtx.cornerId);
+
+    assert.equal((await call('GET', `/api/signs/photo/${randomUUID()}`, volunteerCookie)).statusCode, 404);
+    assert.equal((await call('GET', '/api/signs/photo/not-a-uuid', volunteerCookie)).statusCode, 400);
+  });
+
+  it('builds the pickup list from standing signs only, and stamps who removed one', async () => {
+    const before = await call('GET', '/api/signs/pickup', volunteerCookie);
+    assert.equal(before.statusCode, 200);
+    const beforeIds = (before.json() as { signs: Array<{ id: string }> }).signs.map((s) => s.id);
+    assert.ok(beforeIds.includes(signCtx.cornerId), 'a placed sign is on the worklist');
+    assert.ok(beforeIds.includes(signCtx.strayId), 'a damaged sign still has to be collected');
+
+    const line = (before.json() as { signs: Array<Record<string, unknown>> }).signs.find(
+      (s) => s.id === signCtx.cornerId,
+    )!;
+    assert.deepEqual(Object.keys(line).sort(), [
+      'accuracy_m', 'address', 'id', 'label', 'lat', 'lon', 'note', 'photo_ids', 'placed_at', 'placed_by_name',
+      'size', 'status', 'ward',
+    ]);
+    assert.equal(line.lat, SIGN_LAT);
+    assert.equal(line.accuracy_m, 8.5);
+    assert.deepEqual(line.photo_ids, [signCtx.photoId], 'the photo that makes it findable is on the list');
+
+    const removed = await call('PATCH', `/api/signs/${signCtx.cornerId}`, volunteerCookie, {
+      status: 'removed',
+      note: 'collected 2026-11-02',
+    });
+    assert.equal(removed.statusCode, 200, removed.body);
+    const r = (removed.json() as { sign: Record<string, unknown> }).sign;
+    assert.equal(r.status, 'removed');
+    assert.equal(r.removed_by_name, 'volunteer accepted');
+    assert.ok(r.removed_at, 'removed_at is stamped');
+    assert.equal(r.note, 'collected 2026-11-02');
+
+    const after = await call('GET', '/api/signs/pickup', volunteerCookie);
+    const afterIds = (after.json() as { signs: Array<{ id: string }> }).signs.map((s) => s.id);
+    assert.ok(!afterIds.includes(signCtx.cornerId), 'a removed sign is off the pickup list');
+    assert.ok(afterIds.includes(signCtx.strayId));
+
+    // Putting it back clears the removal stamp rather than leaving a removal date on a live sign.
+    const back = await call('PATCH', `/api/signs/${signCtx.cornerId}`, organizerCookie, { status: 'placed' });
+    const b = (back.json() as { sign: Record<string, unknown> }).sign;
+    assert.equal(b.removed_at, null);
+    assert.equal(b.removed_by_name, null);
+    assert.equal(b.placed_by_name, 'volunteer accepted', 'the original placer is not overwritten');
+    const relisted = await call('GET', '/api/signs/pickup', volunteerCookie);
+    assert.ok(
+      (relisted.json() as { signs: Array<{ id: string }> }).signs.map((s) => s.id).includes(signCtx.cornerId),
+      'putting a sign back puts it back on the pickup list',
+    );
+
+    assert.equal((await call('PATCH', `/api/signs/${randomUUID()}`, organizerCookie, { status: 'missing' })).statusCode, 404);
+    assert.equal((await call('PATCH', `/api/signs/${signCtx.cornerId}`, organizerCookie, {})).statusCode, 400);
+  });
+
+  it('lists doors that asked for a sign, and drops one as soon as its sign is placed', async () => {
+    const door = ctx.streetHouseholdIds[0]!; // the contacts suite ticked wants_sign here
+
+    const before = await call('GET', '/api/signs/requests', organizerCookie);
+    assert.equal(before.statusCode, 200);
+    const rows = (before.json() as { requests: Array<Record<string, unknown>> }).requests;
+    const wanted = rows.find((r) => r.household_id === door);
+    assert.ok(wanted, 'the door that asked for a sign is on the list');
+    assert.ok(wanted.address, 'with the address needed to deliver it');
+    assert.equal(wanted.last_result, 'spoke');
+    assert.equal(wanted.user_name, 'volunteer accepted');
+    for (const k of [...RESTRICTED_VOTER_KEYS, ...RESTRICTED_HH_KEYS]) {
+      assert.equal(k in wanted, false, `sign requests must not carry ${k}`);
+    }
+    // The follow-up door said nothing about a sign, so it is not here.
+    assert.ok(!rows.some((r) => r.household_id === ctx.outsideHouseholdId));
+
+    const placed = await call('POST', '/api/signs', organizerCookie, {
+      household_id: door,
+      lat: SIGN_LAT,
+      lon: SIGN_LON,
+      accuracy_m: 12,
+      size: 'small',
+    });
+    assert.equal(placed.statusCode, 201, placed.body);
+    const s = (placed.json() as { sign: Record<string, unknown> }).sign;
+    signCtx.doorSignId = track(s.id as string);
+    assert.equal(s.household_id, door);
+    assert.ok(s.address, 'the joined household address comes back');
+    assert.ok(s.ward);
+
+    const after = await call('GET', '/api/signs/requests', organizerCookie);
+    const afterRows = (after.json() as { requests: Array<{ household_id: string }> }).requests;
+    assert.ok(!afterRows.some((r) => r.household_id === door), 'a door with a sign is no longer a request');
+
+    // A volunteer sees only requests inside their own turfs — same rule as every other door read.
+    const volBefore = await call('GET', '/api/signs/requests', volunteerCookie);
+    assert.equal(volBefore.statusCode, 200);
+
+    const naud = await db.query(
+      `SELECT count(*)::int AS n FROM audit_log
+       WHERE action = 'view_sign_requests' AND user_id IN (SELECT id FROM app_user WHERE email LIKE $1)`,
+      [EMAIL_PATTERN],
+    );
+    assert.equal(naud.rows[0].n, 3, 'every read of the request list is audited');
+  });
+
+  it('deletes signs and photos for organizers only, and takes the file with them', async () => {
+    const volDelete = await call('DELETE', `/api/signs/photo/${signCtx.photoId}`, volunteerCookie);
+    assert.equal(volDelete.statusCode, 403);
+    const volSign = await call('DELETE', `/api/signs/${signCtx.doorSignId}`, volunteerCookie);
+    assert.equal(volSign.statusCode, 403);
+
+    const del = await call('DELETE', `/api/signs/photo/${signCtx.photoId}`, organizerCookie);
+    assert.equal(del.statusCode, 204);
+    assert.equal((await readdir(photoDir)).length, 0, 'the file is gone, not just the row');
+    const gone = await db.query(`SELECT count(*)::int AS n FROM sign_photo WHERE id = $1`, [signCtx.photoId]);
+    assert.equal(gone.rows[0].n, 0);
+    assert.equal((await call('DELETE', `/api/signs/photo/${signCtx.photoId}`, organizerCookie)).statusCode, 404);
+
+    const delSign = await call('DELETE', `/api/signs/${signCtx.doorSignId}`, organizerCookie);
+    assert.equal(delSign.statusCode, 204);
+    assert.equal((await call('GET', `/api/signs/${signCtx.doorSignId}`, organizerCookie)).statusCode, 404);
+    assert.equal((await call('DELETE', `/api/signs/${signCtx.doorSignId}`, organizerCookie)).statusCode, 404);
+  });
+
+  it('requires a session for every sign route', async () => {
+    for (const [method, url] of [
+      ['GET', '/api/signs'],
+      ['GET', '/api/signs/pickup'],
+      ['GET', '/api/signs/requests'],
+      ['POST', '/api/signs'],
+    ] as const) {
+      const res = await app.inject({ method, url, ...(method === 'POST' ? { payload: {} } : {}) });
+      assert.equal(res.statusCode, 401, `${method} ${url}`);
+    }
   });
 });

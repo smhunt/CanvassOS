@@ -45,6 +45,15 @@ const assignBody = z.object({
 
 const assignmentPatchBody = z.object({ status: statusSchema });
 
+// GET /api/turfs defaults to the working set. An archived turf is a finished walk, and leaving it in
+// the list makes the builder's overlap check claim streets that are actually free again.
+const listQuery = z.object({
+  archived: z
+    .enum(['true', 'false', '1', '0'])
+    .optional()
+    .transform((v) => v === 'true' || v === '1'),
+});
+
 // ---------------------------------------------------------------- SQL
 
 /** Per-turf counts: doors, voters behind them, and doors with at least one contact row. */
@@ -249,9 +258,13 @@ export const turfRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(201).send({ turf: { ...turf, streets: streets.get(turf.id) ?? [], assignees: [] } });
   });
 
-  // GET /api/turfs
-  app.get('/', { preHandler: organizerOnly }, async () => {
-    const turfs = await q<TurfRow>(app.db, `${TURF_SELECT} ORDER BY t.archived, t.created_at DESC`);
+  // GET /api/turfs?archived=true — active turfs only unless archived ones are asked for.
+  app.get('/', { preHandler: organizerOnly }, async (req) => {
+    const qp = listQuery.parse(req.query);
+    const turfs = await q<TurfRow>(
+      app.db,
+      `${TURF_SELECT} ${qp.archived ? '' : 'WHERE NOT t.archived'} ORDER BY t.archived, t.created_at DESC`,
+    );
     const ids = turfs.map((t) => t.id);
     const [byTurf, streets] = await Promise.all([assigneesByTurf(app.db, ids), streetsByTurf(app.db, ids)]);
     return {

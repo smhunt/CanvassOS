@@ -23,7 +23,16 @@ export type AuditAction =
   | 'update_assignment'
   | 'view_turf_doors'
   | 'view_follow_ups'
-  | 'contact';
+  | 'contact'
+  // Lawn signs
+  | 'place_sign'
+  | 'update_sign'
+  | 'delete_sign'
+  | 'view_sign_photo'
+  | 'upload_sign_photo'
+  // GET /api/signs/requests reads doors off the voters list, so it audits like any other
+  // personal-data read; the rest of /api/signs is campaign logistics and does not.
+  | 'view_sign_requests';
 
 export interface AuditEntry {
   userId: string | null;

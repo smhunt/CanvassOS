@@ -5,7 +5,9 @@
   "description": "Middlesex Centre Canvass API (Phase 1: auth + read-only viewer)",
   "type": "module",
   "main": "dist/server.js",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
@@ -16,6 +18,7 @@
   "dependencies": {
     "@fastify/cookie": "^9.4.0",
     "@fastify/helmet": "^11.1.1",
+    "@fastify/multipart": "^8.3.1",
     "@fastify/rate-limit": "^9.1.0",
     "argon2": "^0.41.1",
     "fastify": "^4.29.0",

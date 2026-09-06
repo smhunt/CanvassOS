@@ -18,6 +18,9 @@ const schema = z.object({
     .default('true')
     .transform((v) => v !== 'false' && v !== '0'),
   BOUNDARY_PATH: z.string().default('../data/mc_boundary.json'),
+  // Sign photos are files on disk, not rows: they are large, never queried, and living in `data/`
+  // means `make purge` shreds them with the CSVs after the election. Created on first boot if absent.
+  SIGN_PHOTO_DIR: z.string().default('../data/sign-photos'),
   LOG_LEVEL: z.string().default('info'),
 });
 
