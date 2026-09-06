@@ -36,6 +36,7 @@ import { hashPassword } from '../src/auth/password.js';
 import { loadConfig } from '../src/config.js';
 import { createPool, type Db } from '../src/db.js';
 import { clearStreetViewCache, type FetchLike } from '../src/lib/streetview.js';
+import { LogProvider } from '../src/messaging/provider.js';
 import { normalizeContactValue } from '../src/routes/voter-contacts.js';
 
 const DATABASE_URL =
@@ -92,6 +93,22 @@ let db: Db;
 let photoDir: string;
 /** Every sign this run places, so after() can delete exactly those rows (sign_photo cascades). */
 const createdSignIds: string[] = [];
+/** Messaging rows this run creates — campaigns cascade their message_send rows. */
+const createdCampaignIds: string[] = [];
+const createdSenderNumberIds: string[] = [];
+/**
+ * Every number this run pretends to be. Reserved 555-01xx line numbers, so they cannot collide
+ * with a real contact even if the test database has one, and they are the handle for cleaning up
+ * message_inbound / subscribe_pending rows by value.
+ */
+const MSG_NUMBERS = [
+  '+15195550201',
+  '+15195550202',
+  '+15195550203',
+  '+15195550204',
+  '+15195550205',
+  '+15195550299',
+];
 let adminCookie: string;
 let volunteerCookie: string;
 let organizerCookie: string;
@@ -188,6 +205,31 @@ before(async () => {
 
 after(async () => {
   await app.close();
+
+  // Messaging first: message_campaign.created_by references app_user with no ON DELETE, so a
+  // campaign this run composed would otherwise block the deletion of the organizer who composed
+  // it. Deleting the campaign cascades its message_send rows, which releases sender_number.
+  const inboundIds = (
+    await db.query<{ id: string }>(`SELECT id FROM message_inbound WHERE from_e164 = ANY($1::text[])`, [MSG_NUMBERS])
+  ).rows.map((r) => r.id);
+  const pendingIds = (
+    await db.query<{ id: string }>(`SELECT id FROM subscribe_pending WHERE e164 = ANY($1::text[])`, [MSG_NUMBERS])
+  ).rows.map((r) => r.id);
+  // The inbound/subscribe audit rows carry no user_id (the recipient did them, not the campaign),
+  // so they are identified by the row they point at rather than by the test email pattern.
+  const anonTargets = [...inboundIds, ...pendingIds];
+  if (anonTargets.length > 0) {
+    await db.query(`DELETE FROM audit_log WHERE user_id IS NULL AND target = ANY($1::text[])`, [anonTargets]);
+  }
+  await db.query(`DELETE FROM message_inbound WHERE from_e164 = ANY($1::text[])`, [MSG_NUMBERS]);
+  await db.query(`DELETE FROM subscribe_pending WHERE e164 = ANY($1::text[])`, [MSG_NUMBERS]);
+  if (createdCampaignIds.length > 0) {
+    await db.query(`DELETE FROM message_campaign WHERE id = ANY($1::uuid[])`, [createdCampaignIds]);
+  }
+  if (createdSenderNumberIds.length > 0) {
+    await db.query(`DELETE FROM sender_number WHERE id = ANY($1::uuid[])`, [createdSenderNumberIds]);
+  }
+
   // Delete exactly what this run created, by id, in FK order. Never TRUNCATE: this database may
   // hold rows (users, turfs, contacts) that belong to somebody else.
   const ids = await testUserIds();
@@ -2084,5 +2126,732 @@ describe('street-level imagery', () => {
     assert.equal((res.json() as { error: { code: string } }).error.code, 'streetview_unavailable');
     // The provider's own status stays in the log; the volunteer at the door gets a generic message.
     assert.doesNotMatch(res.body, /REQUEST_DENIED/);
+  });
+});
+
+// ------------------------------------------------------------------ Phase 5: messaging
+
+/**
+ * Opt-in SMS and email.
+ *
+ * Nothing in here sends a message: `MESSAGING_PROVIDER` is unset, so the stack runs on the `log`
+ * provider and the last inch is a log line. That is not a limitation of the tests, it is the
+ * property under test — the default configuration of this system writes the send rows and puts
+ * nothing on the wire, and a second app instance below is built with a `fetch` that throws to
+ * prove the send path never reaches for one.
+ *
+ * What is actually under test is the set of brakes that make the feature safe to switch on: SMS
+ * priority and dedupe so nobody is messaged twice, approval before sending, a ceiling on the
+ * audience, a consent re-check at dequeue rather than at queue time, quiet hours, daily caps, and
+ * STOP honoured from a number that matches nothing at all.
+ */
+describe('messaging (opt-in SMS and email)', () => {
+  interface MsgCtx {
+    community: string;
+    /** Households in that community, in id order; [0] and [1] share a phone number. */
+    hh: string[];
+    voters: string[];
+    contacts: Record<string, string>;
+    totalElectors: number;
+    numberId: string;
+    campaignId: string;
+    organizerId: string;
+  }
+  const m = {} as MsgCtx;
+
+  /** A second stack: audience ceiling of one, a webhook token, and a `fetch` that must never run. */
+  let msgApp: FastifyInstance;
+  let fetchCalls = 0;
+  const WEBHOOK_TOKEN = 'test-webhook-token-0123456789';
+
+  const provider = (): LogProvider => app.messaging.provider as LogProvider;
+
+  /** A Tuesday, 14:00 in Toronto — comfortably inside the weekday window. */
+  const WEEKDAY_AFTERNOON = new Date('2026-09-08T18:00:00Z');
+  /** A Sunday, 07:00 in Toronto — before even the weekday window opens. */
+  const SUNDAY_DAWN = new Date('2026-09-06T11:00:00Z');
+
+  const form = (target: FastifyInstance, url: string, fields: Record<string, string>) =>
+    target.inject({
+      method: 'POST',
+      url,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams(fields).toString(),
+    });
+
+  const newCampaign = async (body: Record<string, unknown>): Promise<string> => {
+    const res = await call('POST', '/api/messaging/campaigns', organizerCookie, body);
+    assert.equal(res.statusCode, 201, res.body);
+    const id = (res.json() as { campaign: { id: string } }).campaign.id;
+    createdCampaignIds.push(id);
+    return id;
+  };
+
+  const sendRows = async (campaignId: string) =>
+    (
+      await db.query<{ id: string; status: string; skip_reason: string | null; channel: string; value: string }>(
+        `SELECT ms.id, ms.status::text AS status, ms.skip_reason, ms.channel::text AS channel, vc.value
+         FROM message_send ms JOIN voter_contact vc ON vc.id = ms.voter_contact_id
+         WHERE ms.campaign_id = $1 ORDER BY vc.value`,
+        [campaignId],
+      )
+    ).rows;
+
+  before(async () => {
+    m.organizerId = (await db.query<{ id: string }>(`SELECT id FROM app_user WHERE email = $1`, [email('org')]))
+      .rows[0]!.id;
+
+    // A community no other part of this run has touched, so the audience counts below are exactly
+    // the rows this block creates and nothing else.
+    const busy = (
+      await db.query<{ community: string }>(
+        `SELECT DISTINCT h.community FROM voter_contact vc JOIN household h ON h.id = vc.household_id
+         WHERE h.community IS NOT NULL`,
+      )
+    ).rows.map((r) => r.community);
+    const pick = await db.query<{ community: string }>(
+      `SELECT h.community
+       FROM household h JOIN voter v ON v.household_id = h.id
+       WHERE h.community IS NOT NULL AND NOT (h.community = ANY($1::text[]))
+       GROUP BY h.community
+       HAVING count(DISTINCT h.id) >= 4
+       ORDER BY count(DISTINCT h.id) DESC
+       LIMIT 1`,
+      [busy],
+    );
+    assert.ok(pick.rows[0], 'need a community with four contact-free households');
+    m.community = pick.rows[0].community;
+
+    const hh = await db.query<{ id: string; voter_id: string }>(
+      `SELECT h.id, (SELECT v.id FROM voter v WHERE v.household_id = h.id ORDER BY v.id LIMIT 1) AS voter_id
+       FROM household h
+       WHERE h.community = $1 AND EXISTS (SELECT 1 FROM voter v WHERE v.household_id = h.id)
+       ORDER BY h.id LIMIT 4`,
+      [m.community],
+    );
+    assert.equal(hh.rows.length, 4);
+    m.hh = hh.rows.map((r) => r.id);
+    m.voters = hh.rows.map((r) => r.voter_id);
+    m.totalElectors = (
+      await db.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM voter v JOIN household h ON h.id = v.household_id WHERE h.community = $1`,
+        [m.community],
+      )
+    ).rows[0]!.n;
+
+    const contact = async (
+      i: number,
+      channel: 'phone' | 'email',
+      value: string,
+      gotv: boolean,
+      updates: boolean,
+    ): Promise<string> => {
+      const row = await db.query<{ id: string }>(
+        `INSERT INTO voter_contact (voter_id, household_id, channel, value, consent_gotv, consent_updates,
+                                    consent_note, collected_by)
+         VALUES ($1, $2, $3::contact_channel, $4, $5, $6, 'agreed at the door on the test doorstep', $7)
+         RETURNING id`,
+        [m.voters[i], m.hh[i], channel, value, gotv, updates, m.organizerId],
+      );
+      return row.rows[0]!.id;
+    };
+
+    m.contacts = {
+      // Two DIFFERENT households that gave the same number — a couple, or a number written down
+      // twice. One message, not two.
+      sharedA: await contact(0, 'phone', MSG_NUMBERS[0]!, true, false),
+      sharedB: await contact(1, 'phone', MSG_NUMBERS[0]!, true, false),
+      // Somebody who gave us both. SMS wins; the address is never also messaged.
+      bothPhone: await contact(2, 'phone', MSG_NUMBERS[1]!, true, false),
+      bothEmail: await contact(2, 'email', `both+${RUN}@test.local`, true, false),
+      // Email only, and only for updates — so it proves BOTH that email is the fallback and that
+      // consent is per purpose.
+      updatesEmail: await contact(3, 'email', `updates+${RUN}@test.local`, false, true),
+    };
+
+    // Added INACTIVE. Everything up to the quiet-hours test must be able to queue without the
+    // worker quietly draining the queue underneath the assertions.
+    const num = await db.query<{ id: string }>(
+      `INSERT INTO sender_number (e164, provider, label, daily_cap, active)
+       VALUES ($1, 'log', 'test pool', 5, false) RETURNING id`,
+      [MSG_NUMBERS[4]],
+    );
+    m.numberId = num.rows[0]!.id;
+    createdSenderNumberIds.push(m.numberId);
+
+    const config = loadConfig({
+      DATABASE_URL,
+      SESSION_SECRET: 'test-secret-test-secret-test-secret-0123456789',
+      DOMAIN: 'canvass.test',
+      COOKIE_SECURE: 'false',
+      BOUNDARY_PATH: resolve(DATA_DIR, 'mc_boundary.json'),
+      SIGN_PHOTO_DIR: photoDir,
+      MESSAGING_MAX_AUDIENCE: '1',
+      MESSAGING_WEBHOOK_TOKEN: WEBHOOK_TOKEN,
+      LOG_LEVEL: 'silent',
+    });
+    msgApp = await buildApp({
+      config,
+      db,
+      // If any part of the send path reaches for the network, this fails the test rather than
+      // billing somebody. No test may make a real, billed call.
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        throw new Error('a test tried to make a real outbound HTTP call');
+      },
+      logger: false,
+    });
+    await msgApp.ready();
+  });
+
+  after(async () => {
+    await msgApp.close();
+  });
+
+  it('resolves SMS first, dedupes by number, and keeps the two consents apart', async () => {
+    const res = await call(
+      'GET',
+      `/api/messaging/audience?purpose=gotv&community=${encodeURIComponent(m.community)}`,
+      organizerCookie,
+    );
+    assert.equal(res.statusCode, 200, res.body);
+    const gotv = res.json() as Record<string, number | null>;
+
+    // Three consented phone rows across three households, but two of them are the SAME number:
+    // that household pair is contacted once.
+    assert.equal(gotv.sms, 2, 'the shared number is one message, not two');
+    // The person who gave us both a phone and an email is an SMS recipient and is NOT also an
+    // email one. One message per person per campaign, never two.
+    assert.equal(gotv.email, 0, 'SMS wins; the address is not also messaged');
+    assert.equal(gotv.total, m.totalElectors);
+    assert.equal(gotv.unreachable, m.totalElectors - 3, 'three electors are covered by those two messages');
+
+    // The email-only contact agreed to updates, not to GOTV, so it appears in one audience and
+    // not the other. That is the whole reason migration 002 has two columns.
+    const upd = await call(
+      'GET',
+      `/api/messaging/audience?purpose=updates&community=${encodeURIComponent(m.community)}`,
+      organizerCookie,
+    );
+    const updates = upd.json() as Record<string, number | null>;
+    assert.equal(updates.sms, 0);
+    assert.equal(updates.email, 1);
+  });
+
+  it('reports the throughput ceiling honestly, and refuses volunteers', async () => {
+    const res = await call(
+      'GET',
+      `/api/messaging/audience?purpose=gotv&community=${encodeURIComponent(m.community)}`,
+      organizerCookie,
+    );
+    const a = res.json() as { sms: number; daily_capacity: number; estimated_days: number | null };
+    // The pool number is still inactive, so there is no capacity and no honest estimate to give.
+    assert.equal(a.daily_capacity, 0);
+    assert.equal(a.estimated_days, null, 'null, not zero and not Infinity — the answer is unknown');
+
+    await db.query(`UPDATE sender_number SET active = true WHERE id = $1`, [m.numberId]);
+    const withPool = (
+      await call('GET', `/api/messaging/audience?purpose=gotv&community=${encodeURIComponent(m.community)}`, organizerCookie)
+    ).json() as { sms: number; daily_capacity: number; estimated_days: number };
+    assert.equal(withPool.daily_capacity, 5);
+    assert.equal(withPool.estimated_days, Math.ceil(withPool.sms / 5));
+    await db.query(`UPDATE sender_number SET active = false WHERE id = $1`, [m.numberId]);
+
+    assert.equal((await call('GET', '/api/messaging/audience?purpose=gotv', volunteerCookie)).statusCode, 403);
+
+    const audited = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_log WHERE action = 'view_audience' AND user_id = $1`,
+      [m.organizerId],
+    );
+    assert.ok(audited.rows[0]!.n >= 3, 'every audience read is audited');
+  });
+
+  it('counts segments and names the character that would triple the bill', async () => {
+    const res = await call('POST', '/api/messaging/segments', volunteerCookie, {
+      text: 'Polls close at 8pm — don’t forget!',
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const info = res.json() as { segments: number; encoding: string; offending: string[] };
+    assert.equal(info.encoding, 'UCS-2');
+    assert.deepEqual(info.offending, ['—', '’']);
+    assert.equal(info.segments, 1);
+  });
+
+  it('refuses to send a campaign nobody approved', async () => {
+    m.campaignId = await newCampaign({
+      name: 'GOTV reminder (test)',
+      purpose: 'gotv',
+      body_sms: 'Election day is Monday. Polls open 10am to 8pm. Reply STOP to opt out.',
+      audience: { community: [m.community] },
+    });
+
+    const res = await call('POST', `/api/messaging/campaigns/${m.campaignId}/send`, organizerCookie);
+    assert.equal(res.statusCode, 409, res.body);
+    assert.equal((res.json() as { error: { code: string } }).error.code, 'not_approved');
+
+    assert.equal((await sendRows(m.campaignId)).length, 0, 'nothing was queued');
+    const status = await db.query<{ status: string }>(
+      `SELECT status::text AS status FROM message_campaign WHERE id = $1`,
+      [m.campaignId],
+    );
+    assert.equal(status.rows[0]!.status, 'draft', 'a campaign cannot leave draft without an approver');
+  });
+
+  it('refuses an audience over MESSAGING_MAX_AUDIENCE unless the request overrides it', async () => {
+    const create = await msgApp.inject({
+      method: 'POST',
+      url: '/api/messaging/campaigns',
+      headers: { cookie: organizerCookie },
+      payload: {
+        name: 'Too big (test)',
+        purpose: 'gotv',
+        body_sms: 'This one is larger than the ceiling allows.',
+        audience: { community: [m.community] },
+      },
+    });
+    assert.equal(create.statusCode, 201, create.body);
+    const id = (create.json() as { campaign: { id: string } }).campaign.id;
+    createdCampaignIds.push(id);
+
+    const approve = await msgApp.inject({
+      method: 'POST',
+      url: `/api/messaging/campaigns/${id}/approve`,
+      headers: { cookie: organizerCookie },
+    });
+    assert.equal(approve.statusCode, 200, approve.body);
+
+    const blocked = await msgApp.inject({
+      method: 'POST',
+      url: `/api/messaging/campaigns/${id}/send`,
+      headers: { cookie: organizerCookie },
+      payload: {},
+    });
+    assert.equal(blocked.statusCode, 409, blocked.body);
+    assert.equal((blocked.json() as { error: { code: string } }).error.code, 'audience_too_large');
+    assert.equal((await sendRows(id)).length, 0, 'the guard queued nothing at all');
+
+    const overridden = await msgApp.inject({
+      method: 'POST',
+      url: `/api/messaging/campaigns/${id}/send`,
+      headers: { cookie: organizerCookie },
+      payload: { override_max_audience: true },
+    });
+    assert.equal(overridden.statusCode, 200, overridden.body);
+    assert.equal((overridden.json() as { queued: number }).queued, 2);
+    // Cancel it again so it cannot compete for the number pool in the tests below.
+    const cancelled = await msgApp.inject({
+      method: 'POST',
+      url: `/api/messaging/campaigns/${id}/cancel`,
+      headers: { cookie: organizerCookie },
+    });
+    assert.equal(cancelled.statusCode, 200, cancelled.body);
+    const rows = await sendRows(id);
+    assert.ok(
+      rows.every((r) => r.status === 'skipped' && r.skip_reason === 'cancelled'),
+      'cancelling skips the unsent rows with a reason rather than deleting them',
+    );
+  });
+
+  it('approve is its own call, freezes the draft, and then send queues one row per recipient', async () => {
+    const approve = await call('POST', `/api/messaging/campaigns/${m.campaignId}/approve`, organizerCookie);
+    assert.equal(approve.statusCode, 200, approve.body);
+    const approved = (approve.json() as { campaign: Record<string, unknown> }).campaign;
+    assert.equal(approved.approved_by, m.organizerId);
+    assert.ok(approved.approved_at);
+    assert.equal(approved.status, 'draft', 'approval does not itself start a send');
+
+    // An approved campaign is frozen: approve something harmless, then swap the body, must not work.
+    const edit = await call('PATCH', `/api/messaging/campaigns/${m.campaignId}`, organizerCookie, {
+      body_sms: 'Something entirely different.',
+    });
+    assert.equal(edit.statusCode, 409, edit.body);
+    assert.equal((edit.json() as { error: { code: string } }).error.code, 'already_approved');
+
+    const send = await call('POST', `/api/messaging/campaigns/${m.campaignId}/send`, organizerCookie);
+    assert.equal(send.statusCode, 200, send.body);
+    assert.equal((send.json() as { queued: number }).queued, 2);
+
+    const rows = await sendRows(m.campaignId);
+    assert.equal(rows.length, 2);
+    assert.deepEqual(rows.map((r) => r.status), ['queued', 'queued']);
+    assert.deepEqual(rows.map((r) => r.value), [MSG_NUMBERS[0], MSG_NUMBERS[1]]);
+    assert.equal(provider().sent.length, 0, 'queuing sends nothing by itself');
+
+    // Sending twice must not queue twice: the UNIQUE key and the status guard both hold.
+    const again = await call('POST', `/api/messaging/campaigns/${m.campaignId}/send`, organizerCookie);
+    assert.equal(again.statusCode, 409, again.body);
+    assert.equal((await sendRows(m.campaignId)).length, 2);
+  });
+
+  it('waits for quiet hours rather than sending at 07:00 on a Sunday', async () => {
+    await db.query(`UPDATE sender_number SET active = true, sent_today = 0 WHERE id = $1`, [m.numberId]);
+    const before = provider().sent.length;
+
+    const result = await app.messaging.worker.drain({ at: SUNDAY_DAWN, limit: 10 });
+    assert.equal(result.stopped, 'quiet_hours');
+    assert.equal(result.sent, 0);
+    // 07:00 on a Sunday: the weekend window does not open until 10:00 local (14:00 UTC).
+    assert.equal(result.next_attempt_at?.toISOString(), '2026-09-06T14:00:00.000Z');
+    assert.equal(provider().sent.length, before, 'nothing left the building');
+    assert.ok(
+      (await sendRows(m.campaignId)).every((r) => r.status === 'queued'),
+      'the rows are still queued — waiting, not dropped',
+    );
+  });
+
+  it('re-checks withdrawal at DEQUEUE: a Saturday STOP skips a Friday queue', async () => {
+    // The queue above was built while this number was consented. Now the person withdraws — as a
+    // STOP reply would do — and the message that is already sitting in the queue must not go.
+    await db.query(`UPDATE voter_contact SET withdrawn_at = now() WHERE channel = 'phone' AND value = $1`, [
+      MSG_NUMBERS[0],
+    ]);
+
+    const before = provider().sent.length;
+    const result = await app.messaging.worker.drain({ at: WEEKDAY_AFTERNOON, limit: 10 });
+    assert.equal(result.stopped, 'empty');
+    assert.equal(result.sent, 1);
+    assert.equal(result.skipped, 1);
+
+    const rows = await sendRows(m.campaignId);
+    const withdrawn = rows.find((r) => r.value === MSG_NUMBERS[0])!;
+    assert.equal(withdrawn.status, 'skipped', 'skipped, not sent');
+    assert.equal(withdrawn.skip_reason, 'withdrawn');
+    assert.equal(rows.find((r) => r.value === MSG_NUMBERS[1])!.status, 'sent');
+
+    // Exactly one message, to the one number that had not withdrawn.
+    const outbound = provider().sent.slice(before);
+    assert.equal(outbound.length, 1);
+    assert.equal(outbound[0]!.to, MSG_NUMBERS[1]);
+    assert.equal(outbound[0]!.from, MSG_NUMBERS[4], 'it went out on a number from the pool');
+
+    // Nothing queued left → the campaign finished on its own.
+    const done = await db.query<{ status: string }>(
+      `SELECT status::text AS status FROM message_campaign WHERE id = $1`,
+      [m.campaignId],
+    );
+    assert.equal(done.rows[0]!.status, 'done');
+  });
+
+  it('runs on the log provider, which writes the rows and sends nothing', async () => {
+    // The default configuration of this system cannot text anybody: MESSAGING_PROVIDER is unset.
+    assert.equal(app.messaging.provider.name, 'log');
+    assert.ok(app.messaging.provider instanceof LogProvider);
+    // The send above marked a row `sent` with a provider id and a segment count — the whole
+    // pipeline ran — and no HTTP request was made by either app instance.
+    const sent = await db.query<{ provider_message_id: string; segments: number }>(
+      `SELECT provider_message_id, segments FROM message_send WHERE campaign_id = $1 AND status = 'sent'`,
+      [m.campaignId],
+    );
+    assert.equal(sent.rows.length, 1);
+    assert.match(sent.rows[0]!.provider_message_id, /^log:/);
+    assert.equal(sent.rows[0]!.segments, 1);
+    assert.equal(fetchCalls, 0, 'no test made a real, billed call');
+  });
+
+  it('stops when a number has used its daily cap, leaving the rest queued for tomorrow', async () => {
+    // Put the pool at its ceiling. Over the cap a Canadian long code drops messages SILENTLY, so
+    // the only safe behaviour is to stop.
+    await db.query(`UPDATE sender_number SET sent_today = daily_cap WHERE id = $1`, [m.numberId]);
+    await db.query(`UPDATE voter_contact SET withdrawn_at = NULL WHERE channel = 'phone' AND value = $1`, [
+      MSG_NUMBERS[0],
+    ]);
+
+    const id = await newCampaign({
+      name: 'Capped (test)',
+      purpose: 'gotv',
+      body_sms: 'A second reminder that will not fit inside today’s cap.',
+      audience: { community: [m.community] },
+    });
+    assert.equal((await call('POST', `/api/messaging/campaigns/${id}/approve`, organizerCookie)).statusCode, 200);
+    assert.equal((await call('POST', `/api/messaging/campaigns/${id}/send`, organizerCookie)).statusCode, 200);
+
+    const before = provider().sent.length;
+    const result = await app.messaging.worker.drain({ at: WEEKDAY_AFTERNOON, limit: 10 });
+    assert.equal(result.stopped, 'no_capacity');
+    assert.equal(result.sent, 0);
+    assert.equal(provider().sent.length, before, 'nothing was posted into the void');
+    assert.ok(
+      (await sendRows(id)).every((r) => r.status === 'queued'),
+      'the messages wait for the cap to roll over; they are not failed and not dropped',
+    );
+
+    // Pause / resume / cancel, on the campaign that is now stalled behind the cap.
+    assert.equal((await call('POST', `/api/messaging/campaigns/${id}/pause`, organizerCookie)).statusCode, 200);
+    assert.equal((await call('POST', `/api/messaging/campaigns/${id}/pause`, organizerCookie)).statusCode, 409);
+    const paused = await app.messaging.worker.drain({ at: WEEKDAY_AFTERNOON, limit: 10 });
+    assert.equal(paused.sent, 0, 'a paused campaign is invisible to the worker');
+    assert.equal((await call('POST', `/api/messaging/campaigns/${id}/resume`, organizerCookie)).statusCode, 200);
+    assert.equal((await call('POST', `/api/messaging/campaigns/${id}/cancel`, organizerCookie)).statusCode, 200);
+    assert.ok((await sendRows(id)).every((r) => r.skip_reason === 'cancelled'));
+  });
+
+  it('lists campaigns with progress counted off the send rows', async () => {
+    const res = await call('GET', '/api/messaging/campaigns', organizerCookie);
+    assert.equal(res.statusCode, 200, res.body);
+    const { campaigns } = res.json() as {
+      campaigns: Array<{ id: string; progress: Record<string, number>; sms_encoding: string }>;
+    };
+    const mine = campaigns.find((c) => c.id === m.campaignId)!;
+    // `sent` and `delivered` are separate counts, not cumulative — a `sent` pile that never turns
+    // into `delivered` is the signature of a carrier silently eating the send.
+    assert.deepEqual(mine.progress, { total: 2, queued: 0, sent: 1, delivered: 0, failed: 0, skipped: 1 });
+    assert.equal(mine.sms_encoding, 'GSM-7');
+  });
+
+  it('turns a delivery receipt into `delivered`, which is how a silent throttle is detected', async () => {
+    const row = (
+      await db.query<{ provider_message_id: string }>(
+        `SELECT provider_message_id FROM message_send WHERE campaign_id = $1 AND status = 'sent'`,
+        [m.campaignId],
+      )
+    ).rows[0]!;
+    const res = await form(app, '/api/messaging/status', {
+      MessageSid: row.provider_message_id,
+      MessageStatus: 'delivered',
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const after = await db.query<{ status: string; delivered_at: Date | null }>(
+      `SELECT status::text AS status, delivered_at FROM message_send WHERE provider_message_id = $1`,
+      [row.provider_message_id],
+    );
+    assert.equal(after.rows[0]!.status, 'delivered');
+    assert.ok(after.rows[0]!.delivered_at);
+  });
+
+  it('sends a test message to one number, bypassing the audience entirely', async () => {
+    const before = provider().sent.length;
+    const res = await call('POST', `/api/messaging/campaigns/${m.campaignId}/test`, organizerCookie, {
+      to: '(519) 555-0203',
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const body = res.json() as { sent: boolean; provider: string; segments: number; encoding: string };
+    assert.equal(body.sent, true);
+    assert.equal(body.provider, 'log');
+    assert.equal(body.encoding, 'GSM-7');
+
+    const outbound = provider().sent.slice(before);
+    assert.equal(outbound.length, 1);
+    assert.equal(outbound[0]!.to, MSG_NUMBERS[2], 'the typed number was normalised to E.164');
+    const auditedTest = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_log WHERE action = 'test_send' AND target = $1`,
+      [m.campaignId],
+    );
+    assert.equal(auditedTest.rows[0]!.n, 1, 'a test send is still a real send, and audited');
+    // Nothing was queued: a test bypasses the audience and the message_send table entirely.
+    assert.equal((await sendRows(m.campaignId)).length, 2);
+  });
+
+  it('honours STOP from a number that matches nothing, and still records it', async () => {
+    const unknown = MSG_NUMBERS[3]!;
+    const res = await form(app, '/api/messaging/inbound', { From: unknown, Body: ' stop ', MessageSid: `SM-${RUN}-1` });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.deepEqual(res.json(), { ok: true, action: 'stop', matched: 0 });
+
+    const inbound = await db.query<{ action: string; matched_contact_id: string | null }>(
+      `SELECT action::text AS action, matched_contact_id FROM message_inbound WHERE from_e164 = $1`,
+      [unknown],
+    );
+    assert.equal(inbound.rows.length, 1, 'a person telling us to stop is recorded whether we know them or not');
+    assert.equal(inbound.rows[0]!.action, 'stop');
+    assert.equal(inbound.rows[0]!.matched_contact_id, null);
+
+    const audited = await db.query<{ detail: { matched: number; from_known: boolean } }>(
+      `SELECT detail FROM audit_log WHERE action = 'inbound_stop' ORDER BY id DESC LIMIT 1`,
+    );
+    assert.deepEqual(audited.rows[0]!.detail, { matched: 0, from_known: false });
+
+    // A carrier retrying its webhook must not produce a second confirmation text.
+    const replay = await form(app, '/api/messaging/inbound', { From: unknown, Body: 'STOP', MessageSid: `SM-${RUN}-1` });
+    assert.equal((replay.json() as { duplicate?: boolean }).duplicate, true);
+  });
+
+  it('STOP from a known number stamps every matching contact, in any spelling', async () => {
+    const res = await form(app, '/api/messaging/inbound', {
+      From: MSG_NUMBERS[0]!,
+      Body: 'Arrêt',
+      MessageSid: `SM-${RUN}-2`,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal((res.json() as { matched: number }).matched, 2, 'both households that share the number');
+
+    const rows = await db.query<{ withdrawn_at: Date | null; withdrawn_note: string | null }>(
+      `SELECT withdrawn_at, withdrawn_note FROM voter_contact WHERE channel = 'phone' AND value = $1`,
+      [MSG_NUMBERS[0]],
+    );
+    assert.equal(rows.rows.length, 2);
+    assert.ok(rows.rows.every((r) => r.withdrawn_at !== null && r.withdrawn_note === 'replied STOP by SMS'));
+    // The row STAYS: a deleted row is simply re-collected at the next canvass.
+    assert.ok(rows.rows.length > 0);
+
+    // And they drop straight out of the send list.
+    const audience = (
+      await call('GET', `/api/messaging/audience?purpose=gotv&community=${encodeURIComponent(m.community)}`, organizerCookie)
+    ).json() as { sms: number };
+    assert.equal(audience.sms, 1);
+  });
+
+  it('JOIN confirms an outstanding self-serve request and records what was agreed to', async () => {
+    const CONSENT = 'Yes, text me reminders about voting in the 2026 Middlesex Centre election.';
+    await db.query(
+      `INSERT INTO subscribe_pending (e164, token, wants_gotv, wants_updates, consent_text, source)
+       VALUES ($1, $2, true, true, $3, 'web')`,
+      [MSG_NUMBERS[0], `tok-${RUN}`, CONSENT],
+    );
+
+    const res = await form(app, '/api/messaging/inbound', {
+      From: MSG_NUMBERS[0]!,
+      Body: 'YES',
+      MessageSid: `SM-${RUN}-3`,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal((res.json() as { action: string }).action, 'join');
+
+    const pending = await db.query<{ confirmed_at: Date | null }>(
+      `SELECT confirmed_at FROM subscribe_pending WHERE token = $1`,
+      [`tok-${RUN}`],
+    );
+    assert.ok(pending.rows[0]!.confirmed_at, 'the pending request is confirmed by the handset itself');
+
+    const contacts = await db.query<{ consent_gotv: boolean; consent_updates: boolean; consent_note: string; withdrawn_at: Date | null }>(
+      `SELECT consent_gotv, consent_updates, consent_note, withdrawn_at
+       FROM voter_contact WHERE channel = 'phone' AND value = $1`,
+      [MSG_NUMBERS[0]],
+    );
+    for (const c of contacts.rows) {
+      assert.equal(c.consent_gotv, true);
+      assert.equal(c.consent_updates, true);
+      // A consent record that cannot say what was agreed to is not a consent record.
+      assert.equal(c.consent_note, CONSENT);
+      // Their own text, timestamped by the carrier, is the one thing that lifts a withdrawal.
+      assert.equal(c.withdrawn_at, null);
+    }
+  });
+
+  it('answers HELP with who we are and how to stop', async () => {
+    const before = provider().sent.length;
+    const res = await form(app, '/api/messaging/inbound', {
+      From: MSG_NUMBERS[3]!,
+      Body: 'help',
+      MessageSid: `SM-${RUN}-4`,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const reply = provider().sent.slice(before);
+    assert.equal(reply.length, 1);
+    assert.match(reply[0]!.body, /Reply STOP to unsubscribe/);
+  });
+
+  it('rejects a webhook without the configured shared secret', async () => {
+    const res = await form(msgApp, '/api/messaging/inbound', { From: MSG_NUMBERS[3]!, Body: 'STOP' });
+    assert.equal(res.statusCode, 401, res.body);
+    assert.equal((res.json() as { error: { code: string } }).error.code, 'invalid_webhook_token');
+    const ok = await form(msgApp, `/api/messaging/inbound?token=${WEBHOOK_TOKEN}`, {
+      From: MSG_NUMBERS[3]!,
+      Body: 'STOP',
+      MessageSid: `SM-${RUN}-5`,
+    });
+    assert.equal(ok.statusCode, 200, ok.body);
+  });
+
+  it('subscribes opaquely, never texts a number that withdrew, and is rate limited by IP', async () => {
+    const CONSENT = 'I agree to receive text messages about voting from this campaign.';
+    // A number that said STOP is silently ignored — but the caller cannot tell, because that would
+    // turn the public form into an oracle over the campaign's contact list.
+    await db.query(`UPDATE voter_contact SET withdrawn_at = now() WHERE channel = 'phone' AND value = $1`, [
+      MSG_NUMBERS[1],
+    ]);
+    const beforeWithdrawn = provider().sent.length;
+    const ignored = await app.inject({
+      method: 'POST',
+      url: '/api/subscribe',
+      payload: { phone: MSG_NUMBERS[1], consent_text: CONSENT },
+    });
+    assert.equal(ignored.statusCode, 202, ignored.body);
+    assert.equal(provider().sent.length, beforeWithdrawn, 'no confirmation text to somebody who said stop');
+    const none = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM subscribe_pending WHERE e164 = $1`, [
+      MSG_NUMBERS[1],
+    ]);
+    assert.equal(none.rows[0]!.n, 0);
+
+    // A fresh number gets a pending row and exactly one confirmation.
+    const fresh = MSG_NUMBERS[5]!;
+    const before = provider().sent.length;
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/subscribe',
+      payload: { phone: '519-555-0299', wants_gotv: true, consent_text: CONSENT },
+    });
+    assert.equal(first.statusCode, 202, first.body);
+    // Byte-identical to the response for the withdrawn number: the endpoint reveals nothing.
+    assert.deepEqual(first.json(), ignored.json());
+    const pending = await db.query<{ consent_text: string; wants_gotv: boolean }>(
+      `SELECT consent_text, wants_gotv FROM subscribe_pending WHERE e164 = $1`,
+      [fresh],
+    );
+    assert.equal(pending.rows.length, 1);
+    assert.equal(pending.rows[0]!.consent_text, CONSENT, 'stored verbatim, never summarised');
+    const outbound = provider().sent.slice(before);
+    assert.equal(outbound.length, 1);
+    assert.match(outbound[0]!.body, /reply YES to confirm/i);
+    // Consent does NOT exist yet — only a reply from the handset creates it.
+    assert.equal(pending.rows[0]!.wants_gotv, true);
+
+    // A second request for the same number does not text it again.
+    const repeat = await app.inject({
+      method: 'POST',
+      url: '/api/subscribe',
+      payload: { phone: fresh, consent_text: CONSENT },
+    });
+    assert.equal(repeat.statusCode, 202);
+    assert.equal(provider().sent.length, before + 1, 'one confirmation per outstanding request');
+
+    // Hard per-IP limit: this endpoint spends money and buzzes strangers' phones.
+    let limited = 0;
+    for (let i = 0; i < 6; i += 1) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/subscribe',
+        payload: { phone: fresh, consent_text: CONSENT },
+      });
+      if (res.statusCode === 429) limited += 1;
+    }
+    assert.ok(limited > 0, 'the public subscribe form is rate limited by IP');
+  });
+
+  it('requires a session for every messaging route except the public and webhook ones', async () => {
+    for (const [method, url] of [
+      ['GET', '/api/messaging/audience?purpose=gotv'],
+      ['GET', '/api/messaging/campaigns'],
+      ['POST', '/api/messaging/campaigns'],
+      ['POST', '/api/messaging/segments'],
+      ['GET', '/api/messaging/numbers'],
+      ['POST', '/api/messaging/numbers'],
+    ] as const) {
+      const res = await app.inject({ method, url });
+      assert.equal(res.statusCode, 401, `${method} ${url}`);
+    }
+  });
+
+  it('manages the number pool, and reports the pool capacity that caps everything', async () => {
+    const create = await call('POST', '/api/messaging/numbers', organizerCookie, {
+      e164: '(519) 555-0204',
+      label: 'second line',
+      daily_cap: 120,
+    });
+    assert.equal(create.statusCode, 201, create.body);
+    const num = (create.json() as { number: { id: string; e164: string; daily_cap: number } }).number;
+    createdSenderNumberIds.push(num.id);
+    assert.equal(num.e164, MSG_NUMBERS[3]);
+    assert.equal(num.daily_cap, 120);
+    assert.equal((await call('POST', '/api/messaging/numbers', organizerCookie, { e164: '5195550204' })).statusCode, 409);
+
+    const patched = await call('PATCH', `/api/messaging/numbers/${num.id}`, organizerCookie, { active: false });
+    assert.equal(patched.statusCode, 200, patched.body);
+    assert.equal((patched.json() as { number: { active: boolean } }).number.active, false);
+
+    const list = await call('GET', '/api/messaging/numbers', organizerCookie);
+    const body = list.json() as { numbers: Array<{ id: string }>; daily_capacity: number };
+    assert.ok(body.numbers.some((n) => n.id === num.id));
+    assert.equal(typeof body.daily_capacity, 'number');
+    assert.equal((await call('GET', '/api/messaging/numbers', volunteerCookie)).statusCode, 403);
   });
 });

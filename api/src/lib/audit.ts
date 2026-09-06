@@ -45,7 +45,28 @@ export type AuditAction =
   | 'update_voter_contact'
   | 'withdraw_voter_contact'
   | 'delete_voter_contact'
-  | 'view_gotv_list';
+  | 'view_gotv_list'
+  // Phase 5 — messaging. Every one of these either sends something to a real person or changes
+  // whether we may, so the trail has to answer "who authorised this, and when" without needing
+  // the provider's own logs. Note that the two `inbound_*` and `subscribe_request` rows carry a
+  // NULL user_id: nobody on the campaign did them, the recipient did — and that is the whole
+  // point of recording them, because a consent or a withdrawal is only defensible if we can show
+  // when it arrived. As everywhere else in this API, the audit detail never carries the phone
+  // number or address itself; audit_log would otherwise become a second, un-withdrawable copy.
+  | 'view_audience'
+  | 'create_campaign'
+  | 'update_campaign'
+  | 'approve_campaign'
+  | 'send_campaign'
+  | 'pause_campaign'
+  | 'resume_campaign'
+  | 'cancel_campaign'
+  | 'test_send'
+  | 'create_sender_number'
+  | 'update_sender_number'
+  | 'inbound_stop'
+  | 'inbound_join'
+  | 'subscribe_request';
 
 export interface AuditEntry {
   userId: string | null;

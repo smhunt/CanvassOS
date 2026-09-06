@@ -29,6 +29,34 @@ const schema = z.object({
   // An enum rather than a string so that adding an openly-licensed provider later is a deliberate
   // code change, not a typo in the environment that silently disables the feature.
   STREETVIEW_PROVIDER: z.enum(['google']).default('google'),
+
+  // ---------------------------------------------------------------- messaging (Phase 5)
+  // This subsystem can text thousands of real people, so every default below is the one that
+  // sends nothing.
+  //
+  // `log` writes the message_send rows, logs a line per message, and puts no packet on the wire.
+  // A real send needs BOTH this set to a live provider AND that provider's credentials, and
+  // loadConfig() refuses to boot with the first without the second — a half-configured deployment
+  // fails at startup rather than silently at 3am in the middle of a GOTV drip.
+  MESSAGING_PROVIDER: z.enum(['log', 'twilio']).default('log'),
+  // The blast radius. POST /campaigns/:id/send refuses an audience larger than this unless the
+  // request explicitly overrides it, so "I meant to test on my ward" cannot become 17,000 texts.
+  MESSAGING_MAX_AUDIENCE: z.coerce.number().int().positive().default(5000),
+  TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
+  TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
+  // Weekday sending window, America/Toronto (CRTC telemarketing/ADAD hours). Weekends are narrowed
+  // to 10:00-18:00 inside these bounds — see lib/quiet-hours.ts.
+  MESSAGING_QUIET_START: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:MM').default('09:00'),
+  MESSAGING_QUIET_END: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:MM').default('21:30'),
+  // How the campaign names itself in an automated STOP/HELP/JOIN reply. Carriers require the reply
+  // to identify the sender, and a person who does not recognise the number deserves to know.
+  MESSAGING_ORG_NAME: z.string().min(1).max(60).default('This campaign'),
+  // Shared secret for the two provider webhooks, checked IN ADDITION to the provider signature and
+  // for every provider. Optional, but a deployment reachable from the internet should set it: an
+  // unauthenticated POST to /api/messaging/inbound with Body=JOIN would otherwise mint consent for
+  // a number of the caller's choosing.
+  MESSAGING_WEBHOOK_TOKEN: z.string().min(16).optional(),
+
   LOG_LEVEL: z.string().default('info'),
 });
 
@@ -43,6 +71,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const cfg = parsed.data;
   if ((cfg.ADMIN_EMAIL && !cfg.ADMIN_PASSWORD) || (!cfg.ADMIN_EMAIL && cfg.ADMIN_PASSWORD)) {
     throw new Error('ADMIN_EMAIL and ADMIN_PASSWORD must be set together');
+  }
+  // Fail at boot, loudly, rather than at the first send. A stack that thinks it is sending for
+  // real and cannot authenticate would queue a whole campaign and fail every row of it.
+  if (cfg.MESSAGING_PROVIDER === 'twilio' && !(cfg.TWILIO_ACCOUNT_SID && cfg.TWILIO_AUTH_TOKEN)) {
+    throw new Error('MESSAGING_PROVIDER=twilio requires TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN');
+  }
+  if (cfg.MESSAGING_QUIET_START >= cfg.MESSAGING_QUIET_END) {
+    throw new Error('MESSAGING_QUIET_START must be earlier than MESSAGING_QUIET_END');
   }
   return cfg;
 }

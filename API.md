@@ -1,4 +1,4 @@
-# Canvass API contract — Phases 1–2
+# Canvass API contract — Phases 1–2, plus lawn signs, doorstep contacts and Phase 5 messaging
 
 Base path `/api`. JSON in/out. Auth is a session cookie (`canvass_sid`, HttpOnly, Secure, SameSite=Lax) set by `/api/auth/login`.
 Every route except `auth/login`, `auth/accept-invite`, `health` requires a session. Roles: `admin` > `organizer` > `volunteer`.
@@ -415,6 +415,207 @@ about. So it has different rules from the list:
   consented_at }`; `consent_gotv`/`consented_at` ride along because whoever exports this is the person who has to
   answer "what did they agree to?".
 
+## Messaging — opt-in SMS and email (Phase 5)
+**This subsystem can text thousands of real people, so the contract below is written around making that impossible
+to do by accident.** Consent already lives in `voter_contact` (migration 002); this is everything downstream of it —
+campaigns, a per-recipient send row, a pool of sending numbers, inbound STOP/JOIN, and a throttled send worker
+(`db/migrations/003_messaging.sql`).
+
+### Why there is no "send to everyone" endpoint
+An unregistered Canadian local **long code carries roughly 100–250 messages per day, and the excess fails
+*silently*** — not queued, dropped (`docs/phase-5-messaging-plan.md` §1.1). The arithmetic that follows is the
+single most important fact about this API:
+
+| Audience | One number | Ten numbers | Forty numbers |
+|---|---|---|---|
+| 2,000 subscribers | 8–20 days | 1–2 days | hours |
+| 17,000 electors | 70–170 days | 7–17 days | 2–4 days |
+
+So the transport cannot honour "text everyone on Sunday night", and an endpoint that offered it would be a lie that
+fails *after the polls close* — the worst way for a GOTV tool to fail. What the API offers instead is an audience
+count with an honest `estimated_days`, and a send that **drips**: throttled per number, paused at quiet hours,
+resumable, with per-recipient progress. **Cost is not the constraint; throughput is.**
+
+### The four brakes
+1. **`MESSAGING_PROVIDER` defaults to `log`.** The log provider writes the `message_send` rows, logs one line per
+   message, and puts nothing on the wire. Every endpoint, the worker, the number pool, the caps and the quiet hours
+   run exactly as in production — only the last inch is a log call. Real sending needs `MESSAGING_PROVIDER=twilio`
+   **and** credentials; both are absent by default and the API refuses to boot with one without the other.
+2. **A campaign cannot leave `draft` without an approver.** `POST /:id/approve` is a *separate call* from
+   `POST /:id/send`; `/send` returns `409 not_approved` otherwise. An approved campaign is also frozen —
+   `PATCH` returns `409 already_approved`, so nobody can approve a benign draft and then swap the body.
+3. **`MESSAGING_MAX_AUDIENCE` (default 5000)** — `/send` returns `409 audience_too_large` unless the body says
+   `{ "override_max_audience": true }`.
+4. **The throttle lives in the worker**, not in the endpoints, so no request can bypass a daily cap or quiet hours.
+
+### Channel priority — SMS first
+One resolver decides how a person is reached, and both the count and the queue go through it, so the number an
+organiser approves is the number of messages that leave:
+1. a `phone` contact with the campaign's consent flag and no `withdrawn_at` → **SMS**;
+2. otherwise an `email` contact on the same terms → **email**;
+3. otherwise not reachable — where most electors are, and that is fine.
+
+Somebody who gave both is an SMS recipient and is **not also** counted or queued as an email one: one message per
+person per campaign, never two. Then messages are **deduped by number/address**, so two households that wrote down
+the same phone number get one text. Consent is **per purpose**: a `gotv` campaign may not reach somebody who only
+agreed to `updates`.
+
+### Endpoints
+- `GET /api/messaging/audience?purpose=gotv|updates&ward=01,02&community=KOMOKA` — **organizer/admin**, audited
+  (`view_audience`) on every call. →
+  ```
+  { sms, email, unreachable, total, daily_capacity, estimated_days }
+  ```
+  `sms` / `email` are **messages** (after SMS-priority and after dedupe). `total` is **electors** in scope and
+  `unreachable` is electors no message would reach, directly or through their household's contact. **These do not
+  sum**: `sms + email + unreachable ≠ total`, because one message can cover a household of several electors — and
+  because deduping two households onto one number removes a redundant *message*, not a person's reachability.
+  `daily_capacity` is the sum of `daily_cap` over **active** sender numbers; `estimated_days` is
+  `ceil(sms / daily_capacity)`, or **`null`** when there are no active numbers (unknown, rather than a `0` or an
+  `Infinity` that would read like an answer).
+- `POST /api/messaging/segments` `{ text }` → `{ chars, segments, encoding, offending }`. Any signed-in user; pure
+  arithmetic, no database. `encoding` is `GSM-7` (160 chars/segment, 153 multipart) or `UCS-2` (70/67). **A single
+  character outside GSM-7 re-encodes the whole body**, so `offending` lists the distinct characters responsible, in
+  order of first appearance — the composer shows those, because "3 segments" alone tells nobody what to fix.
+  Worth knowing precisely: **`é`, `à` and `Ç` are in GSM-7 and cost nothing.** What bites is the typography a word
+  processor inserts for you — the curly apostrophe `’` for `'`, the em dash `—` for `--`, smart quotes — plus a
+  lower-case `ç` or `œ`. `chars` counts code points, so an emoji is one character but two UCS-2 units. `€ { } [ ] ~
+  ^ \ |` are GSM-7 but cost **two** septets each. An empty body is `0` segments.
+- `GET /api/messaging/campaigns` → `{ campaigns: [...] }`, newest first, max 200. **Organizer/admin.**
+- `POST /api/messaging/campaigns` → `201 { campaign }`, always `status: "draft"`.
+  ```
+  { name, purpose, body_sms?, email_subject?, body_email?, audience?: { ward?: [], community?: [] }, scheduled_for? }
+  ```
+  Audit `create_campaign`.
+- `GET /api/messaging/campaigns/:id` → `{ campaign }`.
+- `PATCH /api/messaging/campaigns/:id` — **draft and unapproved only**: `409 not_draft` / `409 already_approved`.
+  Audit `update_campaign`.
+- `POST /api/messaging/campaigns/:id/approve` → `{ campaign }` with `approved_by` / `approved_at` set. The status
+  stays `draft` — approving is not sending. `409 already_approved`, `409 not_draft`, `400 empty_body`.
+  Audit `approve_campaign`.
+- `POST /api/messaging/campaigns/:id/send` `{ override_max_audience?: boolean }` →
+  `{ campaign, queued, estimated_days }`. Resolves the audience, writes **one `message_send` row per recipient**
+  (`UNIQUE (campaign_id, voter_contact_id)`, which is what makes "did she get it?" answerable and what stops a
+  retry sending twice), moves the campaign to `sending`, and kicks the worker. **Nothing is sent by this request.**
+  `409 not_approved`, `409 not_draft` (so a double click queues nothing twice), `409 audience_too_large`,
+  `400 empty_audience`. Audit `send_campaign`.
+- `POST /api/messaging/campaigns/:id/pause` (`409 not_sending`) · `/resume` (`409 not_paused`) ·
+  `/cancel` (`409 not_cancellable`). Cancelling marks every still-queued row `skipped` with
+  `skip_reason: "cancelled"` rather than deleting it — "we decided not to send this" is a fact about that recipient
+  worth keeping. Audits `pause_campaign` / `resume_campaign` / `cancel_campaign`.
+- `POST /api/messaging/campaigns/:id/test` `{ to }` → `{ sent, provider, provider_message_id, chars, segments,
+  encoding, offending }`. Sends the draft body to **one** number, bypassing the audience and the queue entirely.
+  Allowed at any status, approved or not — the `’` trap is cheapest to catch here — and **always audited**
+  (`test_send`), because with a live provider it is still a real message to a real handset. It takes a number from
+  the pool and counts against that number's daily cap. `400 empty_body`, `400 invalid_phone`.
+- `GET /api/messaging/numbers` → `{ numbers: [...], daily_capacity }` · `POST /api/messaging/numbers`
+  `{ e164, label?, provider?, daily_cap?, active? }` → `201 { number }` (`409 number_exists`) ·
+  `PATCH /api/messaging/numbers/:id` `{ label?, daily_cap?, active? }`. **Organizer/admin.** `daily_cap` defaults to
+  **100** and is capped at 1000: the reported ceiling is 100–250 and the excess is dropped without an error, so
+  guessing high loses messages invisibly. Audits `create_sender_number` / `update_sender_number`.
+
+### Public — `POST /api/subscribe` (no auth)
+```
+{ phone, wants_gotv?, wants_updates?, consent_text }        → 202 { ok: true, message }
+```
+**Double opt-in.** The form writes a `subscribe_pending` row and the number is texted once; consent is created only
+when *the handset itself* replies `YES` to the inbound webhook. This is the only consent route where we cannot see
+the person, so it gets the strictest proof.
+
+- **The response never reveals whether a number is already known** — subscribed, withdrawn, or never heard of, the
+  `202` body is byte-identical. Otherwise the form is a free oracle over the campaign's contact list: type a number,
+  read the answer, learn whether that person gave the campaign their phone number.
+- **A number that previously said STOP is silently never texted by this route.** They can still come back by
+  replying `JOIN` from their own handset.
+- **One confirmation per outstanding request**, plus a hard **5 requests/hour per IP** (`429 rate_limited`). Both
+  are needed: the rate limit stops one caller texting a thousand people, the outstanding check stops a thousand
+  callers texting one person.
+- `consent_text` (20–1000 chars) is the **verbatim wording shown beside the tick box**, stored exactly as given.
+  A consent record that cannot say what was agreed to is not a consent record.
+- `400 invalid_phone` (a typo discloses nothing and would otherwise leave somebody waiting for a text that can never
+  arrive), `400 consent_required` if neither purpose is wanted. Audit `subscribe_request` with a **null** user_id —
+  nobody on the campaign did this, the subscriber did.
+
+### Webhooks — no session, provider-signature verified
+`POST /api/messaging/inbound` and `POST /api/messaging/status`. Bodies are `application/x-www-form-urlencoded`
+(Twilio field names `From` / `To` / `Body` / `MessageSid` / `MessageStatus` / `ErrorCode`; lower-case aliases also
+accepted). Authentication is the provider's own signature (`X-Twilio-Signature`, HMAC-SHA1 over the configured URL
+plus the sorted form fields) **plus** the optional `MESSAGING_WEBHOOK_TOKEN` shared secret, which applies to *every*
+provider including `log` and is passed as `?token=` or `X-Webhook-Token`. Failure is `401 invalid_signature` /
+`401 invalid_webhook_token`. This is not ceremony: an unauthenticated `POST /inbound` with `Body=JOIN` would mint
+consent for a number of the caller's choosing.
+
+**Inbound keywords** are matched case-, space-, punctuation- and accent-insensitively, so `Arrêt.`, `ARRET` and
+`a r r e t` all land in the same branch.
+- **STOP** — `STOP`, `UNSUBSCRIBE`, `ARRÊT`/`ARRET`, `DÉSABONNEMENT`, `CANCEL`, `QUIT`, `END`, `STOPALL`. Stamps
+  `withdrawn_at` (coalesced, so a second STOP keeps the moment they *first* asked) on **every** matching
+  `voter_contact`, immediately, and replies once with a confirmation. **Honoured and recorded even when the number
+  matches nothing we hold** — a person telling us to stop is telling us to stop whether or not we can find them, and
+  if that number is collected at a door later the inbound row is there to say they already said no. Messages already
+  queued to that number are caught by the worker's dequeue-time re-check. Audit `inbound_stop` with
+  `{ matched, from_known }`.
+- **JOIN** — `JOIN`, `YES`, `OUI`, `START`, `UNSTOP`. Confirms an outstanding `subscribe_pending` if there is one
+  (recording that row's exact `consent_text`), otherwise treats the text itself as the consent and records it
+  verbatim (`Text-to-join: replied "…"`). **A JOIN also lifts a previous withdrawal** — the one place a withdrawal
+  is reversible, and only by the person's own outbound text, timestamped by the carrier. Nothing an organiser can
+  click undoes a STOP. Audit `inbound_join`.
+- **HELP** — `HELP`, `AIDE`, `INFO`. Replies with who we are and how to stop.
+- Anything else is stored with `action: 'other'` and gets no reply.
+
+`provider_message_id` is `UNIQUE` on `message_inbound` and is used as the idempotency key: a carrier retrying its
+webhook returns `{ ok: true, action, duplicate: true }` and does not send a second confirmation.
+
+`POST /api/messaging/status` moves `sent` → `delivered` (`delivered_at`), and `undelivered`/`failed` → `failed` with
+the carrier's own reason. **This is how a silent carrier throttle is detected, and it is the entire reason
+`delivered_at` exists as a column distinct from `sent_at`.** A long code over its allowance does not return an
+error: the provider accepts the message, we mark it `sent`, and the carrier drops it. From our side that failure is
+invisible — the send looks like a complete success right up until election day. The only signal is the receipt that
+never arrives, so a campaign whose `sent` count climbs while `delivered` stays flat is being throttled. Receipts are
+not polish; they are the smoke detector for the one failure mode that would otherwise be found after the polls close.
+
+### Campaign shape
+```
+{ id, name, purpose, body_sms, email_subject, body_email, status, scheduled_for, audience,
+  created_by, created_by_name, created_at, started_at, finished_at,
+  approved_by, approved_by_name, approved_at,
+  sms_segments, sms_encoding,
+  progress: { total, queued, sent, delivered, failed, skipped } }
+```
+`status` ∈ `draft` | `scheduled` | `sending` | `paused` | `done` | `cancelled`. `sms_segments` / `sms_encoding`
+travel with the campaign so a reviewer sees the bill *before* approving, not after. In `progress`, **`sent` and
+`delivered` are distinct counts, not cumulative** — see the paragraph above.
+
+### The send worker
+Drains `message_send` rows with `status = 'queued'` whose campaign is `sending`, oldest first, one at a time, each
+claimed with `SELECT … FOR UPDATE … SKIP LOCKED` inside a transaction that is held across the provider call — so
+calling `/send` twice, or racing two workers, takes *different* rows and no message goes twice. One drain runs per
+process at a time.
+
+- **Consent and withdrawal are re-checked at dequeue, never trusted from queue time.** A list built on Friday must
+  not deliver on Sunday to somebody who said stop on Saturday. Those rows become `skipped` with `skip_reason`
+  (`withdrawn`, `no_consent`, `cancelled`) — a different and far more useful fact than `failed`.
+- **Quiet hours**: 09:00–21:30 weekdays, 10:00–18:00 weekends, **America/Toronto**, computed through `Intl` so the
+  late-October DST change is handled. Outside the window the worker **waits** — rows stay queued and go out when it
+  reopens. (Strictly these are the CRTC telemarketing/ADAD hours rather than SMS rules; a text at 07:00 costs
+  goodwill regardless.) `MESSAGING_QUIET_START` / `_END` set the weekday bounds; the weekend **narrows** them, so
+  tightening the config tightens the weekend too and can never widen it.
+- **Daily caps**: a message is only sent against a `sender_number` with `sent_today < daily_cap`; `sent_today` rolls
+  over when `cap_reset_on` passes. When the pool is exhausted the worker stops for the day rather than posting into
+  a void. Email has no long-code throttle and needs no number.
+- **Retries**: a transient provider failure (429, 5xx, a dropped connection) is retried with backoff up to 5
+  attempts. A **hard rejection** (invalid number, carrier block) marks the row `failed` with the provider's own
+  reason and is **not** retried — retrying burns daily cap a deliverable message needed.
+- A campaign with nothing left queued becomes `done` with `finished_at`, including one whose every row was skipped.
+
+### Not built, deliberately
+No "send to the whole list" button (see above). No merging with the voters list — a send never exports list data to
+the provider, only the number and the body. No robocalls: the ADAD solicitation ban needs counsel before anyone
+touches voice. No pre-checked consent, anywhere.
+
+**Two gates before the first real send, neither of them code**: a provider's written confirmation on Campaign Verify
+scope for a Canadian sender and real long-code throughput, and a lawyer's read on the CASL position for a
+non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging-plan.md` §4).
+
 ## Stats (organizer/admin)
 - `GET /api/stats/overview` →
   ```
@@ -445,8 +646,20 @@ about. So it has different rules from the list:
   the default; when set it stays on the server and is never served to the browser. `STREETVIEW_PROVIDER` —
   `google` (the default and currently the only accepted value; a zod enum, so a typo fails boot rather than
   silently disabling the feature).
-- The API makes exactly one kind of outbound HTTP request: the Street View provider call above, via
-  `app.httpFetch` (`globalThis.fetch`, injectable so the test suite stubs it and never makes a billed call).
+- Env (messaging, all optional and **all defaulting to "send nothing"**): `MESSAGING_PROVIDER` — `log` (default)
+  or `twilio`; `log` writes the send rows and logs, and puts nothing on the wire. `MESSAGING_MAX_AUDIENCE` —
+  default `5000`, the ceiling `/send` refuses to cross without an explicit override. `TWILIO_ACCOUNT_SID` /
+  `TWILIO_AUTH_TOKEN` — required *together with* `MESSAGING_PROVIDER=twilio`; the API refuses to boot with the
+  provider set and the credentials missing, so a half-configured stack fails at startup rather than silently at 3am
+  mid-send. `MESSAGING_QUIET_START` / `MESSAGING_QUIET_END` — `HH:MM`, default `09:00` / `21:30`, the weekday
+  sending window in America/Toronto (weekends are narrowed to 10:00–18:00 within it). `MESSAGING_ORG_NAME` — how
+  the campaign names itself in an automated STOP/HELP/JOIN reply, default `This campaign`.
+  `MESSAGING_WEBHOOK_TOKEN` — optional shared secret (≥16 chars) checked on both provider webhooks **in addition
+  to** the provider signature and for every provider; a stack reachable from the internet should set it.
+- The API makes exactly two kinds of outbound HTTP request: the Street View provider call above, and the messaging
+  provider call — both via injectable seams (`app.httpFetch` and `app.messaging.provider`), so the test suite stubs
+  them and **no test ever makes a real, billed call**. With the default `MESSAGING_PROVIDER=log` the second one does
+  not exist at all.
 - Logging: pino, request ids; never log request bodies on auth routes.
 
 ## Implementation notes (Phase 1 backend — clarifications, no shape changes)
@@ -573,3 +786,38 @@ about. So it has different rules from the list:
   fetch/blob dance and the browser's own cache honours `Cache-Control: private`. Every failure mode (503, 404,
   502, offline) reaches it as one image `error` event and it renders `null`: no broken frame, no error message,
   and no space taken. Like the sign photos it offers no download, share or open-in-new-tab affordance.
+
+## Implementation notes (messaging)
+- **Files.** `src/messaging/provider.ts` (the `send(to, body) → { providerId, segments }` adapter, with `log` and
+  `twilio` implementations and webhook signature verification), `src/messaging/audience.ts` (the one channel-priority
+  resolver, used by both the count and the queue so they cannot drift), `src/messaging/worker.ts` (the drip),
+  `src/messaging/inbound.ts` (keyword folding, STOP/JOIN application), `src/lib/segments.ts` (GSM-7/UCS-2 maths),
+  `src/lib/quiet-hours.ts` (pure, clock-injectable), `src/routes/messaging.ts`, `src/routes/subscribe.ts`.
+- **Provider injection.** `buildApp({ provider })` overrides the configured provider, exactly as `fetchImpl` does
+  for Street View. `app.messaging = { provider, worker }`; `worker.drain({ at, limit })` is callable directly with a
+  fixed clock, which is how quiet hours and cap rollover are tested without waiting on a real one.
+- **`audience` narrowing** is stored as jsonb on the campaign — `{"ward": ["01"], "community": ["KOMOKA"]}` — and
+  parsed leniently: unknown keys are ignored, communities are upper-cased, an empty list means "no filter". The
+  query-string form accepts comma-separated values.
+- **`scheduled_for` is stored but not yet acted on.** The `scheduled` status exists in the enum and the column is
+  accepted on create/patch; nothing transitions a campaign into it and the worker does not auto-start one. A send is
+  started by `POST /:id/send`. (Given that a GOTV drip has to begin *days* before it is meant to land, the honest
+  primitive is the drip itself, not a scheduler on top of it.)
+- **Email is genuinely the fallback.** `message_send` carries email rows and the worker drains them, but the
+  provider interface's `sendEmail` is optional: the `log` provider implements it, `twilio` does not, and an email row
+  under a provider that cannot carry it is marked `failed` with that reason rather than silently pretending it went.
+  A real email sender is a new implementation of the same interface.
+- **A self-serve subscriber whose number we do not already hold cannot yet be added to a send audience.**
+  `voter_contact.household_id` is `NOT NULL REFERENCES household(id)` — correct for a number collected at a door,
+  which belongs to an address on the list, but there is nowhere to put a number from somebody who is not on it. So
+  `JOIN` records the consent (the `subscribe_pending` row is confirmed and the inbound message is stored with the
+  carrier's own timestamp, which is fully provable) and updates any `voter_contact` rows that already hold that
+  number — but it cannot create one from nothing, and `message_send.voter_contact_id` is `NOT NULL`, so such a
+  subscriber is not yet reachable by a campaign. Closing this needs a schema decision (a nullable `household_id`, or
+  a separate `subscriber` table), which is flagged here rather than guessed at.
+- **Audit.** `view_audience`, `create_campaign`, `update_campaign`, `approve_campaign`, `send_campaign`,
+  `pause_campaign`, `resume_campaign`, `cancel_campaign`, `test_send`, `create_sender_number`,
+  `update_sender_number`, `inbound_stop`, `inbound_join`, `subscribe_request`. The last three carry a **null**
+  `user_id` — nobody on the campaign performed them, the recipient did, and that is precisely why they are recorded:
+  a consent or a withdrawal is only defensible if we can show when it arrived. As everywhere else in this API, the
+  audit `detail` never contains the phone number or address itself.

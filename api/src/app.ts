@@ -11,16 +11,20 @@ import type { Config } from './config.js';
 import { createPool, type Db } from './db.js';
 import { ApiError } from './lib/errors.js';
 import type { FetchLike } from './lib/streetview.js';
+import { createProvider, type MessageProvider } from './messaging/provider.js';
+import { SendWorker } from './messaging/worker.js';
 import { auditRoutes } from './routes/audit.js';
 import { authRoutes } from './routes/auth.js';
 import { contactRoutes } from './routes/contacts.js';
 import { healthRoutes } from './routes/health.js';
 import { householdRoutes } from './routes/households.js';
+import { messagingRoutes } from './routes/messaging.js';
 import { metaRoutes } from './routes/meta.js';
 import { searchRoutes } from './routes/search.js';
 import { MAX_PHOTO_BYTES, signRoutes } from './routes/signs.js';
 import { statsRoutes } from './routes/stats.js';
 import { streetRoutes } from './routes/streets.js';
+import { subscribeRoutes } from './routes/subscribe.js';
 import { assignmentRoutes, turfRoutes } from './routes/turfs.js';
 import { userRoutes } from './routes/users.js';
 import { voterContactRoutes } from './routes/voter-contacts.js';
@@ -34,6 +38,13 @@ declare module 'fastify' {
      * a global so the test suite can hand in a stub — no test ever makes a real, billed request.
      */
     httpFetch: FetchLike;
+    /**
+     * Phase 5 messaging. The provider is `log` unless MESSAGING_PROVIDER says otherwise, so a
+     * default deployment writes the send rows and sends nothing; the worker is the throttled drip
+     * that respects daily caps and quiet hours. Decorated (like httpFetch) so tests inject a
+     * provider and no test can make a real, billed call.
+     */
+    messaging: { provider: MessageProvider; worker: SendWorker };
   }
 }
 
@@ -43,6 +54,8 @@ export interface BuildOptions {
   db?: Db;
   /** Inject an outbound fetch (tests); otherwise the platform one. */
   fetchImpl?: FetchLike;
+  /** Inject a message provider (tests); otherwise the one MESSAGING_PROVIDER names. */
+  provider?: MessageProvider;
   logger?: boolean;
 }
 
@@ -76,6 +89,18 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
     });
   }
 
+  const provider = opts.provider ?? createProvider(config, app.log, app.httpFetch);
+  const worker = new SendWorker({
+    db,
+    log: app.log,
+    provider,
+    quiet: { start: config.MESSAGING_QUIET_START, end: config.MESSAGING_QUIET_END },
+  });
+  app.decorate('messaging', { provider, worker });
+  app.addHook('onClose', async () => {
+    worker.stopScheduling();
+  });
+
   await app.register(fastifyHelmet, {
     // JSON API only; the SPA's CSP is set by Caddy. HSTS is also set by Caddy for the whole site.
     contentSecurityPolicy: false,
@@ -95,6 +120,17 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
   // plugins are, with the limits the photo endpoint enforces (one file, 8 MB).
   await app.register(fastifyMultipart, {
     limits: { fileSize: MAX_PHOTO_BYTES, files: 1, fields: 8, parts: 12 },
+  });
+
+  // Provider webhooks (POST /api/messaging/inbound and /status) arrive as form-encoded bodies,
+  // not JSON — that is how carriers post. Parsed here with the platform URLSearchParams rather
+  // than by adding a dependency for eleven lines of work.
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, payload, done) => {
+    try {
+      done(null, Object.fromEntries(new URLSearchParams(payload as string)));
+    } catch (err) {
+      done(err as Error);
+    }
   });
 
   // Uniform error envelope: { error: { code, message } }
@@ -142,6 +178,10 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       await api.register(contactRoutes);
       await api.register(signRoutes, { prefix: '/signs' });
       await api.register(voterContactRoutes, { prefix: '/voter-contacts' });
+      await api.register(messagingRoutes, { prefix: '/messaging' });
+      // Public, no session: the self-serve opt-in form posts here. Sits beside /messaging rather
+      // than under it because it is the one messaging route an anonymous visitor may call.
+      await api.register(subscribeRoutes);
       await api.register(auditRoutes);
     },
     { prefix: '/api' },
