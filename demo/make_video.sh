@@ -20,14 +20,15 @@ rm -rf "$B"; mkdir -p "$B"
 SC="/private/tmp/claude-501/-Users-seanhunt-Code-mc-canvass/a23073dd-a3c0-41e5-9a67-4a15013373c1/scratchpad/tablet-shots"
 CH="/var/folders/53/nm8g_by100qblvwj6lh7v47r0000gn/T/claude-chrome-screenshots-ulPXn2"
 
+CH2="/var/folders/53/nm8g_by100qblvwj6lh7v47r0000gn/T/claude-chrome-screenshots-ulPXn2"
 scenes=(
-"$CH/screenshot-1788657457706-1.jpg|MC Canvass is a door knocking tool built for one municipal campaign. It imports the voters list for Middlesex Centre: seven thousand one hundred and forty households, sixteen thousand electors, mapped."
-"$SC/11-tablet-turf-list-two-up.jpg|An organiser cuts the municipality into turfs, by picking streets or drawing a shape on the map, and sees the door count before committing. Then hands a turf to a volunteer."
-"$SC/05-phone-390x844-bottom-sheet-unchanged.jpg|At the door, it is a phone. Doors come in walking order. One tap records what happened, and it moves you to the next one."
-"$SC/02-tablet-834x1194-ipad-pro-11-portrait.jpg|On an iPad the list and the door sit side by side, so you can see where you are in the turf while you record."
-"$SC/04-tablet-1194x834-ipad-landscape.jpg|Every door carries what happened last time, so coverage is obvious at a glance and nobody knocks the same house twice."
-"$CH/screenshot-1788667365622-3.jpg|Rural signal is bad, so results queue on the phone and sync themselves later. And when a battery dies, the turf prints on paper."
-"$SC/10-tablet-auto-advance-after-result.jpg|The voters list is personal information under the Municipal Elections Act. So it is self hosted, every access is logged, and one command destroys it after the election."
+"$CH/screenshot-1788657457706-1.jpg|MC Canvass is a door-knocking tool for one municipal campaign. It maps the whole voters list — seven thousand doors, sixteen thousand electors."
+"$CH2/screenshot-1788677101771-29.jpg|An organiser cuts the map into turfs — by street or by drawing a shape — sees the door count before committing, then hands each one to a volunteer."
+"$CH2/screenshot-1788677149165-30.jpg|Doors come in walking order, each carrying whatever happened there last time."
+"$CH2/screenshot-1788677168426-31.jpg|One tap records the result and moves to the next house. Speaking to someone opens support, flags and a note."
+"$CH2/screenshot-1788677194617-34.jpg|Rural signal is bad, so results queue on the phone and sync later. And when a battery dies, the turf prints on paper."
+"$CH2/screenshot-1788677168427-32.jpg|Lawn signs are logged with a GPS fix and a photo. They have to come down afterwards, and one nobody can find is a fine."
+"$CH2/screenshot-1788677194617-33.jpg|The list is personal information under the Municipal Elections Act. So it is self-hosted, every access is logged, and one command destroys it afterwards."
 )
 
 echo "voice: $VOICE"
@@ -38,10 +39,17 @@ for s in "${scenes[@]}"; do
   n=$(printf '%02d' "$i")
 
   # narration -> wav, and its exact duration decides how long the still is held
-  say -v "$VOICE" -o "$B/a$n.aiff" "$txt"
-  ffmpeg -y -v error -i "$B/a$n.aiff" -ar 44100 -ac 2 "$B/a$n.wav"
+  # OpenAI TTS when a key is present — macOS `say` has no enhanced voices installed here and sounds
+  # it. Falls back to `say` so the script still works on a machine without a key.
+  if [ -n "${OPENAI_API_KEY:-}" ]; then
+    python3 demo/tts.py "$txt" "$B/a$n.raw.wav"
+    ffmpeg -y -v error -i "$B/a$n.raw.wav" -af atempo=1.07 -ar 44100 -ac 2 "$B/a$n.wav"
+  else
+    say -v "$VOICE" -o "$B/a$n.aiff" "$txt"
+    ffmpeg -y -v error -i "$B/a$n.aiff" -ar 44100 -ac 2 "$B/a$n.wav"
+  fi
   dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$B/a$n.wav")
-  dur=$(python3 -c "print(round(float('$dur') + 0.45, 3))")   # a beat of silence after each line
+  dur=$(python3 -c "print(round(float('$dur') + 0.35, 3))")   # a beat of silence after each line
 
   # The captures carry a dead margin (the app was rendered at a device width inside a wider window),
   # so trim to the app itself before scaling — otherwise half the frame is empty.
@@ -50,7 +58,7 @@ for s in "${scenes[@]}"; do
 
   # letterbox onto 1920x1080 without distorting, on the app's own dark background
   ffmpeg -y -v error -i "$img" -vf \
-    "scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0d1622" \
+    "scale=${W}:${H}:force_original_aspect_ratio=decrease:flags=lanczos,unsharp=5:5:0.6:5:5:0.0,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0d1622" \
     "$B/f$n.png"
   echo "file 'f$n.png'"  >> "$B/concat.txt"
   echo "duration $dur"   >> "$B/concat.txt"
@@ -66,9 +74,11 @@ echo "duration 2.0" >> "$B/concat.txt"
 echo "$last" >> "$B/concat.txt"
 
 ffmpeg -y -v error -f concat -safe 0 -i "$B/concat.txt" -pix_fmt yuv420p -r 30 "$B/video.mp4"
-ffmpeg -y -v error -f concat -safe 0 -i "$B/audio.txt" -c copy "$B/narration.wav"
+# Normalise the whole narration once, not per line, so scene-to-scene level stays even.
+ffmpeg -y -v error -f concat -safe 0 -i "$B/audio.txt" -c copy "$B/narration-raw.wav"
+ffmpeg -y -v error -i "$B/narration-raw.wav" -af loudnorm=I=-16:TP=-1.5:LRA=11 "$B/narration.wav"
 ffmpeg -y -v error -i "$B/video.mp4" -i "$B/narration.wav" \
-  -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest "$OUT"
+  -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest "$OUT"
 
 echo
 echo "$OUT  $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT")s  $(du -h "$OUT" | cut -f1)"

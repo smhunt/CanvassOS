@@ -1,20 +1,20 @@
 # 60-second explainer — narration
 
-Read by macOS `say -v Daniel`. Each line is one scene; the still is held for exactly as long
-as its own audio, which is what keeps picture and voice in step without any manual timing.
+Voiced by OpenAI TTS (`gpt-4o-mini-tts`, voice `ash`) via `demo/tts.py`, falling back to macOS
+`say` when no `OPENAI_API_KEY` is present. Each line is one scene, and the still is held for
+exactly as long as its own audio — that is what keeps picture and voice in step with no manual
+timing. Rebuild with `./demo/make_video.sh`.
 
-Rebuild with `./demo/make_video.sh` (override the voice with `VOICE=Samantha`).
+1. MC Canvass is a door-knocking tool for one municipal campaign. It maps the whole voters list — seven thousand doors, sixteen thousand electors.
 
-1. MC Canvass is a door knocking tool built for one municipal campaign. It imports the voters list for Middlesex Centre: seven thousand one hundred and forty households, sixteen thousand electors, mapped.
+2. An organiser cuts the map into turfs — by street or by drawing a shape — sees the door count before committing, then hands each one to a volunteer.
 
-2. An organiser cuts the municipality into turfs, by picking streets or drawing a shape on the map, and sees the door count before committing. Then hands a turf to a volunteer.
+3. Doors come in walking order, each carrying whatever happened there last time.
 
-3. At the door, it is a phone. Doors come in walking order. One tap records what happened, and it moves you to the next one.
+4. One tap records the result and moves to the next house. Speaking to someone opens support, flags and a note.
 
-4. On an iPad the list and the door sit side by side, so you can see where you are in the turf while you record.
+5. Rural signal is bad, so results queue on the phone and sync later. And when a battery dies, the turf prints on paper.
 
-5. Every door carries what happened last time, so coverage is obvious at a glance and nobody knocks the same house twice.
+6. Lawn signs are logged with a GPS fix and a photo. They have to come down afterwards, and one nobody can find is a fine.
 
-6. Rural signal is bad, so results queue on the phone and sync themselves later. And when a battery dies, the turf prints on paper.
-
-7. The voters list is personal information under the Municipal Elections Act. So it is self hosted, every access is logged, and one command destroys it after the election.
+7. The list is personal information under the Municipal Elections Act. So it is self-hosted, every access is logged, and one command destroys it afterwards.
