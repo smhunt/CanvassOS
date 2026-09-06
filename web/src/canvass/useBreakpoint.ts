@@ -4,7 +4,7 @@
  * CSS lays the door screen out; this hook decides the *semantics* that have to go with the layout —
  * an open door is a modal dialog when it covers the list, and a plain labelled region when it sits
  * beside it. Those two answers must flip at exactly the same width, so this string is the mirror of
- * `--bp-tablet` in styles.css and the two have to be changed together.
+ * the 720px tablet stop in `styles.css` and the two have to be changed together.
  *
  * It is a media query and not a device check on purpose: iPadOS Split View hands the same iPad out
  * at roughly 320, 375, 507 or 678px as well as its full 744-1366, and only the live width is true.

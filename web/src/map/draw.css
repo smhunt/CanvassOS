@@ -89,7 +89,7 @@
   min-height: var(--tap);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 719.98px) {
   .draw-panel,
   .draw-done {
     right: auto;

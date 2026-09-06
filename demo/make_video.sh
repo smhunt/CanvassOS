@@ -15,20 +15,24 @@ VOICE="${VOICE:-Daniel}"        # en_GB reads closer to Canadian than Samantha's
 W=1920; H=1080
 rm -rf "$B"; mkdir -p "$B"
 
-# scene = "image|narration". Images are demo-stack (fabricated residents) except the wide map,
-# which is real data showing only clusters and counts — no name or address is legible on it.
-SC="/private/tmp/claude-501/-Users-seanhunt-Code-mc-canvass/a23073dd-a3c0-41e5-9a67-4a15013373c1/scratchpad/tablet-shots"
-CH="/var/folders/53/nm8g_by100qblvwj6lh7v47r0000gn/T/claude-chrome-screenshots-ulPXn2"
+# scene = "image|narration". Every still is from the DEMO stack (fabricated residents) and lives in
+# demo/stills/, so this rebuilds from a fresh checkout with no capture step.
+STILLS="demo/stills"
 
-CH2="/var/folders/53/nm8g_by100qblvwj6lh7v47r0000gn/T/claude-chrome-screenshots-ulPXn2"
+# A generated title card rather than a screenshot: the opening line quotes the real figures, and the
+# demo database shows 48 doors — a shot of it would contradict the narration. This also keeps every
+# committed image demo-derived, so nothing in the repo comes from the voters list.
+TITLE="$B/00-title.png"
+python3 demo/title_card.py "$TITLE" "$W" "$H"
+
 scenes=(
-"$CH/screenshot-1788657457706-1.jpg|MC Canvass is a door-knocking tool for one municipal campaign. It maps the whole voters list — seven thousand doors, sixteen thousand electors."
-"$CH2/screenshot-1788677101771-29.jpg|An organiser cuts the map into turfs — by street or by drawing a shape — sees the door count before committing, then hands each one to a volunteer."
-"$CH2/screenshot-1788677149165-30.jpg|Doors come in walking order, each carrying whatever happened there last time."
-"$CH2/screenshot-1788677168426-31.jpg|One tap records the result and moves to the next house. Speaking to someone opens support, flags and a note."
-"$CH2/screenshot-1788677194617-34.jpg|Rural signal is bad, so results queue on the phone and sync later. And when a battery dies, the turf prints on paper."
-"$CH2/screenshot-1788677168427-32.jpg|Lawn signs are logged with a GPS fix and a photo. They have to come down afterwards, and one nobody can find is a fine."
-"$CH2/screenshot-1788677194617-33.jpg|The list is personal information under the Municipal Elections Act. So it is self-hosted, every access is logged, and one command destroys it afterwards."
+"$TITLE|MC Canvass is a door-knocking tool for one municipal campaign. It maps the whole voters list — seven thousand doors, sixteen thousand electors."
+"$STILLS/01-turfs.jpg|An organiser cuts the map into turfs — by street or by drawing a shape — sees the door count before committing, then hands each one to a volunteer."
+"$STILLS/02-door-list.jpg|Doors come in walking order, each carrying whatever happened there last time."
+"$STILLS/03-door-open.jpg|One tap records the result and moves to the next house. Speaking to someone opens support, flags and a note."
+"$STILLS/04-print-sheet.jpg|Rural signal is bad, so results queue on the phone and sync later. And when a battery dies, the turf prints on paper."
+"$STILLS/05-signs-pickup.jpg|Lawn signs are logged with a GPS fix and a photo. They have to come down afterwards, and one nobody can find is a fine."
+"$STILLS/06-stats.jpg|The list is personal information under the Municipal Elections Act. So it is self-hosted, every access is logged, and one command destroys it afterwards."
 )
 
 echo "voice: $VOICE"
@@ -53,7 +57,13 @@ for s in "${scenes[@]}"; do
 
   # The captures carry a dead margin (the app was rendered at a device width inside a wider window),
   # so trim to the app itself before scaling — otherwise half the frame is empty.
-  python3 demo/crop_to_content.py "$img" "$B/c$n.png" >/dev/null
+  # The title card is already composed at the output size; cropping it to its text would blow the
+  # wordmark up to fill the frame.
+  if [ "$img" = "$TITLE" ]; then
+    cp "$img" "$B/c$n.png"
+  else
+    python3 demo/crop_to_content.py "$img" "$B/c$n.png" >/dev/null
+  fi
   img="$B/c$n.png"
 
   # letterbox onto 1920x1080 without distorting, on the app's own dark background

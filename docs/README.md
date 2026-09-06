@@ -4,10 +4,13 @@ Developer orientation for `mc-canvass` — the self-hosted voter map / canvassin
 mayoral campaign (Middlesex Centre, Ontario; election day 2026-10-26).
 
 **What exists today:** Phase 1 (import, login with roles, map / search / stats), Phase 2 (turfs,
-assignments, the door screen, follow-ups, activity) and most of Phase 3 (the offline outbox and turf
-cache, nearest-first door ordering, the printable turf sheet — landing now, §6), plus two things that
-were not in the original plan at all: **lawn signs** with GPS and photos, and **doorstep phone/email
-with per-purpose consent**. Phase 4 (coverage reports, CSV export, diff re-import) is not started.
+assignments, the door screen, follow-ups, activity) and Phase 3 (the offline write queue and turf
+cache, the separate sign-photo queue, nearest-first door ordering, the printable turf sheet, the
+add-to-home-screen path, and a real tablet layout — §6 and §7), plus three things that were not in
+the original plan at all: **lawn signs** with GPS and photos, **doorstep phone/email with
+per-purpose consent**, and **optional street-level imagery of a door** (off unless a key is
+configured — §5). Phase 4 (coverage reports, CSV export with audit entries, diff-based re-import) is
+not started.
 
 This file explains how the pieces fit together. It is not the operator manual and not the API contract:
 
@@ -115,6 +118,14 @@ Basemap raster tiles are fetched by the browser directly from public OSM / CARTO
 they never pass through our stack. Map glyphs are self-hosted from `web/public/fonts` so no font
 request leaves the origin.
 
+**The one outbound call the stack itself makes** is street-level imagery, and it is off unless
+`STREETVIEW_API_KEY` is set. `GET /api/households/:id/streetview` (`api/src/lib/streetview.ts`)
+proxies Google's Street View Static API server-side. The key never reaches the browser, the only
+thing sent to the provider is **two numbers** — the door's lat/lon, which came from public county
+address data — and the **bytes are never stored, on disk or in memory**. The one thing cached is the
+`pano_id` for a coordinate, which is the single carve-out Google's Service Specific Terms §A.3
+allows; §3.2.3 forbids storing or caching the imagery itself. See §5.
+
 **Sign photos are files, not rows.** `SIGN_PHOTO_DIR` (the `signphotos` volume in compose,
 `../data/sign-photos` locally) holds the image bytes; `sign_photo` holds only metadata. They are
 large, never queried, and keeping them as files means `make purge` destroys them with the volumes.
@@ -143,8 +154,11 @@ large, never queried, and keeping them as files means `make purge` destroys them
 | Web build | Vite (+ `@vitejs/plugin-react`) | ^5.4.11 | Dev server, production build to `/app/dist`, and an inline plugin that emits `sw.js` |
 | Importer | Python (`python:3.12-slim`), non-root uid 10001 | 3.12 | One-shot CSV load |
 | Importer driver | `psycopg[binary]` | >=3.2,<4 | The importer's only third-party dependency; everything else is stdlib |
+| Offline storage (browser) | IndexedDB, no library | — | `web/src/offline/db.ts`: four object stores (`outbox`, `turf_cache`, `meta`, `pending_photos`), database `mc-canvass-field` at version 2, with a loud in-memory fallback — see §6 |
+| Street-level imagery (optional) | Google Street View Static API, called **server-side only** | — | `api/src/lib/streetview.ts`. Off unless `STREETVIEW_API_KEY` is set; `STREETVIEW_PROVIDER` is a one-value enum so adding a provider is a code change, not a typo. `app.httpFetch` (decorated in `app.ts`) is the injection point, so no test ever makes a billed call |
 | Pipeline / demo seeder | Python 3 on the host | 3.12 | `pipeline/build_lists.py` (needs `openpyxl`), `demo/seed_demo.py` (needs `psycopg`) — neither is containerised, neither runs in production |
-| Migrations | `bash` + `psql` | — | `db/migrate.sh`, invoked by `make migrate` / `make migrate-status` |
+| Explainer video | `bash` + `ffmpeg` + Python | — | `demo/make_video.sh` (stills + one narration file per scene, each held for exactly its own audio length), `demo/tts.py` (OpenAI `gpt-4o-mini-tts`, falls back to macOS `say`), `demo/crop_to_content.py` (needs Pillow). Host tooling; nothing in the stack depends on it |
+| Migrations | `bash` + `psql` | — | `db/migrate.sh`, invoked by `make migrate` / `make migrate-status`; records each file in `schema_migration` |
 
 Both images build multi-stage and run as non-root. The API image installs `curl` solely for its
 `HEALTHCHECK`.
@@ -185,8 +199,12 @@ mc-canvass/
 │                                address data. A RECONSTRUCTION — the original was lost (see §4).
 │
 ├── demo/
-│   └── seed_demo.py             fills a separate `canvass_demo` database with entirely fabricated
-│                                residents, for screenshots and video (see §7)
+│   ├── seed_demo.py             fills a separate `canvass_demo` database with entirely fabricated
+│   │                            residents, for screenshots and video (see §9). `make demo` drives it
+│   ├── README.md                how to run the demo stack, and the four fabricated accounts
+│   ├── make_video.sh            the 60-second explainer: stills + per-scene narration, deterministic
+│   ├── tts.py                   one narration line → wav (OpenAI TTS, `say` as the fallback)
+│   └── crop_to_content.py       trims the dead margin off a device-width screenshot before scaling
 │
 ├── api/
 │   ├── src/
@@ -204,14 +222,17 @@ mc-canvass/
 │   │   │   ├── scope.ts         volunteer turf scoping: assertTurfAccess / assertHouseholdAccess (§5)
 │   │   │   ├── geo.ts           GeoJSON polygon zod schema + ray-casting point-in-polygon + bbox (§4)
 │   │   │   ├── images.ts        JPEG/PNG/WebP magic-byte sniffing and header dimensions (§5)
+│   │   │   ├── streetview.ts    the optional third-party door photo, and the whole privacy argument
+│   │   │   │                    for why only two numbers leave and nothing is stored (§5)
 │   │   │   ├── audit.ts         the AuditAction union and the append-only insert
 │   │   │   └── errors.ts        ApiError + badRequest/unauthorized/forbidden/notFound factories
 │   │   └── routes/              one Fastify plugin per endpoint group: auth, users, meta, households,
 │   │                            search, streets, stats, turfs (+ assignments), contacts (+ follow-ups,
 │   │                            activity), signs, voter-contacts, audit, health. SQL lives in the route.
 │   └── test/
-│       ├── api.test.ts          integration suite against a real, imported database (§6 rails)
-│       └── geo.test.ts          pure unit tests for the point-in-polygon maths
+│       ├── api.test.ts          integration suite against a real, imported database. Two safety
+│       │                        rails guard it — see "Landmines" in ../CLAUDE.md before running it
+│       └── geo.test.ts          pure unit tests for the point-in-polygon maths (no database)
 │
 ├── web/
 │   ├── vite.config.ts           dev server (port + mkcert HTTPS + /api proxy, both overridable by
@@ -220,21 +241,29 @@ mc-canvass/
 │   ├── src/
 │   │   ├── App.tsx              the route table; role gates wrap /turfs, /reports, /stats, /admin/*
 │   │   ├── auth.tsx             client-side RequireAuth / RequireRole — cosmetic only, never a boundary
+│   │   ├── styles.css           the single stylesheet. Its header documents the FOUR-STOP BREAKPOINT
+│   │   │                        SCALE that every media query in the app uses — see §7
+│   │   ├── pwa.ts               app-shell service worker registration + the add-to-home-screen offer
+│   │   │                        (iOS gets written instructions; it never fires beforeinstallprompt)
 │   │   ├── api/                 client.ts (the ONLY fetch wrapper), hooks.ts (every query/mutation),
 │   │   │                        types.ts (mirrors API.md)
 │   │   ├── pages/               one component per route (Login, Invite, Map, Canvass, DoorScreen,
 │   │   │                        Turfs, TurfSheet, Signs, Reports, Stats, Users, Audit, Account)
 │   │   ├── offline/             the field layer: db.ts (IndexedDB, no library), outbox.ts (queued
-│   │   │                        writes + backoff), turfCache.ts (the opened turf's doors),
-│   │   │                        useOutbox.ts — see §6
+│   │   │                        JSON writes + backoff), photoQueue.ts (the SEPARATE queue for sign
+│   │   │                        photo blobs), turfCache.ts (the opened turf's doors), useOutbox.ts
+│   │   │                        — see §6
 │   │   ├── print/               print.css — the paper turf sheet's rules, scoped behind a body class
 │   │   ├── map/                 MapView + style.ts (the whole MapLibre style), palette.ts (colours shared
 │   │   │                        with legend and stats), filters, search box, household card, legal list,
-│   │   │                        and the polygon draw tool (DrawPolygon/drawGeometry/drawLayers)
-│   │   ├── turfs/               turf list, create dialog (streets or polygon), assign/rename dialogs
-│   │   ├── canvass/             the door screen: DoorSheet, DoorRow, SpokeForm, ContactHistory,
-│   │   │                        ContactDetails (phone/email + consent), TurfMap, directions.ts
-│   │   │                        (haversine + the map-app link), nearMe.ts (nearest-first ordering),
+│   │   │                        StreetView.tsx (the optional door photo), and the polygon draw tool
+│   │   │                        (DrawPolygon/drawGeometry/drawLayers)
+│   │   ├── turfs/               turf list, create dialog (streets or polygon), rename dialog, and the
+│   │   │                        assign dialog + AssigneeList (add / move / remove a walker)
+│   │   ├── canvass/             the door screen: DoorSheet (variant 'sheet' | 'pane', §7), DoorRow,
+│   │   │                        SpokeForm, ContactHistory, ContactDetails (phone/email + consent),
+│   │   │                        TurfMap, directions.ts (haversine + the map-app link), nearMe.ts
+│   │   │                        (nearest-first ordering), useBreakpoint.ts (the tablet stop in TS),
 │   │   │                        SyncStatus.tsx (the queue pill and its panel)
 │   │   ├── signs/               PlaceSignPanel, PhotoCapture/PhotoStrip, PickupPanel,
 │   │   │                        SignRequestsPanel, geolocation.ts, downscale.ts
@@ -254,10 +283,14 @@ mc-canvass/
 
 The base is [`../db/schema.sql`](../db/schema.sql), applied once on the first boot of the `db`
 container. **Everything after that is a migration** in `db/migrations/`, applied by `make migrate` and
-recorded in the `schema_migration` table that `db/migrate.sh` creates on demand. Each migration and its
-bookkeeping row commit together, so a failure leaves nothing half-applied.
+recorded in the `schema_migration` table that `db/migrate.sh` creates on demand
+(`name text PRIMARY KEY, applied_at timestamptz`). Each migration and its bookkeeping row commit
+together, so a failure leaves nothing half-applied, and "pending" is simply "a file in
+`db/migrations/` whose basename is not a row in that table".
 
-Two migrations have been applied: `001_signs.sql` and `002_voter_contact.sql`.
+Two migrations have been applied: `001_signs.sql` and `002_voter_contact.sql`. They have to be
+applied to `canvass_test` and `canvass_demo` as well, or the test suite and the demo drift out of
+shape — `make demo` does exactly that (`schema.sql` into a fresh database, then `migrate.sh`).
 
 ```
 app_user ──< session                      (ON DELETE CASCADE)
@@ -300,9 +333,12 @@ mailing fields, and `natural_key` (UNIQUE) — the stable identity used to match
 re-imports. Indexes: ward, community, `(lat, lon)`, `(street_sort, num_sort)`, and GIN trigram indexes
 on `household.address` and `voter.full_name` for `/api/search`.
 
-The current load is **7,140 households and 16,892 voters**, of which **7,067** have coordinates and are
-on the map, **70** are legal descriptions (concession/lot, no civic address, no map point) and **11**
-are flagged institutions.
+The current load is **7,140 households and 16,892 electors**, of which **7,067** have coordinates and
+are on the map, **70** are legal descriptions (concession/lot, no civic address, no map point), **3**
+would not geocode at all, and **11** are flagged institutions. The 73 households with no `lat`/`lon`
+are why several features have an honest "nothing to show here" branch rather than an error — the map
+lists them separately (`GET /api/households/legal`), and `GET /api/households/:id/streetview`
+404s on them before it ever calls the provider.
 
 **Where the CSVs come from.** `pipeline/build_lists.py` rebuilds `voters_final.csv` and
 `households.csv` from the clerk's `.xlsx` and the county's open address points. It is a
@@ -374,10 +410,23 @@ It is still destroyed by `make purge` with everything else.
 
 **Audit.** `audit_log` (bigserial, `at`, nullable `user_id`, `action`, `target`, `detail` jsonb, `ip`)
 is append-only and indexed on `(user_id, at DESC)`. The full action union is in
-`api/src/lib/audit.ts`. Every read of personal data writes a row here; that is a Municipal Elections
-Act requirement, not a nice-to-have. Note what is *not* audited, and why: `GET /api/signs` and
-`/api/signs/pickup` are campaign logistics, but `GET /api/signs/requests` reads doors off the list and
-so audits like any other personal-data read. `GET /api/activity` returns aggregates only.
+`api/src/lib/audit.ts` — extend it there rather than passing a loose string. Every read of personal
+data writes a row here; that is a Municipal Elections Act requirement, not a nice-to-have.
+
+Two groups of actions are worth knowing about:
+
+- **`voter_contact` audits changes, not only reads** (`collect_voter_contact`,
+  `view_voter_contacts`, `update_voter_contact`, `withdraw_voter_contact`, `delete_voter_contact`,
+  `view_gotv_list`). A consent is only defensible if the log can say what was agreed, when, and who
+  took or changed it.
+- **`view_streetview` audits both outcomes.** Looking at a photograph of somebody's front door is a
+  read of that door — and it is the only action in this API that sends anything to a third party, so
+  the "there was no imagery here" case is audited too (`detail.available: false`). Every 200 is a
+  fresh billed request, because the bytes are never kept: one row, one charge.
+
+Note what is *not* audited, and why: `GET /api/signs` and `/api/signs/pickup` are campaign
+logistics, but `GET /api/signs/requests` reads doors off the list and so audits like any other
+personal-data read. `GET /api/activity` returns aggregates only.
 
 **Views.** `household_status` and `voter_status` are `LEFT JOIN LATERAL … ORDER BY at DESC LIMIT 1`
 over `contact`. They are still **unused by every route** — `routes/households.ts`, `routes/turfs.ts`
@@ -395,9 +444,12 @@ it prefixes every path with `/api`, sends `credentials: 'same-origin'`, and neve
 `Authorization` header. In production Caddy routes `/api/*` to `api:3000`; in development Vite proxies
 `/api` to the local API. There is no CORS configuration anywhere because there is no cross-origin case.
 
-The one exception to "everything is JSON" is `POST /api/signs/:id/photo`, which is
-`multipart/form-data`, and `GET /api/signs/photo/:photoId`, which streams image bytes with
-`Cache-Control: private`.
+The exceptions to "everything is JSON" are all images: `POST /api/signs/:id/photo` is
+`multipart/form-data`, `GET /api/signs/photo/:photoId` streams stored bytes with
+`Cache-Control: private`, and `GET /api/households/:id/streetview` streams proxied bytes with
+`Cache-Control: private, max-age=900`. The multipart post is also the one route the SPA does *not*
+send through `client.ts` — `web/src/offline/photoQueue.ts` builds the `FormData` and the `fetch` by
+hand, then converts the failure into the same `ApiError` so it classifies like everything else (§6).
 
 ### Session cookie
 
@@ -500,6 +552,38 @@ queries join `household`, and a widened join must not become a widened response 
 **When you add a personal-data field**, add it to the right role branch in `serialize.ts`, update
 `API.md`, and extend the restricted-key assertions in `api/test/api.test.ts`.
 
+### Street-level imagery: the one third-party call
+
+`GET /api/households/:id/streetview` returns a photo of the door so a canvasser can recognise the
+house — is it the one behind the hedge, are there steps, is there a gate. It is **off unless
+`STREETVIEW_API_KEY` is set**, which is the default: this is the only call the stack makes to anyone
+else, and a campaign is entitled to make none. The design in `api/src/lib/streetview.ts` follows
+from s. 23(8) of the *Municipal Elections Act* ("shall not provide it to any other person"):
+
+- **Only coordinates leave the building.** Never a name, an address string, or a household id. A
+  door's lat/lon came from Middlesex County's public open address data; who lives there did not.
+- **The key never reaches the browser.** A key in client JavaScript would be a billing risk *and* a
+  disclosure — the requests would carry the campaign's `Referer`, tying "which doors, in what order,
+  by whom" to the campaign. Proxied, the provider sees one server asking about locations.
+- **The imagery is never stored — not on disk, not in memory.** A directory of 7,000 house photos
+  keyed to the voters list is exactly the artefact s. 23 exists to prevent, and Google's Maps
+  Platform ToS §3.2.3 bars pre-fetching, storing and caching it in any case. The only cached value
+  is the `pano_id` (or its absence) for a coordinate — a bounded, expiring, in-process map — because
+  the Service Specific Terms §A.3 name `pano_ID` values as the one thing that may be kept.
+- **The free metadata endpoint is checked first**, so a concession road with no imagery costs
+  nothing and can answer with a truthful 404 instead of a billed grey placeholder.
+- **Guarded like the door itself**: `requireAuth` plus the same `assertHouseholdAccess` used by
+  `GET /api/households/:id`, checked before the row is read. On top of that a **per-user** rate limit
+  (40/min, keyed on `req.session.user.id`, not the IP — a canvassing team shares one LTE NAT) and a
+  hard `w`/`h` cap of 640, because every distinct pixel size is a separately billed image.
+
+`app.httpFetch` is decorated in `app.ts` and injectable, so the test suite exercises this path
+without ever making a real, billed call. On the client, `web/src/map/StreetView.tsx` is a plain
+`<img>` at our own endpoint — the cookie rides along, there is no blob dance, and 503 (not
+configured) and 404 (no imagery) both render as *nothing at all*, because both mean the same thing
+to a canvasser. It renders the required Google attribution, and offers no download, share, or
+open-in-new-tab: this is a photograph of an elector's house.
+
 ### Endpoint groups
 
 Summary only — [`../API.md`](../API.md) is the contract.
@@ -510,10 +594,10 @@ Summary only — [`../API.md`](../API.md) is the contract.
 | Auth | `/api/auth/*` | none / any | `login`, `logout`, `me`, `accept-invite`, `change-password`. `login` and `accept-invite` are rate-limited 10/min/IP |
 | Users | `/api/users*` | list: organizer · invite/reinvite/patch: admin | Invite tokens are stored sha256-hashed; the raw token appears only in `invite_url` |
 | Reference | `/api/meta` | any | wards, communities, latest import, and the municipal boundary polygon read once at boot from `BOUNDARY_PATH` |
-| Households | `/api/households/*` | `points`: any · `:id`: any (**turf-scoped**) · `legal`: organizer | `points` returns `application/geo+json`, all matching households in one payload, `Cache-Control: private, max-age=60` |
+| Households | `/api/households/*` | `points`: any · `:id` and `:id/streetview`: any (**turf-scoped**) · `legal`: organizer | `points` returns `application/geo+json`, all matching households in one payload, `Cache-Control: private, max-age=60`. `:id/streetview` is image bytes, `503 streetview_disabled` when no key is configured, `404 no_imagery` where there is no photo — see above |
 | Search | `/api/search` | organizer | trigram + substring over `voter.full_name` and `household.address`. Audited |
 | Streets | `/api/streets` | organizer | one row per street × ward × community; the turf builder's input |
-| Turfs | `/api/turfs*` | organizer, except `:id/doors`: any (**turf-scoped**) | create from `streets` **or** `polygon` (exactly one), patch (rename/archive), delete, assign/unassign. `:id/doors` is the door screen and audits once per view, not once per door |
+| Turfs | `/api/turfs*` | organizer, except `:id/doors`: any (**turf-scoped**) | create from `streets` **or** `polygon` (exactly one), patch (rename/archive), delete, assign/unassign. A turf can carry several assignees (a long road split between two walkers), so `web/src/turfs/AssigneeList.tsx` lists each one with its own Move and Remove. **There is no "move" endpoint** — the client does assign-then-unassign, in that order deliberately: if only one call lands, one person too many is fixable in a tap, whereas an unassign alone leaves doors with nobody walking them and nobody told. When the second call fails, `AssignDialog` says so in those words and drops into the remove step rather than reporting a move. `:id/doors` is the door screen and audits once per view, not once per door |
 | Assignments | `/api/assignments/*` | any | `mine` (archived turfs dropped); `PATCH :id` sets status and a volunteer may only touch their own |
 | Contacts | `/api/contacts`, `/api/follow-ups`, `/api/activity` | contacts: any (**turf-scoped**) · follow-ups, activity: organizer | `POST /contacts` is append-only, multi-voter and idempotent — §6. `follow-ups` = doors whose *most recent* contact asked for one |
 | Lawn signs | `/api/signs*` | any, except `DELETE /:id` and `DELETE /photo/:photoId`: organizer | `POST` is idempotent and rejects out-of-area coordinates; `pickup` is the retrieval worklist; `requests` is the one voter-data endpoint here and is turf-scoped + audited |
@@ -527,17 +611,23 @@ TanStack Query holds API responses in memory only. The service worker generated 
 plugin precaches the app shell (index.html, the hashed bundles, icons, map glyph fonts) and **returns
 early for any URL under `/api/`**, so no voter data is ever written to the browser's Cache Storage.
 Cross-origin requests (basemap tiles) are left to the browser cache. Navigations are network-first with
-the cached shell as the offline fallback.
+the cached shell as the offline fallback. `web/src/pwa.ts` registers it (production only) and owns the
+add-to-home-screen offer: it intercepts `beforeinstallprompt` on Chrome/Edge, and because iOS Safari
+never fires that event — and iPhones are most of the phones this runs on — it shows written
+instructions there instead, after a delay and never on `/login` or `/invite`.
 
-`localStorage` holds UI preferences only — the map's base layer (`web/src/pages/MapPage.tsx`) and the
-door-order toggle (`web/src/canvass/nearMe.ts`). The one place voter data is deliberately persisted on
-a device is the IndexedDB turf cache, which is scoped and clearable — see §6.
+`localStorage` holds UI preferences only — the map's base layer (`web/src/pages/MapPage.tsx`), the
+door-order toggle (`web/src/canvass/nearMe.ts`) and the install banner's "not now"
+(`web/src/pwa.ts`), each wrapped in try/catch so private browsing does not crash the app. The places
+personal data is deliberately persisted on a device are both in IndexedDB and both scoped and
+clearable from one button: the **turf cache** and the **held sign photos** — see §6.
 
 ---
 
 ## 6. The offline / idempotency contract
 
-This is the least obvious thing in the system, and it has one real gotcha.
+This is the least obvious thing in the system. It has one real gotcha on the server (derived keys)
+and one on the client (there are **two** queues, and only one of them counts towards the pill).
 
 **Why it exists.** Volunteers are on rural roads with one bar. A door result submitted over a dying
 connection may or may not have landed; the phone has to be able to re-send without planting a second
@@ -591,53 +681,180 @@ submitted.
 
 ### The client side of it: `web/src/offline/`
 
-The Phase 3 field layer has just landed (in the working tree at the time of writing) and is the
-consumer this contract was designed for.
+The Phase 3 field layer is the consumer this contract was designed for. It is **two queues**, not
+one, plus the turf cache.
 
-- **`db.ts`** — IndexedDB in about a hundred lines, three object stores (`outbox`, `turf_cache`,
-  `meta`), no library. `localStorage` was rejected because it is synchronous (it would block the
-  thumb tap that records a door), string-only, and shares a ~5 MB origin budget that one 300-door
-  turf would eat. There is an in-memory fallback for browsers that refuse to open a database at all
-  (Safari private browsing, some webviews) — and the UI says so loudly, because "saved" would
-  otherwise be a lie past the next reload.
-- **`outbox.ts`** — every canvass write goes through `submitOrQueue`: try it now, and if the *network*
-  was the reason it failed, keep the exact body and replay it. Exponential backoff from 5 s to 5 min,
-  capped at 20 attempts, after which the entry is *parked* (`rejected` or `stalled`) and shown to the
-  volunteer — never silently dropped.
+- **`db.ts`** — IndexedDB in about a hundred lines, database `mc-canvass-field`, no library. Four
+  object stores: `outbox`, `turf_cache`, `meta` and `pending_photos`. `localStorage` was rejected
+  because it is synchronous (it would block the thumb tap that records a door), string-only, and
+  shares a ~5 MB origin budget that one 300-door turf would eat; it also cannot hold a `Blob`, which
+  IndexedDB does natively. Each store is keyed by an in-object field, so a put is an upsert. The
+  version is **2** — `pending_photos` was added there, and `onupgradeneeded` creates only what is
+  missing, so a phone already holding a v1 queue keeps every queued door across the upgrade. There
+  is an in-memory fallback for browsers that refuse to open a database at all (Safari private
+  browsing, some webviews, another tab blocking the upgrade) — and the UI says so loudly
+  (`snapshot.durable === false`), because "saved" would otherwise be a lie past the next reload.
+- **`outbox.ts`** — every canvass write (`/contacts`, `/signs`) goes through `submitOrQueue`: try it
+  now, and if the *network* was the reason it failed, keep the exact body and replay it. Exponential
+  backoff from 5 s to 5 min, capped at 20 attempts, after which the entry is *parked* (`rejected` or
+  `stalled`) and shown to the volunteer — never silently dropped. A definite refusal (400/403/404) is
+  re-thrown at the door rather than queued: the volunteer is still standing there and can act on it.
+  A 401 is queued, not parked — the session merely expired. Flushes are sequential and oldest-first
+  (one bar of signal does not get faster with six sockets), and `syncing` is claimed before the first
+  `await` so an `online` event cannot double-send.
+- **`photoQueue.ts`** — the separate queue, described below.
 - **`turfCache.ts`** — the doors response for a turf that was actually opened, so `/canvass/:turfId`
   still works with no connection.
-- **`useOutbox.ts`** — `useSyncExternalStore` bindings; subscribing is what starts the queue.
+- **`useOutbox.ts`** — `useSyncExternalStore` bindings (`useOutbox`, `usePhotoQueue`,
+  `usePendingPhotosFor`, `useQueuedResults`); subscribing is what starts a queue.
 
-Two things here follow directly from §6 and are easy to get wrong:
+Three things here follow directly from the contract above and are easy to get wrong:
 
 - **`client_id` is generated once, when the write is first attempted, and stored with the body.**
-  Regenerating it on retry would turn one door into two.
-- **The queue never reconciles on the server's echo.** Because the API derives `<client_id>:<voter_id>`
-  for a multi-voter contact, the `client_id` that comes back is not the one that was sent. Entries are
-  keyed by the id the client generated; the response is read only for its data.
+  `useRecordContact` and `usePlaceSign` mint it with `crypto.randomUUID()`; the body is kept in a ref
+  in `DoorSheet` / `PlaceSignPanel` so a retry re-sends the same key. Regenerating it on retry would
+  turn one door into two, so `enqueue` refuses outright to store an entry with no `client_id`.
+- **The queue never reconciles on the server's echo.** Because the API derives
+  `<client_id>:<voter_id>` for a multi-voter contact, the `client_id` that comes back is not the one
+  that was sent. Entries are keyed by the id the client generated (`entry.id` *is* the `client_id`);
+  the response body is read for its data and — for a sign — for one other thing, below.
+- **A queued write must not claim it was recorded.** `usePlaceSign` returns
+  `{ sign, queued: true }` with a locally-built row when the write went to the queue, so the sign
+  screen says "waiting to sync" rather than showing a server row that does not exist yet.
 
 `useDoors` is where the cache is written, and its failure branch is deliberate: `401`/`403`/`404` are
 *definite answers about this turf* and are shown as errors, while a dead radio or a `502` from a
-restarting API falls back to the cached copy. The query runs with `networkMode: 'always'` (TanStack
-otherwise pauses when the browser reports itself offline, hiding the cache behind a spinner in exactly
-the situation it exists for) and `retry: false`.
+restarting API falls back to the cached copy (flagged `from_cache` with a `cached_at`). The query
+runs with `networkMode: 'always'` (TanStack otherwise pauses when the browser reports itself offline,
+hiding the cache behind a spinner in exactly the situation it exists for) and `retry: false`. The
+same `networkMode: 'always'` is on the two write mutations, for the same reason. `useOfflineSync`
+subscribes to `onSynced` and invalidates the door, contact, assignment and sign queries once a flush
+lands, so a volunteer coming back into signal is not left looking at pre-sync numbers.
 
-### The turf cache is the one deliberate exception to "never cache `/api/*`"
+### The second queue: sign photos (`photoQueue.ts`)
 
-The service worker still never caches `/api/*`. `turf_cache` is voters-list data — personal
-information under the Municipal Elections Act — sitting on a volunteer's phone, so its scope is
-narrow on purpose:
+A sign goes up on a concession road with no bars. The placement survives — the outbox replays the
+JSON — but the photo is the half that actually finds the sign again in November, and
+`POST /api/signs/:id/photo` needs a **server id that a queued sign does not have yet**. Read the file
+header before changing it; the short version:
+
+- **It is not an outbox entry type.** The outbox is a JSON queue (`body: Record<string, unknown>`
+  through `api.post`) whose entries are rendered one by one in the sync panel, where the counts drive
+  the pill a volunteer reads as "how many doors are still on my phone". Teaching it to carry image
+  bytes would mean a union body type through every consumer, an 8 MB blob sharing a retry budget with
+  400-byte door records, and photos silently changing what the door-canvassing pill says.
+- **It is keyed by the sign's `client_id`,** because that is the only identifier that exists when the
+  shutter is pressed. `sign_id` is `null` until it is known, and a photo with a null `sign_id` is not
+  uploadable — it is *waiting*, not failing.
+- **The hand-over is an explicit call, not a timer or a subscription.** `outbox.flush()` calls
+  `adoptSignId(entry.id, res.sign.id)` with the `client_id` **it** generated and the id the server
+  just returned; `adoptSignId` stamps the waiting photos and resets their attempt counts. The
+  dependency is one-way (outbox → photos), so there is no import cycle and nothing has to be mounted
+  for it to happen. A surprising response body is not fatal: the sign is placed either way and the
+  photo stays visibly held.
+- **Same contract, its own classifier.** Backoff, parking and "never drop anything on the app's own
+  initiative" match the outbox, but this endpoint's 4xx set is its own — a `413 file_too_large` or
+  `400 unsupported_image` is a permanent verdict on these exact bytes, and a `404` means the sign row
+  is gone. Uploads are the one route that bypasses `client.ts`: `FormData` and `fetch` by hand, with
+  the failure converted into an `ApiError`.
+- **Bounded, and refused out loud.** 20 photos / 32 MB held, 8 MB each (the API's own ceiling).
+  Refusals are *returned*, not thrown, so the volunteer is told while still standing at the sign.
+- **Deleted the moment they land.** A sign photo is a photograph of somebody's house. It goes on a
+  successful upload, when the sign it belongs to is discarded (`discardEntry` on a `/signs` entry
+  calls `discardPhotosFor`), and with "Clear saved turf data".
+
+### The two deliberate exceptions to "never cache `/api/*`"
+
+The service worker still never caches `/api/*`. Two stores hold personal information on a
+volunteer's phone anyway, and both are narrow on purpose.
+
+`turf_cache` is voters-list data — personal information under the Municipal Elections Act:
 
 - nothing is cached until a turf is actually **opened** (`useDoors` writes it; nothing else does);
-- only turfs the API agreed to serve that user, which for a volunteer is only their own;
-- there is a visible **"Clear saved turf data"** control in the sync panel.
+- only turfs the API agreed to serve that user, which for a volunteer is only their own.
 
-`make purge` shreds the server after election day but cannot reach a phone. That is precisely why this
-cache is small, opt-in-by-use and clearable from the screen the volunteer already has open.
+`pending_photos` holds pictures of electors' houses, for as long as it takes to upload them and no
+longer.
+
+One visible **"Clear saved turf data"** control in the sync panel clears **both** —
+`clearTurfCache()` calls `clearPendingPhotos()` — because a volunteer who says "clear this phone"
+means that too and must not have to discover a second store. The photo screen says so at capture
+time rather than leaving it to be found afterwards.
+
+`make purge` shreds the server after election day but cannot reach a phone. That is precisely why
+these stores are small, opt-in-by-use and clearable from the screen the volunteer already has open.
 
 ---
 
-## 7. Request lifecycle
+## 7. Layout: the breakpoint scale, and the paper fallback
+
+This is a cross-cutting contract, not a detail: **there are four stops and no fifth number.** They
+are documented at the top of [`web/src/styles.css`](../web/src/styles.css), and every media query in
+that file, in `canvass/canvass.css` and in anything added later uses one of them. Everything is
+written phone-first — the unqualified rules *are* the phone, and each stop only says what extra width
+buys.
+
+| Stop | Query | What it is for |
+|---|---|---|
+| Phone | (none) | The baseline, 320–719px. One column, thumb-zone actions |
+| Compact | `max-width: 479.98px` | iPhone SE/mini and iPadOS Slide Over. Tighten labels and numbers; **never** shrink a tap target |
+| Tablet | `min-width: 720px` | Room for two panes. 720 rather than 744 so it is a width and not a device — low enough to catch an iPad mini in portrait, high enough to stay above the widest iPadOS Split View half (~678px), which genuinely is phone-shaped |
+| Desktop | `min-width: 1100px` | Mouse and keyboard, or an iPad in landscape. The top-bar nav (up to nine links plus a name) only fits from here |
+
+Two height qualifiers ride along, and there are no others: `and (min-height: 600px)` is added to the
+tablet stop by anything that needs **two panes** (a phone on its side is 844×390 — past the width and
+still a phone; every tablet's short side is 744 or more), and
+`(orientation: landscape) and (max-height: 500px)` is the phone on its side, the one case where
+height is what has run out.
+
+Two things the widths alone will not tell you:
+
+- **A tablet is a touch device.** `var(--tap)`, thumb-zone placement and hover-free affordances hold
+  at every width, so **density is never tightened by width alone**. `(pointer: coarse)` is what says
+  a finger is doing this, and `(hover: hover)` is what says a hover tint will not stick to it.
+- **The `.98` matters.** `max-width: 720px` and `min-width: 720px` both match at exactly 720px, and
+  that one-pixel overlap is where "the door is a bottom sheet and a side pane at the same time" bugs
+  live. Max-width stops sit just under the min-width stop they hand over to.
+
+### The tablet stop is also a TypeScript constant
+
+`web/src/canvass/useBreakpoint.ts` exports
+`TABLET_QUERY = '(min-width: 720px) and (min-height: 600px)'` and `useIsTablet()`, a
+`useSyncExternalStore` binding over `matchMedia` so an iPadOS Split View drag re-renders with the
+truth. It is duplicated in TypeScript because **the ARIA semantics have to flip with the layout**,
+and CSS cannot do that. Change the two together.
+
+`DoorScreen` passes the result into `DoorSheet` as `variant`:
+
+- **`sheet` (phone)** — the card covers the door list, so it is a modal dialog: scrim,
+  `role="dialog"`, `aria-modal="true"`, Escape closes it, the list behind is backdrop.
+- **`pane` (tablet)** — the card sits beside a list the volunteer can still see and use, so it is a
+  plain `<section>` with `aria-labelledby` and no Escape handler. Marking it `aria-modal` would tell
+  a screen reader the rest of the screen is unavailable when it plainly is not, and the pane stays
+  open across the auto-advance — a permanently-open "modal" is a lie either way.
+
+### The printable turf sheet
+
+`/turfs/:turfId/sheet` (`web/src/pages/TurfSheetPage.tsx`, `web/src/print/print.css`, a lazy chunk)
+is the paper fallback for phones that die, drown, or never find a signal. It is designed for the
+printer first — the on-screen view is deliberately a white, shadowless preview of the paper, in dark
+mode too, and nothing may depend on colour because the sheets come off a mono laser printer.
+`@page` sets `size: portrait` with margins that fit **both** A4 and US Letter; naming `size: A4`
+would make a Letter tray shrink the page.
+
+**The print rules are scoped behind a `printing-sheet` body class**, added by a `useEffect` on mount
+and removed on unmount. `print.css` is imported by the route's chunk, and a lazily-loaded stylesheet
+**stays in the document for the rest of the session** — without the class, visiting this page once
+would silently break printing on every other page.
+
+Which assignee name goes on the sheet depends on the role, and asking the wrong endpoint costs a 403
+plus an audit row, so the branch is a component boundary rather than an `if`: organizers read
+`GET /api/turfs` (which carries assignees, archived included, since a finished turf may still need
+re-walking on paper); a volunteer reads their own `GET /api/assignments/mine`.
+
+---
+
+## 8. Request lifecycle
 
 ### Read: `GET /api/households/H-KOMOKA-00123`
 
@@ -704,7 +921,7 @@ string rather than an object graph — measured at ~45 ms end to end for the ful
 
 ---
 
-## 8. Ports and URLs
+## 9. Ports and URLs
 
 **Development** (registered in `~/.claude/PORTS.md`; verify with `lsof -i :<port>` before starting):
 
@@ -729,17 +946,31 @@ API listens on 3000 inside the compose network and is never published.
 
 ### The demo stack
 
-`demo/seed_demo.py` fills a separate `canvass_demo` database with entirely fabricated residents —
-invented names, seeded deterministically (`random.Random(20261026)`, so the same demo every time) on
-real public Middlesex Centre street names and in-boundary coordinates. It refuses to seed a database
-that already has households.
+A second, entirely fabricated database (`canvass_demo`) that runs **alongside** the real one — the
+full details and the four accounts are in [`../demo/README.md`](../demo/README.md).
+
+`make demo` drops and rebuilds it: `schema.sql` into a fresh database, then `db/migrate.sh`, then
+`demo/seed_demo.py`. The seed is invented names on real public Middlesex Centre street names and
+in-boundary coordinates, deterministic (`random.Random(20261026)`, so the same demo every time), and
+it refuses to seed a database that already has households. What comes out is 48 households and 114
+residents, one turf with recorded results, and two lawn signs with GPS fixes.
 
 ```bash
-python3 demo/seed_demo.py --database-url postgresql://…@localhost:5443/canvass_demo
-cd api && env $(grep -v '^#' ../.env.demo | xargs) npm run dev     # API on 3132
+make demo                                                          # rebuild canvass_demo
+cd api && set -a && . ../.env.demo && set +a && npx tsx watch src/server.ts   # API on 3132
 cd web && CANVASS_WEB_PORT=3032 CANVASS_API_PORT=3132 npm run dev  # web on 3032
 ```
 
 **Use it for anything shareable.** Screenshots, screen recordings, walkthroughs and training all come
-off `canvass_demo`, so nothing that leaves the campaign contains a real elector. `web/tools/e2e.py`
-writes to `web/screenshots/`, which is git-ignored precisely because it drives the *real* database.
+off `canvass_demo`, so nothing that leaves the campaign contains a real elector. Never point a
+browser or a recording at `https://dev.ecoworks.ca:3030` — that is the real voters list.
+`web/tools/e2e.py` writes to `web/screenshots/`, which is git-ignored precisely because it drives the
+*real* database.
+
+`demo/make_video.sh` builds the 60-second explainer from stills plus one narration line per scene
+(`demo/tts.py`, with macOS `say` as the fallback), each still held for exactly the length of its own
+audio — deliberately dumb and deterministic, no frame-by-frame capture loop.
+`demo/crop_to_content.py` trims the dead margin off a device-width screenshot first. The scene stills
+themselves come off the demo stack, except one wide map of real data on which no name or address is
+legible; the paths to them in the script are absolute and point at throwaway capture directories, so
+expect to re-point them before a rebuild. Build output lives in the git-ignored `demo/build/`.
