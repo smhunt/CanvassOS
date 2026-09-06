@@ -62,8 +62,17 @@ export interface SegmentInfo {
 /** How many characters of `offending` are worth returning; a body that is entirely non-GSM needs no list. */
 const MAX_OFFENDING = 20;
 
-const GSM7_SINGLE = 160;
-const GSM7_MULTI = 153;
+// Canada is NOT the GSM default of 160/153. Twilio's Canada SMS guidelines state, for both inbound
+// and outbound long codes: "GSM 3.38=136, Unicode=70".
+//   https://www.twilio.com/en-us/guidelines/ca/sms  (verified 2026-09-06)
+// This matters in money: at 160 a 150-character body reads as one segment and is billed as two.
+// Over-counting only makes an organiser write shorter copy; under-counting surprises them with a
+// doubled bill and a message the carrier splits anyway, so we take the documented Canadian figure.
+const GSM7_SINGLE = 136;
+// Twilio documents only the single-message limit. 7 septets of the 136 go to the concatenation
+// header, exactly as 160 becomes 153 in the GSM default — inferred, not documented, and deliberately
+// the conservative direction.
+const GSM7_MULTI = 129;
 const UCS2_SINGLE = 70;
 const UCS2_MULTI = 67;
 

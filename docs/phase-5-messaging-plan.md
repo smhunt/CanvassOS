@@ -89,6 +89,12 @@ characters to 70** and tripling the cost of every message in the send. These are
 Pages and iOS silently substitute for `'`, `"` and `-` as you type — so the likeliest way to triple a
 bill is to draft the message somewhere else and paste it in.
 
+**And Canada is not 160 characters.** Twilio's Canada SMS guidelines state, for both inbound and
+outbound long codes, *"GSM 3.38=136, Unicode=70"* — [verified 2026-09-06](https://www.twilio.com/en-us/guidelines/ca/sms).
+The GSM default of 160/153 is wrong here, and wrong in the expensive direction: at 160 a 150-character
+body reads as one segment and is billed as two. Both the API and the composer use **136** single /
+**129** concatenated (the concatenated figure inferred from the 7-septet header, as 160 becomes 153).
+
 The composer therefore shows characters, segments and encoding live, names the offending character
 when it flips, and offers to replace smart punctuation. It never strips accents, because it does not
 need to.

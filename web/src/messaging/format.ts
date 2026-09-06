@@ -146,7 +146,9 @@ export function landsAfterElection(finish: Date | null): boolean {
 // ------------------------------------------------------------------ segments and encoding
 
 // GSM-7 default alphabet. Everything outside this (and the extension table below) forces UCS-2,
-// which drops the per-segment budget from 160 characters to 70.
+// which drops the per-segment budget from 136 characters to 70.
+// Canada is not the GSM default of 160/153: Twilio documents 136 for Canadian long codes
+// (https://www.twilio.com/en-us/guidelines/ca/sms). Must stay in step with api/src/lib/segments.ts.
 //
 // Note that é and à ARE in this alphabet, so the local count treats them as free. The plan (§1.4)
 // describes them as forcing UCS-2, which is true of some providers' encoders and not others — if
@@ -187,7 +189,7 @@ export function segmentsLocal(text: string): SegmentInfo {
   }
   return {
     chars: chars.length,
-    segments: septets === 0 ? 0 : septets <= 160 ? 1 : Math.ceil(septets / 153),
+    segments: septets === 0 ? 0 : septets <= 136 ? 1 : Math.ceil(septets / 129),
     encoding: 'GSM-7',
     offending: [],
   };

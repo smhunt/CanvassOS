@@ -15,19 +15,22 @@ import { ProviderError, TwilioProvider } from '../src/messaging/provider.js';
 import { backoffMs, MAX_ATTEMPTS } from '../src/messaging/worker.js';
 
 describe('sms segments', () => {
-  it('counts a plain GSM-7 body at 160 characters per segment', () => {
+  it('counts a plain GSM-7 body at the Canadian 136 characters per segment', () => {
     assert.deepEqual(segmentInfo('Vote today!'), {
       chars: 11,
       segments: 1,
       encoding: 'GSM-7',
       offending: [],
     });
-    assert.equal(segmentInfo('A'.repeat(160)).segments, 1);
-    // 161 no longer fits: the whole message becomes multipart and every segment loses seven
-    // septets to the concatenation header, so the limit drops to 153.
-    assert.equal(segmentInfo('A'.repeat(161)).segments, 2);
-    assert.equal(segmentInfo('A'.repeat(306)).segments, 2);
-    assert.equal(segmentInfo('A'.repeat(307)).segments, 3);
+    // Canada is not the GSM default of 160/153. Twilio documents "GSM 3.38=136" for Canadian long
+    // codes; at 160 a 150-character body would read as one segment and bill as two.
+    assert.equal(segmentInfo('A'.repeat(136)).segments, 1);
+    assert.equal(segmentInfo('A'.repeat(150)).segments, 2, '150 chars is two segments in Canada');
+    // 137 no longer fits: the whole message becomes multipart and every segment loses seven
+    // septets to the concatenation header, so the limit drops to 129.
+    assert.equal(segmentInfo('A'.repeat(137)).segments, 2);
+    assert.equal(segmentInfo('A'.repeat(258)).segments, 2);
+    assert.equal(segmentInfo('A'.repeat(259)).segments, 3);
   });
 
   it('an empty body is zero segments, not one', () => {
@@ -80,12 +83,12 @@ describe('sms segments', () => {
 
   it('charges the GSM-7 extension table two septets and does not split an escape pair', () => {
     // `€`, `{`, `}`, `[`, `]`, `~`, `^`, `\` and `|` are ESC + char on the wire.
-    assert.equal(segmentInfo('€'.repeat(80)).segments, 1); // 160 septets exactly
-    assert.equal(segmentInfo('€'.repeat(81)).segments, 2); // 162 septets
-    assert.equal(segmentInfo('€'.repeat(80)).encoding, 'GSM-7', 'the euro sign is GSM-7, unlike é');
-    // 152 single-septet characters then five euros: the first euro cannot straddle the 153-septet
+    assert.equal(segmentInfo('€'.repeat(68)).segments, 1); // 136 septets exactly
+    assert.equal(segmentInfo('€'.repeat(69)).segments, 2); // 138 septets
+    assert.equal(segmentInfo('€'.repeat(68)).encoding, 'GSM-7', 'the euro sign is GSM-7, unlike é');
+    // 128 single-septet characters then five euros: the first euro cannot straddle the 129-septet
     // boundary, so segment one ends a septet short rather than splitting the escape pair.
-    const mixed = 'A'.repeat(152) + '€'.repeat(5);
+    const mixed = 'A'.repeat(128) + '€'.repeat(5);
     assert.equal(segmentInfo(mixed).encoding, 'GSM-7');
     assert.equal(segmentInfo(mixed).segments, 2);
   });
