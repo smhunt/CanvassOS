@@ -23,6 +23,8 @@ import type {
   SignStatus,
   StatsOverview,
   Street,
+  VoterContact,
+  VoterContactInput,
   TurfSummary,
   User,
   UserRow,
@@ -437,5 +439,36 @@ export function useUploadSignPhoto() {
       void qc.invalidateQueries({ queryKey: SIGNS_KEY });
       void qc.invalidateQueries({ queryKey: ['sign', v.signId] });
     },
+  });
+}
+
+// ------------------------------------------------------------------ contact details at the door
+
+export function useVoterContacts(householdId: string | undefined) {
+  return useQuery({
+    queryKey: ['voter-contacts', householdId ?? ''],
+    queryFn: () =>
+      api.get<{ voter_contacts: VoterContact[] }>('/voter-contacts', { household_id: householdId })
+        .then((r) => r.voter_contacts),
+    enabled: !!householdId,
+    staleTime: 10_000,
+  });
+}
+
+export function useAddVoterContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: VoterContactInput) => api.post<{ voter_contact: VoterContact }>('/voter-contacts', body),
+    onSuccess: (_r, v) => void qc.invalidateQueries({ queryKey: ['voter-contacts', v.household_id] }),
+  });
+}
+
+/** Withdrawal stamps the row rather than deleting it — a deleted number is just re-collected. */
+export function useUpdateVoterContact(householdId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; consent_gotv?: boolean; consent_updates?: boolean; withdrawn?: boolean; withdrawn_note?: string }) =>
+      api.patch<{ voter_contact: VoterContact }>(`/voter-contacts/${id}`, body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['voter-contacts', householdId] }),
   });
 }

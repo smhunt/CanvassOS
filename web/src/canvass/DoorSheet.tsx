@@ -56,14 +56,26 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
 
   function submitSpoke(d: SpokeDetail) {
     const note = d.note.trim();
-    // The API takes voter_id / support / note as optional, not nullable, so anything the volunteer
+    // Per-person support is what the extra rows are for, but only once two people are named: with
+    // one person (or nobody) the door-level `support` is the same answer and one fewer moving part.
+    const perPerson = d.voter_ids.length > 1;
+    // A key naming somebody no longer tagged is `400 support_voter_not_named`; the form prunes as
+    // people are unticked, and this filter keeps that true no matter how the state got there.
+    const supports = Object.fromEntries(Object.entries(d.supports).filter(([id]) => d.voter_ids.includes(id)));
+    // The API takes voter_ids / support / note as optional, not nullable, so anything the volunteer
     // left blank is omitted rather than sent as null.
     send({
       household_id: door.household_id,
       turf_id: turfId,
       result: 'spoke',
-      ...(d.voter_id ? { voter_id: d.voter_id } : {}),
-      ...(d.support !== null ? { support: d.support } : {}),
+      ...(d.voter_ids.length > 0 ? { voter_ids: d.voter_ids } : {}),
+      ...(perPerson
+        ? Object.keys(supports).length > 0
+          ? { supports }
+          : {}
+        : d.support !== null
+          ? { support: d.support }
+          : {}),
       ...(note ? { note } : {}),
       wants_sign: d.wants_sign,
       wants_volunteer: d.wants_volunteer,
@@ -149,7 +161,13 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
             />
           )}
           {spoke ? (
-            <SpokeForm voters={door.voters} pending={pending} onSubmit={submitSpoke} onCancel={() => setSpoke(false)} />
+            <SpokeForm
+              householdId={door.household_id}
+              voters={door.voters}
+              pending={pending}
+              onSubmit={submitSpoke}
+              onCancel={() => setSpoke(false)}
+            />
           ) : (
             <>
               {here && (

@@ -338,6 +338,9 @@
 }
 .cv-sheet__body {
   flex: 1;
+  /* Without this the reference half refuses to shrink past its content and pushes the footer — the
+     half with the buttons in it — off the bottom of the phone. */
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -483,6 +486,14 @@
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
+  /*
+   * The form sits in the sheet's footer, which does not scroll. Two people to rate and a phone
+   * number to take is enough content to walk Save off the bottom of a phone, so the form gets a
+   * ceiling of its own and scrolls inside it — Save stays where the thumb already is.
+   */
+  max-height: min(60dvh, 540px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .cv-spoke__intro {
   margin: 0;
@@ -507,8 +518,11 @@
   gap: 0.4rem;
 }
 .cv-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   min-height: var(--tap);
-  padding: 0.4rem 0.85rem;
+  padding: 0.4rem 0.85rem 0.4rem 0.5rem;
   border: 2px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
@@ -520,6 +534,34 @@
   background: var(--brand);
   border-color: var(--brand);
   color: var(--brand-ink);
+}
+.cv-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/*
+ * A tick box inside the pill. Several of these are on at once, so the difference between picked and
+ * not picked has to survive bright sun and colour blindness — a shape, not only a fill.
+ */
+.cv-pill__mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid currentColor;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0.75;
+}
+.cv-pill--on .cv-pill__mark {
+  opacity: 1;
+}
+.cv-pills__hint {
+  margin: 0.35rem 0 0;
 }
 .cv-support {
   display: grid;
@@ -546,6 +588,38 @@
   justify-content: space-between;
   margin-top: 0.2rem;
 }
+
+/*
+ * Per-person support. Two residents at one door routinely disagree, and the API writes a contact row
+ * each so they can. Name and its five buttons share a line: at 390px that leaves ~46px per button —
+ * still a thumb target — and keeps four people on screen instead of pushing Save away.
+ */
+.cv-psupport {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.cv-psupport__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(5, minmax(0, 2.85rem));
+  align-items: center;
+  gap: 0.3rem;
+}
+.cv-psupport__name {
+  min-width: 0;
+  padding-right: 0.2rem;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.cv-psupport__hint {
+  margin: 0.1rem 0 0;
+}
+.cv-support__btn--sm {
+  min-height: 48px;
+  font-size: 1.05rem;
+}
 .cv-note {
   width: 100%;
   min-height: 84px;
@@ -560,6 +634,12 @@
 .cv-spoke__actions {
   display: flex;
   gap: 0.5rem;
+  /* Pinned to the bottom of the scrolling form: the footer stays put, the fields move under it. */
+  position: sticky;
+  bottom: 0;
+  padding: 0.5rem 0 0.1rem;
+  background: var(--surface-2);
+  box-shadow: 0 -8px 8px -8px rgba(10, 20, 30, 0.25);
 }
 .cv-btn {
   flex: 1;
@@ -567,6 +647,144 @@
 }
 .cv-btn--save {
   flex: 2;
+}
+
+/* ------------------------------------------------------------------ phone / email at the door */
+/*
+ * Consent is the point of this block, not the number. Every stored detail shows what it may be used
+ * for beside it, and the add form is collapsed by default so the door that gives nothing stays one
+ * tap plus Save.
+ */
+.cv-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cv-details__h {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.cv-details__add {
+  width: 100%;
+  min-height: var(--tap);
+  justify-content: center;
+  font-weight: 650;
+}
+.cv-details__saved {
+  margin: 0;
+  color: var(--ok);
+  font-weight: 600;
+}
+.cv-detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cv-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+/* Withdrawn rows stay visible on purpose — that is the whole difference from deleting them. */
+.cv-detail--stopped {
+  border-left-color: var(--danger);
+  background: var(--surface-2);
+}
+.cv-detail--stopped .cv-detail__value {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.cv-detail__top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cv-detail__value {
+  flex: 1;
+  min-width: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.cv-detail__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.1rem;
+}
+.cv-detail__note {
+  margin: 0.1rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.cv-detail__stop {
+  align-self: flex-start;
+  margin-top: 0.2rem;
+}
+.cv-detail__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+.cv-detail__stopped {
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+}
+.cv-detail__stopped p {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+}
+.cv-add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.7rem;
+  border: 2px solid var(--brand);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.cv-add__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.cv-add__gate {
+  margin: 0;
+}
+/* `input[type=tel]` is not covered by the shared form styles, and this one has to be tappable. */
+.cv-input {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.cv-input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+/* The volunteer is signing something on the resident's behalf; say so where they tick it. */
+.cv-consent {
+  margin: 0.35rem 0 0.1rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
 }
 
 /* ------------------------------------------------------------------ turf overview map */

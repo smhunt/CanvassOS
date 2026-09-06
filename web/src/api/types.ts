@@ -219,6 +219,11 @@ export interface Contact {
 /** POST /api/contacts. `client_id` makes a retry idempotent — the offline queue in Phase 3 relies on it. */
 export interface ContactInput {
   household_id: string;
+  /** Several people can be tagged at one door; the API writes a row per person so two residents
+   *  at the same address can hold different support levels. */
+  voter_ids?: string[];
+  /** Per-person support, keyed by voter id. Overrides the door-level `support` for that person. */
+  supports?: Record<string, number>;
   voter_id?: string | null;
   turf_id?: string | null;
   result: ContactResult;
@@ -376,4 +381,41 @@ export interface PickupSign {
   placed_at: string | null;
   placed_by_name: string | null;
   photo_ids: string[];
+}
+
+// ------------------------------------------------------------------ contact details at the door
+
+export type ContactChannel = 'phone' | 'email';
+
+/** A phone number or email given directly by a resident. NOT list data — it carries its own
+ *  per-purpose consent, and a withdrawal is recorded rather than deleted. */
+export interface VoterContact {
+  id: string;
+  voter_id: string | null;
+  household_id: string;
+  /** Whose it is, joined by the API; null when the number belongs to the door generally. */
+  voter_name: string | null;
+  channel: ContactChannel;
+  value: string;
+  consent_gotv: boolean;
+  consent_updates: boolean;
+  consent_note: string | null;
+  consented_at: string;
+  collected_by: string | null;
+  collected_by_name: string | null;
+  contact_id: string | null;
+  withdrawn_at: string | null;
+  withdrawn_note: string | null;
+  created_at: string;
+}
+
+export interface VoterContactInput {
+  household_id: string;
+  voter_id?: string | null;
+  channel: ContactChannel;
+  value: string;
+  consent_gotv?: boolean;
+  consent_updates?: boolean;
+  consent_note?: string | null;
+  contact_id?: string | null;
 }
