@@ -1,0 +1,109 @@
+# Middlesex Centre Canvass — production stack
+#
+#   cp .env.example .env && edit          (DOMAIN, POSTGRES_PASSWORD, SESSION_SECRET, ADMIN_*)
+#   make up                               db + api + web build + caddy (TLS via Let's Encrypt)
+#   make import                           one-shot importer (profile "import") loads data/*.csv
+#
+# Services
+#   db        postgis/postgis:16-3.4 — schema applied automatically on first boot from db/schema.sql
+#   api       Fastify API on :3000 (internal only; Caddy proxies /api/*)
+#   web       BUILD-ONLY stage: web/Dockerfile must produce /app/dist (see README.md); this service
+#             copies it into the shared `webroot` volume and exits. Caddy waits for it.
+#   caddy     serves /srv (= webroot) as the SPA and reverse-proxies /api/* to api:3000; ports 80/443
+#   importer  profile "import": runs once against db, then exits
+
+name: canvass
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: canvass
+      POSTGRES_DB: canvass
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # applied only when the data volume is empty (first boot)
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U canvass -d canvass"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    # Uncomment to reach the DB from the host (LAN only — never expose publicly):
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://canvass:${POSTGRES_PASSWORD}@db:5432/canvass
+      PORT: "3000"
+      TRUST_PROXY: "1"
+      COOKIE_SECURE: "true"
+      BOUNDARY_PATH: /data/mc_boundary.json
+    volumes:
+      - ./data/mc_boundary.json:/data/mc_boundary.json:ro
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  # Build-only: produces the static SPA and drops it into the `webroot` volume.
+  web:
+    build: ./web
+    restart: "no"
+    command: ["sh", "-c", "rm -rf /srv/* && cp -r /app/dist/. /srv/ && echo 'web dist copied to webroot'"]
+    volumes:
+      - webroot:/srv
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_completed_successfully
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - webroot:/srv:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  importer:
+    build: ./importer
+    profiles: ["import"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://canvass:${POSTGRES_PASSWORD}@db:5432/canvass
+    volumes:
+      - ./data:/data:ro
+    # arguments are supplied by `make import` (see Makefile); defaults in importer/Dockerfile
+
+volumes:
+  pgdata:
+  webroot:
+  caddy_data:
+  caddy_config:

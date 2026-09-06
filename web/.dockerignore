@@ -1,0 +1,7 @@
+node_modules
+dist
+screenshots
+tools/__pycache__
+.vite
+*.log
+.DS_Store

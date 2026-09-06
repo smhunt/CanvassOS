@@ -1,0 +1,82 @@
+# Middlesex Centre Canvass — operator targets. Run on the Docker host from the repo root.
+# Requires: docker compose v2, gpg (for backup), shred (coreutils, for purge).
+
+SHELL := /bin/bash
+.ONESHELL:
+.DEFAULT_GOAL := help
+
+COMPOSE := docker compose
+ENV_FILE := .env
+LABEL ?= voters list import $(shell date +%F)
+BACKUP_DIR ?= backups
+STAMP := $(shell date +%Y%m%d-%H%M%S)
+
+# read one value out of .env without `include` (passwords may contain $ or # which make would mangle)
+envval = $$(sed -n 's/^$(1)=//p' $(ENV_FILE) 2>/dev/null | tail -1)
+
+.PHONY: help up down restart build logs ps import import-force backup restore purge psql test
+
+help: ## list targets
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+
+up: ## build images and start db + api + web(build) + caddy
+	@test -f $(ENV_FILE) || { echo "missing $(ENV_FILE) — cp .env.example .env and edit it"; exit 1; }
+	$(COMPOSE) up -d --build --remove-orphans
+	$(COMPOSE) ps
+
+down: ## stop the stack (keeps volumes/data)
+	$(COMPOSE) --profile import down --remove-orphans
+
+restart: ## restart api + caddy (e.g. after editing .env)
+	$(COMPOSE) up -d --build api web caddy
+
+build: ## rebuild images without starting
+	$(COMPOSE) --profile import build
+
+logs: ## follow logs (SERVICE=api to narrow)
+	$(COMPOSE) logs -f --tail=200 $(SERVICE)
+
+ps: ## container status
+	$(COMPOSE) ps
+
+import: ## load data/voters_final.csv + data/households.csv (LABEL="voters list export 2026-09-03")
+	@test -f data/voters_final.csv -a -f data/households.csv || { echo "put voters_final.csv and households.csv in data/"; exit 1; }
+	$(COMPOSE) --profile import run --rm --build importer \
+	  --voters /data/voters_final.csv --households /data/households.csv --label "$(LABEL)"
+
+import-force: ## re-import a NEW list even though canvass contacts exist (DELETES contacts — Phase 4 adds a diff)
+	$(COMPOSE) --profile import run --rm --build importer \
+	  --voters /data/voters_final.csv --households /data/households.csv --label "$(LABEL)" --force
+
+backup: ## encrypted dump -> backups/canvass-<stamp>.sql.gz.gpg (pg_dump | gzip | gpg --symmetric AES256, passphrase = BACKUP_PASSPHRASE from .env)
+	@PASS=$(call envval,BACKUP_PASSPHRASE); test -n "$$PASS" || { echo "set BACKUP_PASSPHRASE in .env"; exit 1; }
+	mkdir -p $(BACKUP_DIR)
+	set -o pipefail
+	$(COMPOSE) exec -T db pg_dump -U canvass --clean --if-exists --no-owner --no-privileges canvass \
+	  | gzip -9 \
+	  | gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
+	        --passphrase "$$PASS" -o $(BACKUP_DIR)/canvass-$(STAMP).sql.gz.gpg
+	ls -lh $(BACKUP_DIR)/canvass-$(STAMP).sql.gz.gpg
+	@echo "restore with: make restore FILE=$(BACKUP_DIR)/canvass-$(STAMP).sql.gz.gpg"
+
+restore: ## restore FILE=backups/canvass-....sql.gz.gpg into an EMPTY database (run after `make up` on a fresh volume)
+	@test -n "$(FILE)" || { echo "usage: make restore FILE=backups/canvass-<stamp>.sql.gz.gpg"; exit 1; }
+	PASS=$(call envval,BACKUP_PASSPHRASE)
+	set -o pipefail
+	gpg --batch --pinentry-mode loopback --passphrase "$$PASS" -d "$(FILE)" \
+	  | gunzip \
+	  | $(COMPOSE) exec -T db psql -U canvass -v ON_ERROR_STOP=1 canvass
+
+purge: ## AFTER THE ELECTION: stop the stack, delete ALL volumes (database, web, certs) and shred data/*.csv
+	@echo "This permanently destroys the database volume, the web volume, Caddy state and shreds data/*.csv."
+	@echo "Encrypted backups in $(BACKUP_DIR)/ are NOT touched — delete them yourself once they are no longer needed."
+	@read -r -p "Type PURGE to continue: " ans; [ "$$ans" = "PURGE" ] || { echo "aborted"; exit 1; }
+	$(COMPOSE) --profile import down --volumes --remove-orphans
+	find data -maxdepth 1 -type f \( -name '*.csv' -o -name '*.xlsx' \) -print -exec shred -u -z -n 3 {} +
+	@echo "purged. Also remove: $(BACKUP_DIR)/*.gpg, any copies of the list on laptops/phones, and the pipeline outputs."
+
+psql: ## psql shell inside the db container
+	$(COMPOSE) exec db psql -U canvass canvass
+
+test: ## run the API integration tests against TEST_DATABASE_URL (default localhost:5433)
+	cd api && npm test

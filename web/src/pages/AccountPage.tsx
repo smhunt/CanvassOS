@@ -1,0 +1,152 @@
+import { useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { errorMessage, isApiError } from '../api/client';
+import { useChangePassword, useLogout, useMeta } from '../api/hooks';
+import { useUser } from '../components/Shell';
+import { RoleChip, fmtDate, n } from '../components/ui';
+
+const MIN_PASSWORD = 10;
+
+export function AccountPage() {
+  const user = useUser();
+  const meta = useMeta();
+  const logout = useLogout();
+  const change = useChangePassword();
+  const nav = useNavigate();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [done, setDone] = useState(false);
+
+  const tooShort = next.length > 0 && next.length < MIN_PASSWORD;
+  const mismatch = confirm.length > 0 && confirm !== next;
+  const valid = current.length > 0 && next.length >= MIN_PASSWORD && confirm === next;
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!valid || change.isPending) return;
+    setDone(false);
+    change.mutate(
+      { current, next },
+      {
+        onSuccess: () => {
+          setDone(true);
+          setCurrent('');
+          setNext('');
+          setConfirm('');
+        },
+      },
+    );
+  };
+
+  let error: string | null = null;
+  if (change.isError) {
+    if (isApiError(change.error) && change.error.code === 'wrong_password') error = 'Your current password is incorrect.';
+    else if (isApiError(change.error) && change.error.code === 'same_password') error = 'The new password must differ from the current one.';
+    else error = errorMessage(change.error);
+  }
+
+  return (
+    <div className="page page--narrow">
+      <header className="page__head">
+        <h1>Account</h1>
+      </header>
+
+      <section className="card">
+        <div className="row row--between">
+          <div>
+            <div className="cell-name">{user.name}</div>
+            <div className="muted">{user.email}</div>
+          </div>
+          <RoleChip role={user.role} />
+        </div>
+        <button
+          type="button"
+          className="btn"
+          disabled={logout.isPending}
+          onClick={() => logout.mutate(undefined, { onSettled: () => nav('/login', { replace: true }) })}
+        >
+          {logout.isPending ? 'Signing out…' : 'Sign out'}
+        </button>
+      </section>
+
+      <section className="card" aria-labelledby="pw-h">
+        <h2 id="pw-h">Change password</h2>
+        <p className="muted small">Changing your password signs out every other device.</p>
+        <form onSubmit={onSubmit} noValidate className="stack">
+          <label className="field">
+            <span className="field__label">Current password</span>
+            <input type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
+          </label>
+          <label className="field">
+            <span className="field__label">New password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={MIN_PASSWORD}
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              aria-invalid={tooShort || undefined}
+              aria-describedby="npw-hint"
+            />
+            <span id="npw-hint" className={`field__hint${tooShort ? ' field__hint--error' : ''}`}>
+              At least {MIN_PASSWORD} characters.
+            </span>
+          </label>
+          <label className="field">
+            <span className="field__label">Confirm new password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              aria-invalid={mismatch || undefined}
+            />
+            {mismatch && <span className="field__hint field__hint--error">Passwords do not match.</span>}
+          </label>
+          {error && (
+            <div className="alert alert--danger" role="alert">
+              {error}
+            </div>
+          )}
+          {done && (
+            <div className="alert alert--ok" role="status">
+              Password changed.
+            </div>
+          )}
+          <div>
+            <button type="submit" className="btn btn--primary" disabled={!valid || change.isPending}>
+              {change.isPending ? 'Saving…' : 'Change password'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="card" aria-labelledby="data-h">
+        <h2 id="data-h">Data</h2>
+        {meta.isPending && <p className="muted">Loading…</p>}
+        {meta.isError && <p className="muted">Import details unavailable.</p>}
+        {meta.data?.import ? (
+          <dl className="dl">
+            <dt>Source</dt>
+            <dd>{meta.data.import.source_label}</dd>
+            <dt>Imported</dt>
+            <dd>{fmtDate(meta.data.import.finished_at)}</dd>
+            <dt>Households</dt>
+            <dd>{n(meta.data.import.n_households)}</dd>
+            <dt>Voters</dt>
+            <dd>{n(meta.data.import.n_voters)}</dd>
+          </dl>
+        ) : (
+          meta.data && <p className="muted">No import has been recorded yet.</p>
+        )}
+        <p className="muted small">
+          The voters list is personal information supplied under the Ontario <em>Municipal Elections Act</em>. Use it for this campaign
+          only, keep it confidential, and expect every lookup to be logged. It is destroyed after the election.
+        </p>
+      </section>
+    </div>
+  );
+}

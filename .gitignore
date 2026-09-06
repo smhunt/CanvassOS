@@ -1,0 +1,23 @@
+# personal information — never commit the voters list
+data/*.csv
+data/*.xlsx
+backups/
+# Playwright captures show real voter names/addresses
+web/screenshots/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# build output / dependencies
+node_modules/
+dist/
+*.tsbuildinfo
+__pycache__/
+*.pyc
+
+# local databases / volumes
+pgdata/
+*.log
+.DS_Store
