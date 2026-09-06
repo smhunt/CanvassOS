@@ -208,6 +208,24 @@ monthly, so a pool of ten is a small fixed cost. **Cost is not the constraint; t
 | 6 | Campaign dashboard: progress, delivery rate, opt-outs | Detects silent throttling |
 | 7 → **2b** | Email, built in parallel from week 2 | **Moved up.** If SMS fails 72 hours out, a second SMS provider cannot be provisioned, warmed and consent-verified in time. Email is the only channel that can absorb the whole list on election eve with no throughput ceiling and no carrier filter. Send priority is unchanged — SMS still wins — but email must be *built and tested* before it is needed |
 
+### Verified end to end against the `log` provider — 2026-09-06
+
+Run on the demo stack with fabricated subscribers. Everything below is observed, not asserted:
+
+| Behaviour | Result |
+|---|---|
+| Audience resolves SMS-first, excludes withdrawn | 12 consented − 1 withdrawn = **11 reachable** |
+| Canadian segment limit | a 148-character body = **2 segments**, GSM-7 (it would be 1 at the GSM default of 160) |
+| Send refused without approval | `409 not_approved` |
+| Daily cap stops the drip | cap 5 → **5 sent, 6 left queued**, `sent_today=5` |
+| **Withdrawal after queueing** | a subscriber who withdrew while queued was **`skipped (withdrawn)`, not sent** |
+| Nothing left the machine | zero references to `api.twilio.com` in the API log |
+| Final state | 10 sent, 1 skipped, 0 queued, campaign `done` |
+
+The fifth row is the one that matters: a list built on Friday did not deliver to somebody who
+stopped on Saturday. `delivered` stayed 0 throughout, correctly — the `log` provider issues no
+delivery receipts.
+
 **Two gates before the first real send:** the provider confirmation at step 0, and a lawyer's read on
 the CASL position for a non-commercial political SMS from a municipal candidate. Neither is optional
 and both take calendar time, which is why they are listed first with 50 days on the clock.
