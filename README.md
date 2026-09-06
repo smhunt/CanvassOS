@@ -72,7 +72,7 @@ features had to be built around.
 ### 1. The list is not ours to keep
 
 The voters list is personal information supplied under Ontario's *Municipal Elections Act, 1996*
-(s. 23, s. 88). It may be used for election purposes only, and it must be destroyed afterwards.
+(s. 23(7)–(8)). It may be used for election purposes only, may not be passed on, and must be destroyed afterwards.
 That single fact is why:
 
 - **There is exactly one enforcement point for role-based field stripping**
@@ -346,13 +346,24 @@ way it asks once: dismiss it and it stays dismissed on that phone.
 
 ## Municipal Elections Act — handling the voters list
 
-The voters list is personal information supplied under the Ontario *Municipal Elections Act, 1996*
-(s. 23 and s. 88). Everyone with an account must understand:
+The voters list is personal information supplied under the Ontario *Municipal Elections Act, 1996*.
+The operative provision is **s. 23(7)–(8)**: the clerk gives a copy to a candidate, and everyone the
+candidate then gives it to *"shall not provide it to any other person, and shall not make further
+copies, either in printed form or electronically"*. Ontario's
+[2026 Candidates' Guide](https://www.ontario.ca/document/2026-candidates-guide-ontario-municipal-council-and-school-board-elections/voters-list)
+puts it plainly: use it *"only for electoral purposes, not for commercial purposes"*.
+(This is a reading of the statute, not legal advice — confirm the details with the clerk.)
 
-- **Election purposes only.** The list may be used only for the purposes of this election campaign.
-  No other use, no sharing outside the campaign, no merging into other contact lists. Phone numbers
-  and emails collected at the door are governed by the consent given for them and must never be
-  merged back into an export of the list.
+Everyone with an account must understand:
+
+- **Election purposes only.** The list may be used only for the purposes of this election campaign,
+  and may not be passed on. Phone numbers and emails collected at the door are a different thing
+  entirely, governed by the consent actually given for them, and must never be merged back into an
+  export of the list.
+- **No merging is this campaign's own rule, not the Act's.** A search of the Act and O. Reg. 101/97
+  turns up no provision forbidding enrichment of list-derived records. We do not do it anyway,
+  because the electors never agreed to it — but it should be described as a policy we chose, not a
+  law we are obeying.
 - **Access is logged.** Every login, household card view, search, invite, consent change and export
   is written to `audit_log` (admin: `GET /api/audit`). Volunteers never receive mailing addresses or
   resident status, and see only doors inside the turfs assigned to them.
@@ -364,6 +375,13 @@ The voters list is personal information supplied under the Ontario *Municipal El
   the clerk indicates): `make purge` on the server, delete `backups/*.gpg` and any off-site copies,
   and delete the pipeline outputs (`voters_final.csv`, `households.csv`, `.xlsx`). Keep a note of
   the date it was done.
+- **Collect written acknowledgements — the software cannot do this for you.** Under s. 23(8) anyone
+  the campaign gave an electronic copy to must destroy it and give the candidate *written
+  acknowledgement* that they have, and the candidate keeps those acknowledgements until **15 November
+  2030**. That includes anyone who was sent a CSV, a printed turf sheet they did not return, or a
+  database dump. `make purge` wipes this server; it cannot reach a volunteer's laptop, a phone's
+  cached turf, or a sheet left in a glovebox. Keep a list of who received what, and collect the
+  acknowledgements.
 
 In-app, the same notice appears in the footer, on the account page and on the audit page.
 

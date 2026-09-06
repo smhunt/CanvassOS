@@ -27,7 +27,7 @@ Four docs are the contract; keep them in sync when you change behaviour:
 
 ## Legal constraint that shapes the design
 
-The voters list is personal information under Ontario's *Municipal Elections Act, 1996* (s. 23, s. 88).
+The voters list is personal information under Ontario's *Municipal Elections Act, 1996* (s. 23(7)–(8)).
 That is why the code looks the way it does, and changes must not erode it: TLS only, login on every
 page, role-gated fields, volunteers scoped to their assigned turfs, `audit_log` writes on every read of
 personal data, encrypted backups, `make purge` after the election. Never commit CSVs, screenshots of
