@@ -1,14 +1,17 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { isApiError } from '../api/client';
-import { useDoors } from '../api/hooks';
+import { useDoors, useOfflineSync } from '../api/hooks';
 import type { ContactResult, Door } from '../api/types';
 import '../canvass/canvass.css';
 import { coordsOf, type Coords } from '../canvass/directions';
 import { DoorRow } from '../canvass/DoorRow';
 import { DoorSheet } from '../canvass/DoorSheet';
+import { formatDistance, orderByDistance, readDoorOrder, useNearMe, writeDoorOrder, type DoorOrder } from '../canvass/nearMe';
 import { Progress } from '../canvass/Progress';
-import { latestResult } from '../canvass/status';
+import { agoLabel, latestResult } from '../canvass/status';
+import { SyncStatus } from '../canvass/SyncStatus';
+import { useOutbox, useQueuedResults } from '../offline/useOutbox';
 import { EmptyState, ErrorBox, FullPageSpinner, Spinner, n, wardLabel } from '../components/ui';
 
 // MapLibre is ~1 MB and volunteers are on rural data, so the overview is fetched only when the
@@ -18,12 +21,23 @@ const TurfMap = lazy(() => import('../canvass/TurfMap'));
 type Filter = 'all' | 'todo';
 type View = 'list' | 'map';
 
+const NO_DISTANCES = new Map<string, number>();
+
 /** The field screen: the doors of one turf in walking order, and the door card over them. */
 export function DoorScreen() {
   const { turfId } = useParams<{ turfId: string }>();
   const doorsQ = useDoors(turfId);
+  const outbox = useOutbox();
+  // Results that are recorded but still only on this phone. Merged in below so a volunteer who
+  // reloads the app in a dead spot still sees which doors they have already knocked.
+  const queued = useQueuedResults(outbox);
+  useOfflineSync();
   const [filter, setFilter] = useState<Filter>('all');
   const [view, setView] = useState<View>('list');
+  // Walking order is the default and the choice is remembered, because a volunteer who prefers one
+  // prefers it at every door, not once per app launch.
+  const [order, setOrderState] = useState<DoorOrder>(readDoorOrder);
+  const near = useNearMe(order === 'near');
   const [openId, setOpenId] = useState<string | null>(null);
   // Results recorded this session, applied on top of the server list so the row and the auto-advance
   // update the moment a door is saved rather than waiting for the refetch to land on a weak signal.
@@ -33,10 +47,19 @@ export function DoorScreen() {
   const [from, setFrom] = useState<Coords | null>(null);
   const restoreFocus = useRef<string | null>(null);
 
-  const doors = doorsQ.data?.doors ?? [];
+  const serverDoors = useMemo(() => doorsQ.data?.doors ?? [], [doorsQ.data]);
+  // Ordering the array itself, not just the rendering, so prev/next and the auto-advance send the
+  // volunteer to the nearest unknocked door rather than back along the street.
+  const { doors, distances } = useMemo(
+    () => (order === 'near' ? orderByDistance(serverDoors, near.at) : { doors: serverDoors, distances: NO_DISTANCES }),
+    [order, serverDoors, near.at],
+  );
+
+  // The session's own results win over the queue's, which win over the server's.
+  const known = useMemo(() => ({ ...queued, ...recorded }), [queued, recorded]);
   const resultFor = useCallback(
-    (d: Door, map: Record<string, ContactResult> = recorded): ContactResult | null => latestResult(d, map),
-    [recorded],
+    (d: Door, map: Record<string, ContactResult> = known): ContactResult | null => latestResult(d, map),
+    [known],
   );
 
   const done = doors.filter((d) => resultFor(d) !== null).length;
@@ -61,6 +84,11 @@ export function DoorScreen() {
     document.querySelector(`[data-door="${CSS.escape(openId)}"]`)?.scrollIntoView({ block: 'center' });
   }, [openId]);
 
+  function setOrder(next: DoorOrder) {
+    setOrderState(next);
+    writeDoorOrder(next);
+  }
+
   function open(id: string) {
     restoreFocus.current = id;
     setFrom(null);
@@ -74,8 +102,8 @@ export function DoorScreen() {
   /** After a save, go straight to the next door with nothing recorded — that is what makes a canvass fast. */
   function handleRecorded(result: ContactResult) {
     if (!openDoor) return;
-    const next = { ...recorded, [openDoor.household_id]: result };
-    setRecorded(next);
+    setRecorded((r) => ({ ...r, [openDoor.household_id]: result }));
+    const next = { ...known, [openDoor.household_id]: result };
     const after = doors.slice(openIndex + 1).find((d) => resultFor(d, next) === null);
     const wrapped = after ?? doors.slice(0, openIndex).find((d) => resultFor(d, next) === null);
     restoreFocus.current = wrapped ? null : openDoor.household_id;
@@ -103,6 +131,7 @@ export function DoorScreen() {
 
   const turf = doorsQ.data.turf;
   const todo = doors.length - done;
+  const cached = doorsQ.data.from_cache === true;
 
   return (
     // While the sheet is open the page behind it is inert backdrop: the modifier stops the sticky
@@ -118,6 +147,7 @@ export function DoorScreen() {
           </Link>
           <h1 className="cv-head__name">{turf.name}</h1>
           {turf.ward && <span className="cv-head__ward muted small nowrap">{wardLabel(turf.ward)}</span>}
+          <SyncStatus />
         </div>
         <Progress done={done} total={doors.length} />
         <div className="cv-head__controls">
@@ -132,6 +162,23 @@ export function DoorScreen() {
                 Not yet knocked ({n(todo)})
               </button>
             </div>
+          )}
+          {view === 'list' && (
+            <button
+              type="button"
+              className="cv-seg__btn cv-viewbtn"
+              aria-pressed={order === 'near'}
+              onClick={() => setOrder(order === 'near' ? 'walk' : 'near')}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="6" />
+                <line x1="12" y1="1" x2="12" y2="4" />
+                <line x1="12" y1="20" x2="12" y2="23" />
+                <line x1="1" y1="12" x2="4" y2="12" />
+                <line x1="20" y1="12" x2="23" y2="12" />
+              </svg>
+              Near me
+            </button>
           )}
           <button
             type="button"
@@ -149,6 +196,26 @@ export function DoorScreen() {
         </div>
       </header>
 
+      {cached && (
+        // The volunteer has to know they are looking at a copy, and that recording into it is still
+        // safe — otherwise a stale list reads as a broken app and the shift stops.
+        <p className="cv-note cv-note--offline" role="status">
+          <strong>Saved copy</strong> — this turf was stored on your phone {agoLabel(doorsQ.data.cached_at ?? null)}. Doors
+          you record now are queued and go up as soon as there is signal.
+        </p>
+      )}
+
+      {view === 'list' && order === 'near' && near.failure && (
+        <p className="cv-note cv-note--warn" role="status">
+          {near.failure.message}
+        </p>
+      )}
+      {view === 'list' && order === 'near' && !near.failure && !near.at && (
+        <p className="cv-note muted" role="status">
+          <Spinner size={16} /> Finding you — the doors stay in walking order until the phone has a position.
+        </p>
+      )}
+
       {doors.length === 0 && (
         <EmptyState title="This turf has no doors">
           An organiser can add streets to it on the Turfs page.
@@ -163,7 +230,7 @@ export function DoorScreen() {
             </p>
           }
         >
-          <TurfMap doors={doors} recorded={recorded} selectedId={openId} onSelect={open} />
+          <TurfMap doors={doors} recorded={known} selectedId={openId} onSelect={open} />
         </Suspense>
       )}
 
@@ -175,9 +242,18 @@ export function DoorScreen() {
 
       {view === 'list' && visible.length > 0 && (
         <ul className="cv-doors">
-          {visible.map((d) => (
-            <DoorRow key={d.household_id} door={d} result={resultFor(d)} onOpen={() => open(d.household_id)} />
-          ))}
+          {visible.map((d) => {
+            const m = distances.get(d.household_id);
+            return (
+              <DoorRow
+                key={d.household_id}
+                door={d}
+                result={resultFor(d)}
+                distance={m === undefined ? null : formatDistance(m)}
+                onOpen={() => open(d.household_id)}
+              />
+            );
+          })}
         </ul>
       )}
 

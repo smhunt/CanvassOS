@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { useRecordContact } from '../api/hooks';
+import { useRecordContact, type RecordContactVars } from '../api/hooks';
 import type { ContactInput, ContactResult, Door } from '../api/types';
 import { CONTACT_RESULTS, RESULT_LABELS } from '../api/types';
 import { ErrorBox, Spinner, n, titleCase } from '../components/ui';
@@ -7,6 +7,7 @@ import { ContactHistory } from './ContactHistory';
 import { coordsOf, mapsUrl, walkHint, type Coords } from './directions';
 import { SpokeForm, type SpokeDetail } from './SpokeForm';
 import { resultColour } from './status';
+import { SyncStatus } from './SyncStatus';
 
 interface Props {
   door: Door;
@@ -26,8 +27,11 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
   const [spoke, setSpoke] = useState(false);
   const record = useRecordContact();
   // The submitted body is kept so a retry re-sends the same client_id; the API treats that as the
-  // same door, so a retry after a dropped connection cannot double-count it.
-  const attempt = useRef<ContactInput | null>(null);
+  // same door, so a retry after a dropped connection cannot double-count it. A connection failure
+  // no longer parks the body here waiting for a thumb: the mutation hands it to the offline queue,
+  // which replays this exact body — same client_id — as soon as there is signal. What is left in
+  // the ref is the case a queue cannot fix, a write the server actively refused.
+  const attempt = useRef<RecordContactVars | null>(null);
   const headRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -43,7 +47,8 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
   }, [onClose]);
 
   function send(input: Omit<ContactInput, 'client_id'>) {
-    const body: ContactInput = { ...input, client_id: crypto.randomUUID() };
+    // `door_label` is for the sync panel only — it never reaches the API.
+    const body: RecordContactVars = { ...input, client_id: crypto.randomUUID(), door_label: door.address };
     attempt.current = body;
     record.mutate(body, { onSuccess: () => onRecorded(body.result) });
   }
@@ -105,6 +110,8 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
               </span>
               {door.community && <span>{titleCase(door.community)}</span>}
               <span>{door.n_voters === 1 ? '1 voter' : `${n(door.n_voters)} voters`}</span>
+              {/* The shift is spent inside this sheet, so the queue has to be legible from here. */}
+              <SyncStatus compact />
             </div>
           </div>
           <button type="button" className="btn btn--icon" onClick={onClose} aria-label="Close door">
@@ -153,12 +160,9 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
 
         <div className="cv-sheet__foot">
           {record.isError && (
-            <ErrorBox
-              title="Not saved — no connection?"
-              error={record.error}
-              onRetry={pending ? undefined : retry}
-              compact
-            />
+            // A dropped connection is queued rather than shown, so anything that reaches here is
+            // the server refusing the write outright — say that, instead of blaming the signal.
+            <ErrorBox title="The server would not accept this" error={record.error} onRetry={pending ? undefined : retry} compact />
           )}
           {spoke ? (
             <SpokeForm

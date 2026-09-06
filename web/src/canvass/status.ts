@@ -28,3 +28,17 @@ export function fmtDueDate(iso: string): string {
   if (!y || !m || !d) return iso;
   return new Date(y, m - 1, d).toLocaleDateString('en-CA', { dateStyle: 'medium' });
 }
+
+/**
+ * "4 min ago" for the sync panel and the offline banner — the two places a volunteer has to judge
+ * how stale what they are looking at is. Short units on purpose: a phone held at arm's length in a
+ * driveway is not the place for a full timestamp until the number stops being useful.
+ */
+export function agoLabel(at: number | null): string {
+  if (at === null) return 'not yet this session';
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86_400) return `${Math.round(s / 3600)} h ago`;
+  return new Date(at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' });
+}

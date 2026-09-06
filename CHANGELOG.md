@@ -4,6 +4,45 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+**Offline canvassing** (Phase 3)
+
+- **A write queue behind the door screen.** `useRecordContact()` and `usePlaceSign()` now try the
+  request and, when the network is the reason it failed, put the exact body into a durable outbox
+  (IndexedDB, `src/offline/`) and resolve anyway — the volunteer auto-advances to the next door
+  instead of watching a spinner in a driveway. Rural Middlesex Centre drops signal for whole
+  concession roads; before this, a recorded result was simply lost when the POST failed.
+- **The idempotency contract this rests on.** `client_id` is generated **once**, when the write is
+  first attempted, and is stored with the body; every replay sends that same key. `POST /api/contacts`
+  and `POST /api/signs` are idempotent on it (API.md, "Idempotency"), so a replay collapses onto the
+  row already written. Queue entries are keyed and reconciled by the id the client generated — never
+  by the value the server echoes back, which for a multi-voter contact is the derived
+  `<client_id>:<voter_id>` and is therefore *not* the key that was sent.
+- **Retry policy that stops.** The queue flushes on `online`, on app focus/visibility, on a capped
+  exponential backoff (5 s → 5 min), and on an explicit "Sync now". A network failure or a 5xx keeps
+  retrying; a 401 keeps retrying because signing back in fixes it; any other 4xx will never succeed,
+  so it is **parked** as "needs attention" with the server's own message rather than retried forever
+  or dropped. A parked write can be retried by hand or discarded, but only deliberately: a dropped
+  canvass result is a door somebody knocked for nothing.
+- **Offline turf cache.** Opening `/canvass/:turfId` stores that turf's doors response on the phone,
+  so the door list, the names and the walking order survive with no connection and results still go
+  into the queue. **Caveat, deliberately narrow:** this is voters-list data on a volunteer's phone,
+  so nothing is cached until a turf is actually opened, only turfs the API served to that user are
+  stored, and the sync panel has a visible "Clear saved turf data" button — `make purge` shreds the
+  server after election day but it cannot reach a phone.
+- **A sync status the volunteer can trust**: a pill on the turf header and inside the door sheet
+  showing online/offline, how many writes are queued, when it last synced and anything parked; one
+  tap opens the queue, the failures and the clear-this-phone control. It also says so plainly when
+  the browser refuses IndexedDB (private mode), where the queue only lives as long as the tab.
+- **"Near me" door ordering.** An optional toggle orders the door list by distance from the device
+  (haversine, shared with the walking hints) instead of `walk_order`, with unmapped doors kept in
+  walking order at the end. Walking order stays the default, the choice is remembered, the list only
+  re-sorts once the phone has moved 10 m, and every geolocation failure falls back to walking order
+  with a message the volunteer can act on.
+
 ## [0.3.0] - 2026-09-05
 
 Lawn signs, and the rest of Phase 2.

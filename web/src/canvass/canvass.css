@@ -153,6 +153,7 @@
 .cv-head__controls {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 0.4rem;
 }
 .cv-head__controls .cv-seg {
@@ -237,6 +238,16 @@
 .cv-door__sub {
   font-size: 0.85rem;
   color: var(--muted);
+}
+/* Reads before the voter count when the list is nearest-first: it is why the row is where it is. */
+.cv-door__dist {
+  margin-right: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
 }
 .cv-door__go {
   flex: none;
@@ -859,5 +870,207 @@
 @media (prefers-reduced-motion: reduce) {
   .cv-sheet {
     animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ offline: status pill + panel */
+/*
+ * The pill is the app's honesty about the network. It is small on purpose — a volunteer should be
+ * able to ignore it while it is green — but it is never hidden, and it is a real 44px target
+ * because the panel behind it is where a stuck result gets sorted out.
+ */
+.cv-sync__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: var(--tap);
+  padding: 0.2rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cv-sync__pill--compact {
+  /* Inside the door sheet it shares a line with "Door 4 of 26", so it drops to that line's weight. */
+  font-size: 0.78rem;
+  padding-inline: 0.55rem;
+}
+.cv-sync__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22);
+  flex: none;
+}
+.cv-sync__pill--ok .cv-sync__dot {
+  background: var(--ok);
+}
+.cv-sync__pill--queued .cv-sync__dot {
+  background: var(--warn);
+}
+.cv-sync__pill--offline {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.cv-sync__pill--offline .cv-sync__dot {
+  background: var(--warn);
+}
+.cv-sync__pill--attention {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.cv-sync__pill--attention .cv-sync__dot {
+  background: var(--danger);
+}
+
+/* Sits above the door sheet (z-index 40): it is opened from inside it and must not be trapped. */
+.cv-sync__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  --cv-safe-b: env(safe-area-inset-bottom, 0px);
+}
+.cv-sync__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 20, 30, 0.45);
+}
+.cv-sync__panel {
+  position: relative;
+  z-index: 1;
+  width: min(520px, 100%);
+  max-height: 88dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.5rem 0.9rem calc(1rem + var(--cv-safe-b, 0px));
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow-lg);
+}
+.cv-sync__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.cv-sync__head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.cv-sync__facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.cv-sync__facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.cv-sync__facts dt {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.cv-sync__facts dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+.cv-sync__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cv-sync__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.cv-sync__item--parked {
+  background: var(--danger-bg);
+}
+.cv-sync__item-label {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.cv-sync__error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.cv-sync__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+.cv-sync__note {
+  margin: 0;
+}
+.cv-sync__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+}
+.cv-sync__confirm p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ offline notes on the door list */
+.cv-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.9rem;
+}
+.cv-note--offline {
+  background: var(--info-bg);
+}
+.cv-note--warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+/* The turfs page header carries the pill beside its title. */
+.cv-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .cv-sync__overlay {
+    align-items: center;
+    padding: 1rem;
+  }
+  .cv-sync__panel {
+    border-radius: var(--radius);
   }
 }

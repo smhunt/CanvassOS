@@ -1,5 +1,9 @@
+import { useEffect } from 'react';
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { onSynced, submitOrQueue } from '../offline/outbox';
+import { cacheTurf, readCachedTurf } from '../offline/turfCache';
 import { api, isApiError } from './client';
+import { RESULT_LABELS } from './types';
 import type {
   Activity,
   Assignment,
@@ -300,13 +304,62 @@ export function useMyAssignments() {
   });
 }
 
+/** A doors response that may have come off the phone rather than the wire. */
+export type CachedDoorsResponse = DoorsResponse & { from_cache?: boolean; cached_at?: number };
+
+/**
+ * The turf's doors, and the one place the offline copy is written.
+ *
+ * Opening a turf is the only thing that puts voter data on the phone (see offline/turfCache.ts),
+ * and a failure that is not a *definite answer about this turf* falls back to that copy: 401/403/404
+ * mean the server has told us something real and the screen should say so, but a dead radio or a
+ * 502 from a restarting API must not leave a volunteer standing on a road with no door list.
+ */
 export function useDoors(turfId: string | undefined) {
   return useQuery({
     queryKey: ['turf-doors', turfId ?? ''],
-    queryFn: () => api.get<DoorsResponse>(`/turfs/${turfId}/doors`),
+    queryFn: async (): Promise<CachedDoorsResponse> => {
+      const id = turfId as string;
+      try {
+        const res = await api.get<DoorsResponse>(`/turfs/${id}/doors`);
+        // Fire-and-forget: a cache write must never be the reason the door list fails to render.
+        void cacheTurf(id, res);
+        return res;
+      } catch (err) {
+        const definite = isApiError(err, 401) || isApiError(err, 403) || isApiError(err, 404);
+        if (definite) throw err;
+        const hit = await readCachedTurf(id);
+        if (!hit) throw err;
+        return { ...hit.response, from_cache: true, cached_at: hit.cached_at };
+      }
+    },
     enabled: !!turfId,
     staleTime: 15_000,
+    // TanStack pauses queries when the browser reports itself offline; here that would hide the
+    // cached turf behind a spinner, which is the exact situation the cache exists for.
+    networkMode: 'always',
+    // The fallback above is the retry that matters, and a volunteer waiting through three doomed
+    // attempts before seeing their doors is the failure mode this screen cannot afford.
+    retry: false,
   });
+}
+
+/**
+ * Refresh what the queue changed once it drains. Mounted by the canvass screens; without it a
+ * volunteer who comes back into signal keeps looking at the pre-sync numbers until they navigate.
+ */
+export function useOfflineSync(): void {
+  const qc = useQueryClient();
+  useEffect(
+    () =>
+      onSynced(() => {
+        void qc.invalidateQueries({ queryKey: ['turf-doors'] });
+        void qc.invalidateQueries({ queryKey: ['contacts'] });
+        void qc.invalidateQueries({ queryKey: MINE_KEY });
+        void qc.invalidateQueries({ queryKey: SIGNS_KEY });
+      }),
+    [qc],
+  );
 }
 
 export function useContacts(householdId: string | undefined) {
@@ -318,18 +371,42 @@ export function useContacts(householdId: string | undefined) {
   });
 }
 
+/** Mutation variables for `useRecordContact`: a contact body plus what to call it in the queue. */
+export interface RecordContactVars extends ContactInput {
+  /** Shown in the sync panel if this write ends up parked. Never sent to the API. */
+  door_label?: string;
+}
+
+export interface RecordContactOutcome {
+  /** True when the door went into the outbox instead of the database. */
+  queued: boolean;
+  contact: Contact | null;
+}
+
 /**
- * Record a door result. A `client_id` is generated per submission so a retry after a dropped
- * connection cannot double-count the door — the API treats it as an idempotency key.
+ * Record a door result.
+ *
+ * A `client_id` is generated once per submission and travels with the body, so a retry — from the
+ * sheet's own retry button or from the outbox hours later — is the same door to the API rather than
+ * a second knock. On a network failure the write is queued and this resolves anyway: the volunteer
+ * gets their auto-advance and walks on, which is the whole point of canvassing on a rural road.
  */
 export function useRecordContact() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: ContactInput) =>
-      api.post<{ contact: Contact }>('/contacts', {
-        client_id: body.client_id ?? crypto.randomUUID(),
-        ...body,
-      }),
+    mutationFn: async ({ door_label, ...input }: RecordContactVars): Promise<RecordContactOutcome> => {
+      const body: ContactInput = { ...input, client_id: input.client_id ?? crypto.randomUUID() };
+      const label = `${door_label ?? body.household_id} — ${RESULT_LABELS[body.result]}`;
+      const out = await submitOrQueue<{ contact: Contact }>('/contacts', body as unknown as Record<string, unknown>, {
+        label,
+        household_id: body.household_id,
+        result: body.result,
+      });
+      return out.queued ? { queued: true, contact: null } : { queued: false, contact: out.data.contact };
+    },
+    // Without this the mutation would be *paused* — not run — the moment the browser reports
+    // itself offline, and the queue would never see the write it exists to hold.
+    networkMode: 'always',
     onSuccess: (_r, body) => {
       void qc.invalidateQueries({ queryKey: ['turf-doors'] });
       void qc.invalidateQueries({ queryKey: ['contacts', body.household_id] });
@@ -394,13 +471,60 @@ export function useSignRequests() {
   });
 }
 
+/**
+ * A sign the volunteer placed but the network has not accepted yet.
+ *
+ * The placement panel wants a `Sign` back so it can confirm the record, and offline there is no
+ * server row to hand it — so one is built from the body that was queued. The `queued:` id prefix is
+ * deliberately not a server id: nothing may treat it as one. Photos are the one part that cannot
+ * follow, because raw image bytes in the outbox is a different problem with a different size
+ * budget; a queued sign gets its photo from the sign list once it has synced.
+ */
+function localSign(body: SignInput, clientId: string): Sign {
+  const now = new Date().toISOString();
+  return {
+    id: `queued:${clientId}`,
+    household_id: body.household_id ?? null,
+    address: null,
+    ward: null,
+    status: body.status ?? 'placed',
+    lat: body.lat,
+    lon: body.lon,
+    accuracy_m: body.accuracy_m ?? null,
+    label: body.label ?? null,
+    size: body.size ?? null,
+    note: body.note ?? null,
+    permission_by: body.permission_by ?? null,
+    requested_at: null,
+    requested_from: body.requested_from ?? null,
+    placed_by: null,
+    placed_by_name: null,
+    placed_at: now,
+    removed_by: null,
+    removed_by_name: null,
+    removed_at: null,
+    created_at: now,
+    client_id: clientId,
+    photo_count: 0,
+  };
+}
+
 export function usePlaceSign() {
   const qc = useQueryClient();
   return useMutation({
     // Same idempotency contract as a door contact: retrying on a bad rural signal must not plant a
-    // second sign in the database.
-    mutationFn: (body: SignInput) =>
-      api.post<{ sign: Sign }>('/signs', { client_id: body.client_id ?? crypto.randomUUID(), ...body }),
+    // second sign in the database, and the queue replays the same body with the same client_id.
+    mutationFn: async (input: SignInput): Promise<{ sign: Sign; queued: boolean }> => {
+      const client_id = input.client_id ?? crypto.randomUUID();
+      const body: SignInput = { ...input, client_id };
+      const label = body.label ?? body.household_id ?? `Sign at ${body.lat.toFixed(5)}, ${body.lon.toFixed(5)}`;
+      const out = await submitOrQueue<{ sign: Sign }>('/signs', body as unknown as Record<string, unknown>, {
+        label,
+        household_id: body.household_id ?? null,
+      });
+      return out.queued ? { sign: localSign(body, client_id), queued: true } : { sign: out.data.sign, queued: false };
+    },
+    networkMode: 'always',
     onSuccess: () => void qc.invalidateQueries({ queryKey: SIGNS_KEY }),
   });
 }

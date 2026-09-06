@@ -8,10 +8,12 @@ interface Props {
   door: Door;
   /** Latest result including one recorded this session but not yet round-tripped to the server. */
   result: ContactResult | null;
+  /** How far the door is from the phone, when the list is ordered by distance. */
+  distance?: string | null;
   onOpen: () => void;
 }
 
-export function DoorRow({ door, result, onOpen }: Props) {
+export function DoorRow({ door, result, distance, onOpen }: Props) {
   const done = result !== null;
   return (
     <li>
@@ -20,6 +22,7 @@ export function DoorRow({ door, result, onOpen }: Props) {
         <span className="cv-door__text">
           <span className="cv-door__addr">{door.address}</span>
           <span className="cv-door__sub">
+            {distance && <span className="cv-door__dist">{distance}</span>}
             {door.n_voters === 1 ? '1 voter' : `${n(door.n_voters)} voters`}
             {result && ` · ${RESULT_LABELS[result]}`}
           </span>

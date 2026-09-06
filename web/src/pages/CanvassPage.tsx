@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMyAssignments } from '../api/hooks';
+import { useMyAssignments, useOfflineSync } from '../api/hooks';
 import { isOrganizer } from '../auth';
 import '../canvass/canvass.css';
 import { Progress, StatusChip } from '../canvass/Progress';
-import { fmtDueDate } from '../canvass/status';
+import { agoLabel, fmtDueDate } from '../canvass/status';
+import { SyncStatus } from '../canvass/SyncStatus';
+import { cachedTurfSummaries } from '../offline/turfCache';
 import { useUser } from '../components/Shell';
 import { EmptyState, ErrorBox, LoadingRows, n, wardLabel } from '../components/ui';
 
@@ -11,13 +14,25 @@ import { EmptyState, ErrorBox, LoadingRows, n, wardLabel } from '../components/u
 export function CanvassPage() {
   const user = useUser();
   const mine = useMyAssignments();
+  useOfflineSync();
   const assignments = mine.data ?? [];
+  // The assignment list itself is not cached — it is a small, fast call and caching it would put
+  // more on the phone for no field benefit. But when it fails there has to be a way through to the
+  // doors already saved here, or an offline volunteer is stranded one tap from their turf.
+  const [saved, setSaved] = useState<{ turf_id: string; name: string; n_doors: number; cached_at: number }[]>([]);
+  useEffect(() => {
+    if (!mine.isError) return;
+    void cachedTurfSummaries().then(setSaved);
+  }, [mine.isError]);
 
   return (
     <div className="page page--narrow">
-      <header className="page__head">
-        <h1>Canvass</h1>
-        <p className="muted">Your turfs. Open one to walk the doors in order.</p>
+      <header className="page__head cv-page__head">
+        <div>
+          <h1>Canvass</h1>
+          <p className="muted">Your turfs. Open one to walk the doors in order.</p>
+        </div>
+        <SyncStatus />
       </header>
 
       {mine.isPending && (
@@ -26,6 +41,29 @@ export function CanvassPage() {
         </div>
       )}
       {mine.isError && <ErrorBox title="Could not load your turfs" error={mine.error} onRetry={() => void mine.refetch()} />}
+
+      {mine.isError && saved.length > 0 && (
+        <section aria-labelledby="cv-saved-h">
+          <h2 id="cv-saved-h" className="sheet__h3">
+            Saved on this phone
+          </h2>
+          <ul className="cv-turfs">
+            {saved.map((t) => (
+              <li key={t.turf_id}>
+                <Link to={`/canvass/${t.turf_id}`} className="cv-turf">
+                  <div className="cv-turf__top">
+                    <span className="cv-turf__name">{t.name}</span>
+                  </div>
+                  <div className="cv-turf__meta">
+                    <span>{n(t.n_doors)} doors</span>
+                    <span>saved {agoLabel(t.cached_at)}</span>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {mine.data && assignments.length === 0 && (
         <div className="card">
