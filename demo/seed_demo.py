@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Build a DEMO database of entirely fabricated residents, for screenshots, training and video.
 
+After seeding, create the demo accounts through the API so multi-volunteer flows (assigning,
+moving and removing a turf) can actually be exercised — a demo stack with one admin cannot test
+them. See demo/README.md for the accounts and the commands.
+
     python3 demo/seed_demo.py --database-url postgresql://.../canvass_demo
 
 Nothing here comes from the voters list. Street names and coordinates are real Middlesex Centre
