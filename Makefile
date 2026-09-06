@@ -40,8 +40,10 @@ devdb: ## tunnel-mode stack + database published on 127.0.0.1:5443 for `npm run 
 	$(COMPOSE_DEVDB) up -d --build --remove-orphans
 	$(COMPOSE_DEVDB) ps
 
-restart-tunnel: ## rebuild + restart the tunnel-mode stack (e.g. after editing .env)
-	$(COMPOSE_TUNNEL) up -d --build api web caddy
+restart-tunnel: ## rebuild + restart api/web/caddy in tunnel mode (leaves the database alone)
+	# --no-deps: without it compose reconciles `db` against this overlay set and would drop the
+	# loopback 5443 publish that docker-compose.devdb.yml adds for the local API and test suite.
+	$(COMPOSE_TUNNEL) up -d --build --no-deps api web caddy
 
 tunnel-status: ## is the tunnel-mode origin answering on 127.0.0.1:3031?
 	@curl -fsS http://127.0.0.1:3031/api/health && echo || echo "origin not answering on 127.0.0.1:3031"
