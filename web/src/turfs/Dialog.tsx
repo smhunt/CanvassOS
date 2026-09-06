@@ -6,6 +6,12 @@ interface Props {
   onClose: () => void;
   /** Wider panel for the street picker; the default matches the map's modals. */
   wide?: boolean;
+  /**
+   * Change this when the panel swaps to a different step (assign → confirm removal) to pull focus
+   * back to the heading, which now describes the new step. Without it a keyboard or screen-reader
+   * user is left on a button that no longer exists.
+   */
+  focusKey?: string;
   children: ReactNode;
   footer?: ReactNode;
 }
@@ -19,13 +25,22 @@ const FOCUSABLE =
  * opened it on close — organisers drive this screen from the keyboard.
  * Rendered only while open, so the mount effect is the open effect.
  */
-export function Dialog({ title, titleId, onClose, wide, children, footer }: Props) {
+export function Dialog({ title, titleId, onClose, wide, focusKey, children, footer }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLHeadingElement>(null);
 
+  // Mount-only: parents pass an inline `onClose`, so the listener effect below re-runs on every
+  // render — reading `activeElement` there would capture a button inside the panel as the opener.
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
+    return () => opener?.focus?.();
+  }, []);
+
+  useEffect(() => {
     headRef.current?.focus();
+  }, [focusKey]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
@@ -49,10 +64,7 @@ export function Dialog({ title, titleId, onClose, wide, children, footer }: Prop
       }
     };
     document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      opener?.focus?.();
-    };
+    return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
   return (

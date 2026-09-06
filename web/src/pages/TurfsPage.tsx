@@ -3,13 +3,17 @@ import { errorMessage } from '../api/client';
 import { useTurfs, useUpdateTurf } from '../api/hooks';
 import type { TurfSummary } from '../api/types';
 import { EmptyState, ErrorBox, LoadingRows, n } from '../components/ui';
-import { AssignDialog } from '../turfs/AssignDialog';
+import { AssignDialog, type AssignStep } from '../turfs/AssignDialog';
 import { CreateTurfDialog } from '../turfs/CreateTurfDialog';
 import { RenameDialog } from '../turfs/RenameDialog';
 import { TurfCard } from '../turfs/TurfCard';
 import '../turfs/turfs.css';
 
-type DialogState = { kind: 'create' } | { kind: 'assign'; turf: TurfSummary } | { kind: 'rename'; turf: TurfSummary } | null;
+type DialogState =
+  | { kind: 'create' }
+  | { kind: 'assign'; turf: TurfSummary; step?: AssignStep }
+  | { kind: 'rename'; turf: TurfSummary }
+  | null;
 
 /**
  * Organiser turf builder: cut the municipality into turfs and hand them to volunteers.
@@ -52,10 +56,17 @@ export function TurfsPage() {
       busy={busyId === t.id}
       error={rowError?.id === t.id ? rowError.msg : null}
       onAssign={() => setDialog({ kind: 'assign', turf: t })}
+      onMoveAssignee={(a) => setDialog({ kind: 'assign', turf: t, step: { kind: 'move', userId: a.user_id } })}
+      onRemoveAssignee={(a) => setDialog({ kind: 'assign', turf: t, step: { kind: 'remove', userId: a.user_id } })}
       onRename={() => setDialog({ kind: 'rename', turf: t })}
       onToggleArchive={() => onToggleArchive(t)}
     />
   );
+
+  // The assign dialog stays open across an assign/unassign, so it has to read the refetched turf
+  // rather than the snapshot taken when it opened — otherwise it lists someone it just removed.
+  const assignTurf =
+    dialog?.kind === 'assign' ? (all.find((t) => t.id === dialog.turf.id) ?? dialog.turf) : null;
 
   return (
     <div className="page">
@@ -123,7 +134,9 @@ export function TurfsPage() {
       {dialog?.kind === 'create' && (
         <CreateTurfDialog onClose={() => setDialog(null)} onCreated={(turf) => setDialog({ kind: 'assign', turf })} />
       )}
-      {dialog?.kind === 'assign' && <AssignDialog turf={dialog.turf} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'assign' && assignTurf && (
+        <AssignDialog turf={assignTurf} initialStep={dialog.step} onClose={() => setDialog(null)} />
+      )}
       {dialog?.kind === 'rename' && <RenameDialog turf={dialog.turf} onClose={() => setDialog(null)} />}
     </div>
   );

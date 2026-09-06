@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import type { TurfSummary } from '../api/types';
 import { fmtDate, n, wardLabel } from '../components/ui';
 import { wardColour } from '../map/palette';
-import { STATUS_LABELS, STATUS_TONE } from './status';
+import { AssigneeList, type Assignee } from './AssigneeList';
 
 interface Props {
   turf: TurfSummary;
@@ -11,10 +11,21 @@ interface Props {
   error: string | null;
   onRename: () => void;
   onAssign: () => void;
+  onMoveAssignee: (a: Assignee) => void;
+  onRemoveAssignee: (a: Assignee) => void;
   onToggleArchive: () => void;
 }
 
-export function TurfCard({ turf, busy, error, onRename, onAssign, onToggleArchive }: Props) {
+export function TurfCard({
+  turf,
+  busy,
+  error,
+  onRename,
+  onAssign,
+  onMoveAssignee,
+  onRemoveAssignee,
+  onToggleArchive,
+}: Props) {
   const pct = turf.n_households > 0 ? Math.round((turf.contacted / turf.n_households) * 100) : 0;
   const colour = wardColour(turf.ward ?? '');
 
@@ -49,11 +60,13 @@ export function TurfCard({ turf, busy, error, onRename, onAssign, onToggleArchiv
         {turf.assignees.length === 0 ? (
           <span className="tag tag--mini tag--neutral">Unassigned</span>
         ) : (
-          turf.assignees.map((a) => (
-            <span key={a.user_id} className={`tag tag--mini tag--${STATUS_TONE[a.status]}`}>
-              {a.name} — {STATUS_LABELS[a.status]}
-            </span>
-          ))
+          <AssigneeList
+            assignees={turf.assignees}
+            turfName={turf.name}
+            busy={busy}
+            onMove={onMoveAssignee}
+            onRemove={onRemoveAssignee}
+          />
         )}
       </div>
 
@@ -70,7 +83,7 @@ export function TurfCard({ turf, busy, error, onRename, onAssign, onToggleArchiv
 
       <div className="turf__actions">
         <button type="button" className="btn btn--small" disabled={busy} onClick={onAssign}>
-          Assign
+          {turf.assignees.length > 0 ? 'Assign another' : 'Assign'}
         </button>
         {/* The paper fallback for a dead battery, no signal or rain. */}
         <Link className="btn btn--small" to={`/turfs/${turf.id}/sheet`}>

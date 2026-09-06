@@ -79,4 +79,6 @@ export const api = {
     request<T>('GET', `${path}${buildQuery(params)}`, undefined, opts),
   post: <T>(path: string, body?: unknown, opts?: { silent401?: boolean }) => request<T>('POST', path, body ?? {}, opts),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
+  // Unassigning a turf and deleting a sign both return 204; request() already maps that to undefined.
+  del: <T>(path: string) => request<T>('DELETE', path),
 };

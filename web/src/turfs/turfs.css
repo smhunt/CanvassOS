@@ -79,6 +79,10 @@
   flex-wrap: wrap;
   gap: 0.3rem;
 }
+/* The list wants the full card width; the "Unassigned" chip beside it must not stretch to match. */
+.turf__assignees .assignees {
+  flex: 1 1 100%;
+}
 .turf__meta {
   margin: 0;
   margin-top: auto;
@@ -109,9 +113,69 @@
   margin: 0;
   margin-right: auto;
 }
+/* ------------------------------------------------------------------ assignees */
+/* Same rows on the card and in the dialog: who has the turf, what they are doing, and the two ways
+   to take it off them. Several people on one turf is normal — a long road split between walkers. */
 .assignees {
-  margin: 0 0 0.75rem;
-  padding-left: 1.1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.assignee {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.assignee__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.assignee__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.assignee__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+.assign__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+.assign__section h3 {
+  margin: 0;
+}
+
+/* Removing someone mid-canvass is disruptive, so the confirm step spells out what it does — and,
+   just as important, what it does not touch. The wording carries the warning; colour only echoes it. */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.confirm__lead {
+  margin: 0;
+}
+.confirm__effect {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border-left: 3px solid var(--warn);
 }
 
 /* ------------------------------------------------------------------ street picker */
@@ -247,6 +311,14 @@
     max-height: none;
   }
   .turf__actions .btn {
+    flex: 1 1 auto;
+  }
+  /* Narrow enough that name and buttons stop sharing a line — keep the buttons full-width taps. */
+  .assignee__actions {
+    margin-left: 0;
+    flex: 1 1 100%;
+  }
+  .assignee__actions .btn {
     flex: 1 1 auto;
   }
 }

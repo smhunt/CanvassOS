@@ -295,6 +295,19 @@ export function useAssignTurf() {
   });
 }
 
+/** Remove a volunteer from a turf. Idempotent server-side, so a double tap is harmless. */
+export function useUnassignTurf() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ turfId, userId }: { turfId: string; userId: string }) =>
+      api.del(`/turfs/${turfId}/assign/${userId}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: TURFS_KEY });
+      void qc.invalidateQueries({ queryKey: MINE_KEY });
+    },
+  });
+}
+
 /** The volunteer's own turfs — the entry point to the door screen. */
 export function useMyAssignments() {
   return useQuery({
