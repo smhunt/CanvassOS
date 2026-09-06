@@ -33,19 +33,32 @@ ahead of the day it is meant to land.
 This also caps the realistic audience. A list of 1,500–3,000 opted-in subscribers is deliverable
 inside a weekend on a handful of numbers. Seventeen thousand is not, at any price.
 
-*(Reseller-reported, not first-party carrier documentation. **Confirm with the provider before
-building anything.** If it is wrong in our favour, the design still works — it just finishes sooner.)*
+**Corrected 2026-09-06.** No provider publishes a per-day figure for Canadian long codes, and it is
+probably not a quota at all. What Twilio does say first-party is that *"Canadian mobile carriers
+enforce strict filtering on A2P messages"* — that is **reputation-based spam filtering**, which moves
+with content, pacing and complaint rate, not a dial set to 250.
 
-### 1.2 Campaign Verify does not admit Canadians
+So treat 100–250 as a **conservative tunable cap** (`sender_number.daily_cap`), never as a cited
+fact. The half of the claim that is true is the half that matters: **filtered messages fail
+silently**, which is why delivery receipts are load-bearing rather than reporting polish.
 
-From **17 February 2026**, carriers require a Campaign Verify Auth Token for *political* messaging on
-10DLC, toll-free and short codes — including traffic **to Canada**. Eligibility requires registration
-with the FEC or a US state/local/tribal election authority. **A Canadian municipal candidate cannot
-qualify.**
+One open question remains, and it is the only one that could still change the design: **ask the
+provider in writing what happens to messages above the cap** — dropped, queued, or throttled.
 
-The practical route is a **Canadian local long code**, staying off the toll-free political use-case
-path. This is reported behaviour and whether the scoping actually binds a Canadian sender is
-unresolved — **it is the first thing to confirm with a provider, in writing, before a line of code.**
+### 1.2 Campaign Verify — REFUTED 2026-09-06, this is not a blocker
+
+An earlier draft made this step zero. Primary-source check (`docs/sms-providers-canada.md` §2) says
+otherwise: Campaign Verify's own page scopes the 17 February 2026 requirement to **"U.S. political
+committees"** — by the *sender's identity*, not by the destination country — and attaches it to short
+code and toll-free, not 10DLC. Canada-to-Canada traffic on a Canadian long code never enters the US
+vetting apparatus at all.
+
+So a Canadian municipal candidate is not blocked, is not required to register, and has nothing to
+apply for. **The step-zero gate that opened this plan does not exist.** What is confirmed is only
+that Campaign Verify itself is US-only, which is irrelevant to us.
+
+There is also **no Canadian equivalent of 10DLC** — no registration, no queue. A long code bought on
+Monday sends on Monday.
 
 ### 1.3 The rest of the legal picture
 
@@ -180,14 +193,14 @@ monthly, so a pool of ten is a small fixed cost. **Cost is not the constraint; t
 
 | # | Piece | Why first |
 |---|---|---|
-| 0 | **Confirm with a provider, in writing**: Campaign Verify scope for a Canadian sender, real long-code throughput, and whether they will carry Canadian political traffic at all | Everything below is void if the answer is no. **Do this before writing code.** |
+| 0 | **One written question to the provider**: what happens to messages above the throughput cap — dropped, queued or throttled? Plus written blessing for a ~10-number pool | No longer a gate — Campaign Verify does not apply and there is no Canadian registration queue. But the answer tunes `daily_cap`, and the pool blessing avoids a snowshoeing suspension |
 | 1 | Migration 003 + the channel-priority resolver + `GET /api/messaging/audience` (counts only) | Answers "how many people can we actually reach?" — which decides whether this is worth building |
 | 2 | Inbound webhook: STOP first, then JOIN | Ship the ability to stop **before** the ability to send. Non-negotiable. |
 | 3 | Self-serve subscribe page + confirmation reply | Grows the list while the rest is built; the list is the long pole |
 | 4 | Composer with live segment/encoding count, and a test send to yourself | The é trap is cheapest to catch here |
 | 5 | Send worker, number pool, quiet hours, receipts | The actual sender |
 | 6 | Campaign dashboard: progress, delivery rate, opt-outs | Detects silent throttling |
-| 7 | Email as fallback channel | Genuinely secondary — SMS is the priority |
+| 7 → **2b** | Email, built in parallel from week 2 | **Moved up.** If SMS fails 72 hours out, a second SMS provider cannot be provisioned, warmed and consent-verified in time. Email is the only channel that can absorb the whole list on election eve with no throughput ceiling and no carrier filter. Send priority is unchanged — SMS still wins — but email must be *built and tested* before it is needed |
 
 **Two gates before the first real send:** the provider confirmation at step 0, and a lawyer's read on
 the CASL position for a non-commercial political SMS from a municipal candidate. Neither is optional
