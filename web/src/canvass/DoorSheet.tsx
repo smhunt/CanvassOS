@@ -4,6 +4,7 @@ import type { ContactInput, ContactResult, Door } from '../api/types';
 import { CONTACT_RESULTS, RESULT_LABELS } from '../api/types';
 import { ErrorBox, Spinner, n, titleCase } from '../components/ui';
 import { ContactHistory } from './ContactHistory';
+import { coordsOf, mapsUrl, walkHint, type Coords } from './directions';
 import { SpokeForm, type SpokeDetail } from './SpokeForm';
 import { resultColour } from './status';
 
@@ -17,9 +18,11 @@ interface Props {
   onRecorded: (result: ContactResult) => void;
   onPrev: (() => void) | null;
   onNext: (() => void) | null;
+  /** Where the volunteer is standing — the door just recorded — so the walk here can be described. */
+  from: Coords | null;
 }
 
-export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onPrev, onNext }: Props) {
+export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onPrev, onNext, from }: Props) {
   const [spoke, setSpoke] = useState(false);
   const record = useRecordContact();
   // The submitted body is kept so a retry re-sends the same client_id; the API treats that as the
@@ -71,6 +74,8 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
 
   const pending = record.isPending;
   const headId = 'cv-door-h';
+  const here = coordsOf(door);
+  const hint = walkHint(from, here);
 
   return (
     <div className="cv-sheet-wrap" role="presentation">
@@ -147,6 +152,18 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
             <SpokeForm voters={door.voters} pending={pending} onSubmit={submitSpoke} onCancel={() => setSpoke(false)} />
           ) : (
             <>
+              {here && (
+                // Opens the phone's own map app for turn-by-turn; a new tab so a mis-tap cannot lose
+                // an unsaved door behind a navigation.
+                <a className="btn cv-walk" href={mapsUrl(here.lat, here.lon)} target="_blank" rel="noreferrer">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z" />
+                    <circle cx="12" cy="10" r="2.5" />
+                  </svg>
+                  Walk here
+                  {hint && <span className="cv-walk__hint">{hint}</span>}
+                </a>
+              )}
               <p className="cv-results__hint muted small">What happened at this door?</p>
               <div className="cv-results">
                 {CONTACT_RESULTS.map((r) => (
