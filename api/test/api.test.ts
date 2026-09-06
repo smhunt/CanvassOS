@@ -891,6 +891,147 @@ describe('turfs', () => {
   });
 });
 
+// ------------------------------------------------------------------ turf preview
+// The preview's whole value is that it cannot disagree with the save, so these tests compare it
+// against the turfs created above rather than against numbers computed a second way.
+
+interface PreviewBody {
+  n_households: number;
+  n_voters: number;
+  unmapped: number;
+  truncated: boolean;
+  doors: Array<{ household_id: string; lat: number; lon: number; ward: string }>;
+}
+
+describe('turf preview', () => {
+  it('returns exactly what the create path selected for the same streets, and creates nothing', async () => {
+    const before = (await call('GET', '/api/turfs?archived=true', organizerCookie)).json() as { turfs: unknown[] };
+
+    const res = await call('POST', '/api/turfs/preview', organizerCookie, {
+      // Same body as the street turf above minus the name; `ward` is a label there and must not
+      // narrow the match here either, so it is sent and expected to be ignored.
+      ward: '02',
+      streets: ctx.streets,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const preview = res.json() as PreviewBody;
+
+    const created = (await call('GET', `/api/turfs/${ctx.streetTurfId}`, organizerCookie)).json() as {
+      turf: { n_households: number; n_voters: number };
+    };
+    assert.equal(preview.n_households, created.turf.n_households);
+    assert.equal(preview.n_voters, created.turf.n_voters);
+    assert.equal(preview.n_households, ctx.streetHouseholdIds.length);
+    assert.equal(preview.doors.length + preview.unmapped, preview.n_households);
+    assert.equal(preview.truncated, false);
+
+    // Door for door, in the same walking order, against the turf that was actually saved.
+    const doors = (await call('GET', `/api/turfs/${ctx.streetTurfId}/doors`, organizerCookie)).json() as {
+      doors: Array<{ household_id: string; lat: number | null; lon: number | null; ward: string }>;
+    };
+    assert.deepEqual(
+      preview.doors.map((d) => d.household_id),
+      doors.doors.filter((d) => d.lat !== null).map((d) => d.household_id),
+    );
+    const first = preview.doors[0]!;
+    const sameDoor = doors.doors.find((d) => d.household_id === first.household_id)!;
+    assert.equal(first.lat, sameDoor.lat);
+    assert.equal(first.lon, sameDoor.lon);
+    assert.equal(first.ward, sameDoor.ward);
+    // Coordinates and ward only: a preview is a shape, not a door list.
+    assert.deepEqual(Object.keys(first).sort(), ['household_id', 'lat', 'lon', 'ward']);
+
+    // Nothing was written: no new turf, and no stray turf_household rows.
+    const after = (await call('GET', '/api/turfs?archived=true', organizerCookie)).json() as { turfs: unknown[] };
+    assert.equal(after.turfs.length, before.turfs.length);
+
+    const aud = await db.query<{ detail: { by: string; n_households: number }; target: string | null }>(
+      `SELECT target, detail FROM audit_log WHERE action = 'preview_turf' ORDER BY id DESC LIMIT 1`,
+    );
+    assert.equal(aud.rows[0]!.target, null);
+    assert.equal(aud.rows[0]!.detail.by, 'streets');
+    assert.equal(aud.rows[0]!.detail.n_households, preview.n_households);
+  });
+
+  it('previews the polygon branch with the same ray cast the save uses', async () => {
+    const res = await call('POST', '/api/turfs/preview', adminCookie, { polygon: RECT_POLYGON });
+    assert.equal(res.statusCode, 200, res.body);
+    const preview = res.json() as PreviewBody;
+
+    assert.equal(preview.n_households, inRect.length);
+    assert.deepEqual(
+      preview.doors.map((d) => d.household_id).sort(),
+      inRect.map((h) => h.household_id!).sort(),
+    );
+    for (const d of preview.doors) {
+      assert.ok(d.lon > RECT.minLon && d.lon < RECT.maxLon && d.lat > RECT.minLat && d.lat < RECT.maxLat);
+    }
+    // A household with no coordinates cannot be inside a drawn shape, so this branch is always 0.
+    assert.equal(preview.unmapped, 0);
+    assert.equal(preview.truncated, false);
+
+    // …and it agrees with the polygon turf that was actually created from the same geometry.
+    const created = (await call('GET', `/api/turfs/${ctx.polygonTurfId}`, adminCookie)).json() as {
+      turf: { n_households: number; n_voters: number };
+    };
+    assert.equal(preview.n_households, created.turf.n_households);
+    assert.equal(preview.n_voters, created.turf.n_voters);
+  });
+
+  it('counts selected households with no coordinates as unmapped', async () => {
+    // The three households that would not geocode at all still carry a street_sort, so a street
+    // selection can pick them up; the map cannot draw them, and the count has to say so.
+    const street = await db.query<{ street_sort: string; missing: number; total: number }>(
+      `SELECT street_sort,
+              count(*) FILTER (WHERE lat IS NULL)::int AS missing,
+              count(*)::int AS total
+       FROM household WHERE street_sort IS NOT NULL
+       GROUP BY street_sort
+       HAVING count(*) FILTER (WHERE lat IS NULL) > 0
+       ORDER BY count(*), street_sort LIMIT 1`,
+    );
+    const pick = street.rows[0];
+    assert.ok(pick, 'the loaded data has a street with an ungeocoded household');
+
+    const res = await call('POST', '/api/turfs/preview', organizerCookie, { streets: [pick.street_sort] });
+    assert.equal(res.statusCode, 200, res.body);
+    const preview = res.json() as PreviewBody;
+    assert.equal(preview.n_households, pick.total);
+    assert.equal(preview.unmapped, pick.missing);
+    assert.equal(preview.doors.length, pick.total - pick.missing);
+    assert.ok(preview.unmapped > 0, 'the fixture street really does hold an unmapped door');
+  });
+
+  it('is organizer-only and validates the body like the create path', async () => {
+    const vol = await call('POST', '/api/turfs/preview', volunteerCookie, { streets: ctx.streets });
+    assert.equal(vol.statusCode, 403);
+    const anon = await app.inject({ method: 'POST', url: '/api/turfs/preview', payload: { streets: ctx.streets } });
+    assert.equal(anon.statusCode, 401);
+
+    const both = await call('POST', '/api/turfs/preview', organizerCookie, {
+      streets: ctx.streets,
+      polygon: RECT_POLYGON,
+    });
+    assert.equal(both.statusCode, 400);
+    const neither = await call('POST', '/api/turfs/preview', organizerCookie, { ward: '02' });
+    assert.equal(neither.statusCode, 400);
+    const badPoly = await call('POST', '/api/turfs/preview', organizerCookie, {
+      polygon: { type: 'Polygon', coordinates: [[[0, 0], [1, 1]]] },
+    });
+    assert.equal(badPoly.statusCode, 400);
+
+    // A street nobody lives on is an empty preview, not a 404 — the builder shows "0 doors".
+    const empty = await call('POST', '/api/turfs/preview', organizerCookie, { streets: ['NO SUCH STREET XYZ'] });
+    assert.equal(empty.statusCode, 200, empty.body);
+    const body = empty.json() as PreviewBody;
+    assert.deepEqual(body, { n_households: 0, n_voters: 0, unmapped: 0, doors: [], truncated: false });
+
+    // The builder's picker sends "no ward" as an explicit null; that must not be a 400.
+    const nullWard = await call('POST', '/api/turfs/preview', organizerCookie, { ward: null, streets: ctx.streets });
+    assert.equal(nullWard.statusCode, 200, nullWard.body);
+  });
+});
+
 describe('turf scope (volunteer)', () => {
   it('403s on an unassigned turf and serves the assigned one without organizer-only fields', async () => {
     const denied = await call('GET', `/api/turfs/${ctx.polygonTurfId}/doors`, volunteerCookie);

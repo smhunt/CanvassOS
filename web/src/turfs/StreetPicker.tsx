@@ -56,6 +56,19 @@ function group(rows: Street[]): StreetGroup[] {
   return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/**
+ * Doors in a selection, straight off the raw /api/streets rows — no grouping needed, because every
+ * row of a street carries the same `street_sort` the turf is cut on. The create dialog uses it to
+ * size a selection before asking the API to draw it; `useStreets()` is the same query key the
+ * picker already holds, so reading it there costs no extra request.
+ */
+export function doorsInSelection(rows: Street[], selected: string[]): number {
+  const picked = new Set(selected);
+  let doors = 0;
+  for (const r of rows) if (picked.has(r.street_sort)) doors += r.n_households;
+  return doors;
+}
+
 function totalsFor(groups: StreetGroup[], selected: string[], claimedBy: Map<string, string[]>): Totals {
   const picked = new Set(selected);
   let households = 0;

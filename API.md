@@ -172,6 +172,23 @@ unencumbered option and the map layer worth building next.
   `turf_household` is materialised in the same transaction, with
   `walk_order = row_number() over (order by street_sort, num_sort, id)` so doors come out in walking order.
   Audit `create_turf` with `{ name, by: "streets" | "polygon", n_households }`.
+- `POST /api/turfs/preview` `{ ward?, streets?: string[], polygon?: GeoJSON Polygon }` → `200`
+  ```
+  { n_households, n_voters, unmapped, truncated,
+    doors: [{ household_id, lat, lon, ward }] }
+  ```
+  The **same body as `POST /api/turfs` minus `name`** (`ward` may also be `null`), validated by the same rules —
+  exactly one of `streets`/`polygon`, else `400`. It runs the **same selection code the create path runs**
+  (`selectHouseholds()` in `api/src/routes/turfs.ts`, called by both this route and `materialise()`), so previewing
+  and then saving the same body always yields the same doors: a preview that can disagree with the save is worse
+  than no preview, because the organizer commits a walk on the strength of it. `ward` does not narrow the match
+  here either.
+  `n_households` / `n_voters` are the exact totals for the whole selection. `unmapped` is how many of those
+  households have no coordinates (legal descriptions) and therefore cannot appear as dots — without it the map
+  quietly shows fewer doors than the count promises. `doors` is capped at **4,000** points (the whole municipality
+  is 7,067 and one existing turf is already 1,330); when the cap bites, `truncated` is `true` and the counts are
+  still the full figures. Nothing is written and no turf is created.
+  Audit `preview_turf` with `{ by: "streets" | "polygon", n_households }` and a `null` target.
 - `GET /api/turfs?archived=true` → `{ turfs: [{ id, name, ward, archived, created_at, created_by_name, n_households,
   n_voters, contacted, streets: string[], assignees: [{ id, user_id, name, status, due_date }] }] }`.
   `contacted` = doors in the turf with at least one `contact` row. `streets` is the distinct `street_sort` of the
@@ -678,7 +695,7 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
   Volunteers' features carry only `{ id, ward, community, n, inst }`; the contact lookup is skipped for them.
 - `GET /api/audit` also accepts `user_id=<uuid>` and `action=<name>` filters; entries are
   `{ id, at, user_id, user_email, user_name, action, target, detail, ip }`. Extra audited actions:
-  `login_failed`, `accept_invite`, `change_password`, `reinvite`, `update_user`. Phase 2 adds `create_turf`,
+  `login_failed`, `accept_invite`, `change_password`, `reinvite`, `update_user`. Phase 2 adds `preview_turf`, `create_turf`,
   `update_turf`, `delete_turf`, `assign_turf`, `unassign_turf`, `update_assignment`, `view_turf_doors`,
   `view_follow_ups`, `contact`. Lawn signs add `place_sign`, `update_sign`, `delete_sign`, `upload_sign_photo`,
   `view_sign_photo` and `view_sign_requests`. Doorstep phone/email adds `collect_voter_contact`,
@@ -704,6 +721,12 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
   7k-row points query the volunteer's set of doors is materialised once in a CTE instead of being tested per row.
 - `GET /api/households/points` for a volunteer with no assignments is byte-for-byte the Phase 1 response.
 - A turf whose `streets`/`polygon` match nothing is still created (`201`, `n_households: 0`).
+- The turf **matching lives in exactly one function**, `selectHouseholds()`: `POST /api/turfs/preview` and the
+  `materialise()` step of `POST /api/turfs` both call it, and `walk_order` is then numbered over the order it
+  returned. Adding a second query for the preview is the bug this shape exists to prevent.
+- A preview that matches nothing is a `200` with `n_households: 0` and an empty `doors` array, not a `404`.
+  A polygon preview always reports `unmapped: 0` — a household with no coordinates cannot be inside a
+  drawn shape in the first place; only a street selection can pick up legal descriptions.
 - Rows in `turf_household` are not exclusive: the same door may sit in more than one turf.
 - `assignment.due_date` and `activity.by_day[].day` are serialized as `YYYY-MM-DD` strings, never as timestamps.
 - Tests: `api/test/api.test.ts` writes to the database it is pointed at, so it refuses to start unless

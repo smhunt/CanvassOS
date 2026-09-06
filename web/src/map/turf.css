@@ -1,0 +1,67 @@
+/* The /map?turf=<id> banner. Every custom property, tone and primitive comes from src/styles.css —
+   nothing is redefined here. A lazily loaded stylesheet is never removed from the document (see the
+   print sheet's landmine in CLAUDE.md), so every rule below is scoped under .turf-banner and can
+   therefore sit in the page for the rest of the session without touching anything else. */
+
+.turf-banner {
+  position: absolute;
+  /* Below the toolbar, which wraps onto a second row under the TABLET stop (the search box takes a
+     full row there) — same stop as src/styles.css, no fifth number. */
+  top: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: max-content;
+  max-width: calc(100vw - 20px);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem 0.4rem 0.8rem;
+  box-shadow: var(--shadow);
+}
+
+.turf-banner__body {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 0.9rem;
+  /* One line on a phone: the map underneath is the point, not this. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turf-banner__unmapped,
+.turf-banner__loading {
+  color: var(--muted);
+}
+.turf-banner__loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.turf-banner__error {
+  color: var(--danger);
+}
+
+.turf-banner__link {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.turf-banner__close {
+  flex: 0 0 auto;
+}
+
+/* Touch: the two controls are tapped on a tablet in the field, so they keep the full target. */
+@media (pointer: coarse) {
+  .turf-banner__link,
+  .turf-banner__close {
+    min-height: var(--tap);
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+@media (min-width: 720px) {
+  .turf-banner {
+    top: 68px;
+  }
+}

@@ -491,3 +491,18 @@ export interface SegmentInfo {
   /** The characters that forced UCS-2, so the composer can point at them. */
   offending: string[];
 }
+
+/** POST /api/turfs/preview — what a turf WOULD contain, before it is created.
+ *  Uses the same street/polygon matching as the create path, so the preview cannot promise a
+ *  different turf from the one that gets saved. */
+export interface TurfPreview {
+  n_households: number;
+  n_voters: number;
+  /** Door coordinates for drawing the shape. Legal-description rows have no point and are omitted. */
+  doors: { household_id: string; lat: number; lon: number; ward: string }[];
+  /** Households in the selection that have no coordinates, so the map cannot show them. */
+  unmapped: number;
+  /** True when `doors` was capped — the counts above are still the exact full-selection figures,
+   *  so a builder can say "showing 4,000 of N" rather than under-reporting the turf. */
+  truncated: boolean;
+}

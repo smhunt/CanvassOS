@@ -71,6 +71,18 @@ export const CLUSTER_COLOUR = '#1f4e79';
 export const BOUNDARY_COLOUR = '#1f4e79';
 export const SELECTED_COLOUR = '#ffcc33';
 
+/**
+ * The ring drawn round the doors of a turf opened with `/map?turf=<id>`. Deliberately NOT a hue:
+ * every colour mode already owns the fill of a dot, so the turf marks itself with an outline (dark
+ * on a light basemap, light on imagery — swapped in setBaseLayer) and by fading everything else.
+ * A coloured ring here would read as another category and fight whatever mode is selected.
+ */
+export const TURF_OUTLINE = '#101820';
+export const TURF_OUTLINE_ON_IMAGERY = '#ffffff';
+/** Contrast ring underneath, so the outline survives both a white house dot and dark imagery. */
+export const TURF_CONTRAST = '#ffffff';
+export const TURF_CONTRAST_ON_IMAGERY = 'rgba(8, 14, 20, 0.75)';
+
 export type ColourMode = 'ward' | 'community' | 'doors' | 'quality' | 'nonres' | 'status';
 
 export const COLOUR_MODES: { id: ColourMode; label: string; organizerOnly?: boolean }[] = [

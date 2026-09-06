@@ -33,6 +33,7 @@ import type {
   SenderNumber,
   StatsOverview,
   Street,
+  TurfPreview,
   VoterContact,
   VoterContactInput,
   TurfSummary,
@@ -715,5 +716,23 @@ export function useSenderNumbers() {
     queryKey: ['sender-numbers'],
     queryFn: () => api.get<{ numbers: SenderNumber[] }>('/messaging/numbers').then((r) => r.numbers),
     staleTime: 30_000,
+  });
+}
+
+/** Preview a turf before creating it — the same matching the create path uses. */
+export function useTurfPreview() {
+  return useMutation({
+    mutationFn: (body: { streets?: string[]; polygon?: unknown; ward?: string | null }) =>
+      api.post<TurfPreview>('/turfs/preview', body),
+  });
+}
+
+/** The doors of an existing turf, for drawing it on the main map. */
+export function useTurfDoorsForMap(turfId: string | null) {
+  return useQuery({
+    queryKey: ['turf-map', turfId ?? ''],
+    queryFn: () => api.get<DoorsResponse>(`/turfs/${turfId}/doors`),
+    enabled: !!turfId,
+    staleTime: 60_000,
   });
 }

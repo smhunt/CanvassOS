@@ -322,3 +322,122 @@
     flex: 1 1 auto;
   }
 }
+
+/* ------------------------------------------------------------------ turf shape preview
+   The live sketch of the turf being cut, beside the street picker. Phone-first: one column, map
+   under the picker, because the street list is the authoritative thing and should be reachable
+   first. The four stops in styles.css are the only ones used. */
+.create-turf__cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  margin-top: 0.75rem;
+}
+.create-turf__pick {
+  min-width: 0;
+}
+.shape {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.shape__h {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.shape__note {
+  margin: 0;
+}
+.shape__note--busy,
+.shape__loading {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.shape__result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+/* A newer selection is on the way; the old sketch stays legible but visibly out of date. */
+.shape__result--stale {
+  opacity: 0.55;
+}
+.shape__canvas {
+  position: relative;
+  /* Tall enough to tell one walk from three islands, short enough that the counts below it — the
+     part that is actually authoritative — stay on screen. */
+  height: min(38dvh, 300px);
+  min-height: 200px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-3);
+}
+.shape__canvas > .map-canvas {
+  /* beats .maplibregl-map { position: relative } from maplibre-gl.css */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.shape__loading {
+  margin: 0;
+  padding: 0.6rem;
+}
+.shape__alt {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.shape__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.8rem;
+  font-size: 0.85rem;
+}
+.shape__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.shape__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dot, var(--muted));
+  flex: 0 0 auto;
+}
+
+/* TABLET: the dialog is still one column (the picker needs the width to keep street names, ward and
+   counts on one line), but there is room for a taller sketch. */
+@media (min-width: 720px) {
+  .shape__canvas {
+    height: min(40dvh, 340px);
+  }
+}
+
+/* DESKTOP: the laptop case this dialog is really for — picker and map side by side, so the shape
+   changes under the same eye that is ticking the boxes. The panel sticks while the picker scrolls
+   inside the modal body. */
+@media (min-width: 1100px) {
+  .modal--wide {
+    width: min(1120px, 100%);
+  }
+  .create-turf__cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 23rem);
+    gap: 1rem;
+  }
+  .shape {
+    position: sticky;
+    top: 0;
+  }
+}

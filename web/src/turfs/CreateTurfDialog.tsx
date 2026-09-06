@@ -1,9 +1,10 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { useCreateTurf, useMeta, useTurfs } from '../api/hooks';
+import { useCreateTurf, useMeta, useStreets, useTurfs } from '../api/hooks';
 import type { TurfSummary } from '../api/types';
 import { ErrorBox, wardLabel } from '../components/ui';
 import { Dialog } from './Dialog';
-import { StreetPicker } from './StreetPicker';
+import { doorsInSelection, StreetPicker } from './StreetPicker';
+import { TurfShapePanel } from './TurfShapePanel';
 
 const FORM_ID = 'create-turf-form';
 const FOOTNOTE_ID = 'create-turf-footnote';
@@ -42,6 +43,13 @@ export function CreateTurfDialog({ onClose, onCreated }: Props) {
   const [name, setName] = useState('');
   const [ward, setWard] = useState('');
   const [streets, setStreets] = useState<string[]>([]);
+
+  // Same query key the picker uses, so this is the cached list, not a second request.
+  const streetRows = useStreets();
+  const estimatedDoors = useMemo(
+    () => doorsInSelection(streetRows.data ?? [], streets),
+    [streetRows.data, streets],
+  );
 
   const claimedBy = useMemo(() => claimsByStreet(turfs.data ?? []), [turfs.data]);
   const overlap = streets.filter((s) => claimedBy.has(s));
@@ -137,13 +145,20 @@ export function CreateTurfDialog({ onClose, onCreated }: Props) {
           </p>
         )}
 
-        <StreetPicker
-          ward={ward}
-          communities={meta.data?.communities.map((c) => c.community) ?? []}
-          selected={streets}
-          claimedBy={claimedBy}
-          onChange={setStreets}
-        />
+        {/* Picker first in the DOM as well as on screen: it is the authoritative representation of
+            the turf, and the map beside (or, on a phone, below) it is the supplement. */}
+        <div className="create-turf__cols">
+          <div className="create-turf__pick">
+            <StreetPicker
+              ward={ward}
+              communities={meta.data?.communities.map((c) => c.community) ?? []}
+              selected={streets}
+              claimedBy={claimedBy}
+              onChange={setStreets}
+            />
+          </div>
+          <TurfShapePanel streets={streets} ward={ward} estimatedDoors={estimatedDoors} />
+        </div>
 
         {create.isError && <ErrorBox title="Could not create the turf" error={create.error} compact />}
       </div>

@@ -1,9 +1,10 @@
 import maplibregl, { type GeoJSONSource, type LngLatBoundsLike, type MapGeoJSONFeature, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import type { FeatureCollection } from 'geojson';
 import type { Meta, PointProps, PointsCollection } from '../api/types';
 import type { BaseLayer, ColourMode } from './palette';
-import { EMPTY_FC, buildStyle, clusterColourExpression, colourExpression, setBaseLayer } from './style';
+import { EMPTY_FC, applyTurfHighlight, buildStyle, clusterColourExpression, colourExpression, setBaseLayer } from './style';
 
 export interface ViewportStats {
   doors: number;
@@ -13,7 +14,14 @@ export interface ViewportStats {
 
 export interface MapViewHandle {
   flyTo(lon: number, lat: number, zoom?: number): void;
+  fitBounds(bounds: [number, number, number, number], padding?: number): void;
   getZoom(): number;
+}
+
+/** One turf drawn over the municipality: the ids to keep bright, and the points to ring. */
+export interface TurfHighlight {
+  ids: string[];
+  points: FeatureCollection;
 }
 
 interface Props {
@@ -23,6 +31,8 @@ interface Props {
   communities: string[];
   base: BaseLayer;
   selectedId: string | null;
+  /** A turf opened via /map?turf=<id>, or null for the normal map. */
+  turfHighlight?: TurfHighlight | null;
   /** While true the map drops its own click handling: no selection, no cluster zoom, crosshair cursor. */
   drawing?: boolean;
   onSelect: (props: PointProps, lngLat: [number, number]) => void;
@@ -55,7 +65,7 @@ function polygonBounds(geom: NonNullable<Meta['boundary']>): LngLatBoundsLike | 
 }
 
 export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
-  { points, boundary, colourMode, communities, base, selectedId, drawing = false, onSelect, onViewport, onMapReady },
+  { points, boundary, colourMode, communities, base, selectedId, turfHighlight = null, drawing = false, onSelect, onViewport, onMapReady },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -80,6 +90,18 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
       const map = mapRef.current;
       if (!map) return;
       map.flyTo({ center: [lon, lat], zoom: zoom ?? Math.max(map.getZoom(), 16), speed: 1.4, essential: true });
+    },
+    fitBounds(bounds, padding = 48) {
+      const map = mapRef.current;
+      if (!map) return;
+      // Claim the one-time initial fit: the boundary can arrive after this and would otherwise
+      // pull the view back out to the whole municipality a moment after we framed the turf.
+      fittedRef.current = true;
+      // `duration: 0` for the same reason the boundary fit uses it: an eased camera move is driven
+      // by requestAnimationFrame, which does not run in a background tab (and stalls when every
+      // tile request is failing) — a deep link would then land on the municipality view with the
+      // move pending. This is the map's opening position, not a gesture, so it should not animate.
+      map.fitBounds(bounds, { padding, maxZoom: 16.5, duration: 0 });
     },
     getZoom() {
       return mapRef.current?.getZoom() ?? INITIAL_ZOOM;
@@ -273,6 +295,18 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     if (!map || !ready) return;
     map.getCanvas().style.cursor = drawing ? 'crosshair' : '';
   }, [drawing, ready]);
+
+  // ---- turf highlight
+  // Re-applied whenever the turf changes; colour-mode and base-layer changes write different paint
+  // properties (colour, visibility), so neither of them can undo it and it needs no re-run here.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource('turf') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData(turfHighlight?.points ?? EMPTY_FC);
+    applyTurfHighlight(map, turfHighlight?.ids ?? null);
+  }, [turfHighlight, ready]);
 
   // ---- selection ring
   useEffect(() => {

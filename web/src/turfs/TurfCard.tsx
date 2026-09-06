@@ -85,6 +85,11 @@ export function TurfCard({
         <button type="button" className="btn btn--small" disabled={busy} onClick={onAssign}>
           {turf.assignees.length > 0 ? 'Assign another' : 'Assign'}
         </button>
+        {/* Where is it? The card has counts but no geography; the main map fits itself to `?turf=`.
+            Labelled with the turf name because a list of cards is a list of identical links. */}
+        <Link className="btn btn--small" to={`/map?turf=${turf.id}`} aria-label={`Show ${turf.name} on the map`}>
+          Show on map
+        </Link>
         {/* The paper fallback for a dead battery, no signal or rain. */}
         <Link className="btn btn--small" to={`/turfs/${turf.id}/sheet`}>
           Print sheet

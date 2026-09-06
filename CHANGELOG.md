@@ -55,6 +55,19 @@ Phase 3 complete: the app works with no signal, on paper, and on a tablet.
 
 ### Added
 
+- **A turf is a place, not a row of numbers.** Every turf card gets *Show on map*, and `/map?turf=<id>`
+  fits the map to that turf and rings its doors.
+- **Live shape preview when cutting a turf.** As streets are picked, the doors are drawn — so an
+  organiser can see whether the selection is one contiguous walk or three islands 11 km apart, which
+  the counts cannot tell them. Backed by `POST /api/turfs/preview`, which reuses the create path's
+  own matching (`selectHouseholds`) rather than a second query that could drift: a preview that can
+  disagree with the save is worse than no preview.
+- The preview reports `unmapped` — selected households with no coordinates — so the number of dots
+  never silently disagrees with the door count.
+
+
+### Added
+
 **Offline canvassing** (Phase 3)
 
 - **A write queue behind the door screen.** `useRecordContact()` and `usePlaceSign()` now try the

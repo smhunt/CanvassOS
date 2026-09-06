@@ -19,6 +19,9 @@ export type AuditAction =
   | 'export'
   | 'import'
   // Phase 2 — canvassing
+  // Building a turf reads which doors sit on which streets / inside a drawn shape, so the preview
+  // is a read of the voters list and is recorded like one even though it changes nothing.
+  | 'preview_turf'
   | 'create_turf'
   | 'update_turf'
   | 'delete_turf'

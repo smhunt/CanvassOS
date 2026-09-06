@@ -16,23 +16,48 @@ const assignParams = z.object({ id: z.string().uuid(), user_id: z.string().uuid(
 const wardSchema = z.string().regex(/^\d{2}$/, 'ward must be two digits');
 const statusSchema = z.enum(['open', 'in_progress', 'done']);
 
+// street_sort keys as returned by GET /api/streets. NOTE: `ward` never narrows these — see
+// selectHouseholds() — it is only stored on the turf as a label. Shared with the preview body so a
+// selection the preview accepts is exactly a selection the save accepts.
+const streetsSchema = z
+  .array(z.string().trim().min(1).max(120))
+  .min(1)
+  .max(500)
+  .transform((a) => a.map((s) => s.toUpperCase()))
+  .optional();
+
 const createBody = z
   .object({
     name: z.string().trim().min(1).max(120),
     ward: wardSchema.optional(),
-    // street_sort keys as returned by GET /api/streets. NOTE: `ward` never narrows these — see
-    // materialise() — it is only stored on the turf as a label.
-    streets: z
-      .array(z.string().trim().min(1).max(120))
-      .min(1)
-      .max(500)
-      .transform((a) => a.map((s) => s.toUpperCase()))
-      .optional(),
+    streets: streetsSchema,
     polygon: polygonSchema.optional(),
   })
   .refine((b) => (b.streets === undefined) !== (b.polygon === undefined), {
     message: 'provide exactly one of streets or polygon',
   });
+
+// POST /api/turfs/preview — the create body minus the name. `ward` is accepted (and validated the
+// same way) but never narrows the selection; it is nullable because the builder hands through the
+// picker's "no ward" as an explicit null rather than dropping the key.
+const previewBody = z
+  .object({
+    ward: wardSchema.nullish(),
+    streets: streetsSchema,
+    polygon: polygonSchema.optional(),
+  })
+  .refine((b) => (b.streets === undefined) !== (b.polygon === undefined), {
+    message: 'provide exactly one of streets or polygon',
+  });
+
+/**
+ * Ceiling on the door coordinates a preview will return. The whole-municipality selection is 7,067
+ * mapped doors and one existing turf already holds 1,330; past a few thousand dots the preview stops
+ * being readable long before it stops being large. The counts are always the full, exact figures —
+ * only the drawn points are capped, and `truncated` says so rather than letting the organizer
+ * believe the shape they see is the whole selection.
+ */
+const PREVIEW_DOOR_CAP = 4000;
 
 const patchBody = z
   .object({ name: z.string().trim().min(1).max(120).optional(), archived: z.boolean().optional() })
@@ -169,45 +194,68 @@ async function assigneesByTurf(
   return out;
 }
 
+interface SelectedHousehold {
+  id: string;
+  lat: number | null;
+  lon: number | null;
+  ward: string;
+  n_voters: number;
+}
+
 /**
- * Fill turf_household for a freshly created turf.
+ * The households a turf request selects — **the one place either branch of the matching lives**.
  *
- * `walk_order` is assigned by the same window function in both branches so the door list always
- * comes out in walking order: street, then civic number, then id as a stable tiebreak.
+ * POST /api/turfs and POST /api/turfs/preview both go through here, on purpose: a preview that can
+ * disagree with the save is worse than no preview at all, because the organizer commits a walk on
+ * the strength of a number that turns out to be somebody else's. Anything that changes the matching
+ * has to change it for both, and there is no second query to forget.
  *
  * `ward` is a LABEL on the turf, never a filter on the selection. `street_sort` is not unique per
  * ward — a rural road that crosses a ward line shows up as several rows in GET /api/streets — and a
  * turf that stops halfway down a road at an invisible boundary is worse to walk than one that takes
  * the whole road. The street picker totals the whole street, so this also keeps its preview honest.
  * The same rule applies to a drawn polygon: the geometry the organizer drew is the selection.
+ *
+ * Rows come back in walking order — street, then civic number, then id as a stable tiebreak — which
+ * is the order materialise() then numbers with the same window function.
+ */
+async function selectHouseholds(
+  db: Queryable,
+  body: { streets?: string[]; polygon?: Polygon },
+): Promise<SelectedHousehold[]> {
+  const projection = `SELECT id, lat, lon, ward, n_voters FROM household`;
+  const order = `ORDER BY street_sort, num_sort, id`;
+
+  if (body.streets) {
+    return q<SelectedHousehold>(db, `${projection} WHERE street_sort = ANY($1::text[]) ${order}`, [body.streets]);
+  }
+
+  const polygon = body.polygon as Polygon;
+  const bbox = polygonBBox(polygon);
+  // Cheap bbox pre-filter in SQL, exact ray-casting test in TS (see lib/geo.ts for why).
+  const candidates = await q<SelectedHousehold>(
+    db,
+    `${projection}
+     WHERE lat IS NOT NULL AND lon IS NOT NULL
+       AND lon BETWEEN $1 AND $3 AND lat BETWEEN $2 AND $4
+     ${order}`,
+    [bbox.minLon, bbox.minLat, bbox.maxLon, bbox.maxLat],
+  );
+  return candidates.filter((r) => pointInPolygon(r.lon as number, r.lat as number, polygon));
+}
+
+/**
+ * Fill turf_household for a freshly created turf from the shared selection above.
+ *
+ * `walk_order` is assigned by the same window function whichever way the turf was selected, over the
+ * same ordering selectHouseholds() used, so the door list always comes out in walking order.
  */
 async function materialise(
   tx: PoolClient,
   turfId: string,
   body: { ward?: string; streets?: string[]; polygon?: Polygon },
 ): Promise<number> {
-  if (body.streets) {
-    const res = await tx.query(
-      `INSERT INTO turf_household (turf_id, household_id, walk_order)
-       SELECT $1, id, row_number() OVER (ORDER BY street_sort, num_sort, id)
-       FROM household
-       WHERE street_sort = ANY($2::text[])`,
-      [turfId, body.streets],
-    );
-    return res.rowCount ?? 0;
-  }
-
-  const polygon = body.polygon as Polygon;
-  const bbox = polygonBBox(polygon);
-  // Cheap bbox pre-filter in SQL, exact ray-casting test in TS (see lib/geo.ts for why).
-  const candidates = await q<{ id: string; lat: number; lon: number }>(
-    tx,
-    `SELECT id, lat, lon FROM household
-     WHERE lat IS NOT NULL AND lon IS NOT NULL
-       AND lon BETWEEN $1 AND $3 AND lat BETWEEN $2 AND $4`,
-    [bbox.minLon, bbox.minLat, bbox.maxLon, bbox.maxLat],
-  );
-  const ids = candidates.filter((r) => pointInPolygon(r.lon, r.lat, polygon)).map((r) => r.id);
+  const ids = (await selectHouseholds(tx, body)).map((r) => r.id);
   if (ids.length === 0) return 0;
   const res = await tx.query(
     `INSERT INTO turf_household (turf_id, household_id, walk_order)
@@ -256,6 +304,44 @@ export const turfRoutes: FastifyPluginAsync = async (app) => {
     });
     const streets = await streetsByTurf(app.db, [turf.id]);
     return reply.status(201).send({ turf: { ...turf, streets: streets.get(turf.id) ?? [], assignees: [] } });
+  });
+
+  // POST /api/turfs/preview → { n_households, n_voters, unmapped, doors, truncated }
+  //
+  // Same body as POST /api/turfs minus the name, and — critically — the same selectHouseholds()
+  // call, so the number on the preview is the number that gets saved.
+  app.post('/preview', { preHandler: organizerOnly }, async (req) => {
+    const body = previewBody.parse(req.body);
+    const me = currentSession(req).user;
+
+    const selected = await selectHouseholds(app.db, body);
+    const mapped = selected.filter((h) => h.lat !== null && h.lon !== null);
+    const doors = mapped.slice(0, PREVIEW_DOOR_CAP).map((h) => ({
+      household_id: h.id,
+      lat: h.lat as number,
+      lon: h.lon as number,
+      ward: h.ward,
+    }));
+
+    // One audit row per preview. This reads the voters list (which doors are where), so it is
+    // audited like any other read of personal data even though nothing is written.
+    await audit(app.db, req.log, {
+      userId: me.id,
+      action: 'preview_turf',
+      target: null,
+      detail: { by: body.polygon ? 'polygon' : 'streets', n_households: selected.length },
+      ip: req.ip,
+    });
+
+    return {
+      n_households: selected.length,
+      n_voters: selected.reduce((sum, h) => sum + h.n_voters, 0),
+      // Legal-description households have no coordinates, so the map cannot show them. Saying how
+      // many keeps the organizer from reading the dots as the whole turf.
+      unmapped: selected.length - mapped.length,
+      doors,
+      truncated: mapped.length > doors.length,
+    };
   });
 
   // GET /api/turfs?archived=true — active turfs only unless archived ones are asked for.

@@ -1,7 +1,7 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { EMPTY_FILTERS, useMeta, usePoints, type PointFilters } from '../api/hooks';
+import { EMPTY_FILTERS, useMeta, usePoints, useTurfDoorsForMap, type PointFilters } from '../api/hooks';
 import type { PointProps } from '../api/types';
 import { isOrganizer } from '../auth';
 import { useUser } from '../components/Shell';
@@ -11,9 +11,10 @@ import { FiltersDrawer, countActive } from '../map/FiltersDrawer';
 import { HouseholdCard, type Selection } from '../map/HouseholdCard';
 import { LegalList } from '../map/LegalList';
 import { Legend } from '../map/Legend';
-import { MapView, type MapViewHandle, type ViewportStats } from '../map/MapView';
+import { MapView, type MapViewHandle, type TurfHighlight, type ViewportStats } from '../map/MapView';
 import { BASE_LAYERS, COLOUR_MODES, type BaseLayer, type ColourMode } from '../map/palette';
 import { SearchBox, type SearchPick } from '../map/SearchBox';
+import { TurfBanner } from '../map/TurfBanner';
 
 const LS_BASE = 'mc.map.base';
 const LS_MODE = 'mc.map.mode';
@@ -148,6 +149,67 @@ export function MapPage() {
     setSearchParams(next, { replace: true });
   }, [deepLinkId, points.data, coordIndex, flyTo, searchParams, setSearchParams]);
 
+  // `/map?turf=<uuid>` opens the map on one turf: its doors ringed, everything else faded, and a
+  // banner naming it. Consumed exactly like ?household above — once, then stripped with a replace,
+  // so dismissing the banner (or picking another door) is not undone on the next render.
+  const turfParam = searchParams.get('turf');
+  const [turfId, setTurfId] = useState<string | null>(null);
+  const turfLinkDone = useRef<string | null>(null);
+  useEffect(() => {
+    if (!turfParam || turfLinkDone.current === turfParam) return;
+    turfLinkDone.current = turfParam;
+    setTurfId(turfParam);
+    const next = new URLSearchParams(searchParams);
+    next.delete('turf');
+    setSearchParams(next, { replace: true });
+  }, [turfParam, searchParams, setSearchParams]);
+
+  const turfDoors = useTurfDoorsForMap(turfId);
+
+  // The rings come off the turf's own doors rather than off `points`, so an active filter (or a
+  // door the filter excluded) cannot quietly shrink the turf the organizer was sent to look at.
+  const turf = useMemo(() => {
+    const data = turfDoors.data;
+    if (!turfId || !data) return null;
+    const ids: string[] = [];
+    const features: PointFeature[] = [];
+    for (const d of data.doors) {
+      ids.push(d.household_id);
+      if (d.lat === null || d.lon === null) continue; // legal description: counted, never drawn
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [d.lon, d.lat] },
+        // `n` only: it is what the ring's radius is scaled by, so the ring matches the dot's size.
+        properties: { n: d.n_voters },
+      });
+    }
+    return {
+      name: data.turf.name,
+      doors: data.doors.length,
+      unmapped: data.doors.length - features.length,
+      highlight: { ids, points: { type: 'FeatureCollection', features } } satisfies TurfHighlight,
+    };
+  }, [turfId, turfDoors.data]);
+
+  // Frame the turf once, as soon as both its doors and the map exist — but once *per map*, not
+  // just per turf: a MapView that is torn down and rebuilt (StrictMode does exactly this in dev)
+  // comes back on the municipality's default view, and a turf link that lands there unframed is
+  // the whole feature failing quietly.
+  const turfFitted = useRef<{ map: MapLibreMap; turfId: string } | null>(null);
+  useEffect(() => {
+    if (!turfId || !turf || !map) return;
+    if (turfFitted.current?.map === map && turfFitted.current.turfId === turfId) return;
+    const b = featureBounds(turf.highlight.points.features);
+    if (!b) return; // every door is a legal description: nothing to frame, the banner says so
+    turfFitted.current = { map, turfId };
+    mapRef.current?.fitBounds(b, 56);
+  }, [turfId, turf, map]);
+
+  const clearTurf = useCallback(() => {
+    setTurfId(null);
+    turfFitted.current = null;
+  }, []);
+
   const onLegalPick = useCallback((id: string) => {
     setLegalOpen(false);
     setSelection({ id });
@@ -232,6 +294,7 @@ export function MapPage() {
         communities={communities}
         base={base}
         selectedId={selection?.id ?? null}
+        turfHighlight={turf?.highlight ?? null}
         drawing={drawing}
         onSelect={onSelectPoint}
         onViewport={onViewport}
@@ -277,13 +340,24 @@ export function MapPage() {
         </div>
       </div>
 
+      {turfId && (
+        <TurfBanner
+          name={turf?.name ?? null}
+          doors={turf?.doors ?? 0}
+          unmapped={turf?.unmapped ?? 0}
+          loading={turfDoors.isPending}
+          error={turfDoors.isError ? turfDoors.error : null}
+          onDismiss={clearTurf}
+        />
+      )}
+
       {points.isError && (
-        <div className="map-error">
+        <div className="map-error" style={turfId ? { marginTop: 56 } : undefined}>
           <ErrorBox title="Could not load households" error={points.error} onRetry={() => void points.refetch()} compact />
         </div>
       )}
       {meta.isError && !points.isError && (
-        <div className="map-error">
+        <div className="map-error" style={turfId ? { marginTop: 56 } : undefined}>
           <ErrorBox title="Could not load wards and communities" error={meta.error} onRetry={() => void meta.refetch()} compact />
         </div>
       )}
@@ -293,6 +367,27 @@ export function MapPage() {
       {organizer && <LegalList open={legalOpen} onClose={closeLegal} meta={meta.data} onPick={onLegalPick} />}
     </div>
   );
+}
+
+type PointFeature = TurfHighlight['points']['features'][number];
+
+/** Bounding box of the turf's doors, or null when it has none to draw. */
+function featureBounds(features: PointFeature[]): [number, number, number, number] | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const f of features) {
+    if (f.geometry.type !== 'Point') continue;
+    const [x, y] = f.geometry.coordinates;
+    if (x === undefined || y === undefined) continue;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  // A one-door turf is a valid, degenerate box; fitBounds' maxZoom keeps it from zooming to infinity.
+  return Number.isFinite(minX) ? [minX, minY, maxX, maxY] : null;
 }
 
 function FilterIcon() {

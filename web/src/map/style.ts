@@ -10,6 +10,10 @@ import {
   NONRES_MUTED,
   QUALITY_COLOURS,
   SELECTED_COLOUR,
+  TURF_CONTRAST,
+  TURF_CONTRAST_ON_IMAGERY,
+  TURF_OUTLINE,
+  TURF_OUTLINE_ON_IMAGERY,
   WARD_COLOURS,
   communityColour,
   type BaseLayer,
@@ -68,6 +72,10 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
       'esri-transport': { type: 'raster', tiles: [esri('Reference/World_Transportation')], tileSize: 256, maxzoom: 19 },
       'esri-places': { type: 'raster', tiles: [esri('Reference/World_Boundaries_and_Places')], tileSize: 256, maxzoom: 19 },
       boundary: { type: 'geojson', data: EMPTY_FC },
+      // The doors of one turf, when the map was opened as /map?turf=<id>. Its own source, never
+      // clustered: the ring has to mark the same doors at every zoom, including the zooms where the
+      // households source has collapsed them into cluster bubbles.
+      turf: { type: 'geojson', data: EMPTY_FC },
       households: {
         type: 'geojson',
         data: EMPTY_FC,
@@ -145,6 +153,31 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
           'circle-radius': zoomScaled(['+', baseRadius(), 5]),
           'circle-color': 'rgba(0,0,0,0)',
           'circle-stroke-color': '#1a2430',
+          'circle-stroke-width': 2,
+        },
+      },
+      // Two rings, not a fill: the dot underneath keeps whatever colour the current mode gave it,
+      // so the turf reads as a turf in every mode instead of overriding one of them.
+      {
+        id: 'turf-ring-contrast',
+        type: 'circle',
+        source: 'turf',
+        paint: {
+          'circle-radius': zoomScaled(['+', baseRadius(), 6]),
+          'circle-color': 'rgba(0,0,0,0)',
+          'circle-stroke-color': TURF_CONTRAST,
+          'circle-stroke-width': 5,
+          'circle-stroke-opacity': 0.9,
+        },
+      },
+      {
+        id: 'turf-ring',
+        type: 'circle',
+        source: 'turf',
+        paint: {
+          'circle-radius': zoomScaled(['+', baseRadius(), 6]),
+          'circle-color': 'rgba(0,0,0,0)',
+          'circle-stroke-color': TURF_OUTLINE,
           'circle-stroke-width': 2,
         },
       },
@@ -266,4 +299,48 @@ export function setBaseLayer(map: import('maplibre-gl').Map, base: BaseLayer): v
   const s = strokeForBase(base);
   if (map.getLayer('inst-ring')) map.setPaintProperty('inst-ring', 'circle-stroke-color', s.ring);
   if (map.getLayer('boundary-line')) map.setPaintProperty('boundary-line', 'line-color', base === 'satellite' ? '#ffd166' : BOUNDARY_COLOUR);
+  // The turf ring is a dark outline on a light basemap and a light one on imagery, so it stays the
+  // brightest thing on the map either way.
+  const imagery = base === 'satellite';
+  if (map.getLayer('turf-ring')) {
+    map.setPaintProperty('turf-ring', 'circle-stroke-color', imagery ? TURF_OUTLINE_ON_IMAGERY : TURF_OUTLINE);
+  }
+  if (map.getLayer('turf-ring-contrast')) {
+    map.setPaintProperty('turf-ring-contrast', 'circle-stroke-color', imagery ? TURF_CONTRAST_ON_IMAGERY : TURF_CONTRAST);
+  }
+}
+
+// ------------------------------------------------------------------ turf highlight
+
+/** Opacity of a door that is not in the highlighted turf. Low enough to read as background, high
+ *  enough that the organizer can still see where the turf sits in the municipality. */
+const DIMMED = 0.12;
+
+/**
+ * Fade everything that is not in the turf, and leave the turf's own doors untouched.
+ *
+ * This only ever writes *opacity*, never colour: `circle-color` belongs to the colour mode, so a
+ * mode change (which rewrites exactly that property) cannot clear the highlight, and dropping the
+ * highlight cannot clear the mode. Pass `null` to put the map back to normal — the values restored
+ * here are the ones buildStyle() ships with, which is why they are repeated rather than captured.
+ */
+export function applyTurfHighlight(map: import('maplibre-gl').Map, ids: string[] | null): void {
+  const on = ids !== null;
+  // Linear scan per feature, once per data/zoom change rather than per frame; a turf is at most a
+  // few thousand ids against ~7k doors, which is well inside the budget for a one-off evaluation.
+  const inTurf: ExpressionSpecification = ['in', ['get', 'id'], ['literal', ids ?? []]];
+
+  if (map.getLayer('points')) {
+    map.setPaintProperty('points', 'circle-opacity', on ? ['case', inTurf, 1, DIMMED] : 0.9);
+    map.setPaintProperty('points', 'circle-stroke-opacity', on ? ['case', inTurf, 1, DIMMED] : 1);
+  }
+  // A cluster is a mixture of in-turf and out-of-turf doors, so it cannot be split — it is dimmed
+  // as a whole. The turf's own doors stay marked because their rings come from the `turf` source,
+  // which is never clustered.
+  if (map.getLayer('clusters')) {
+    map.setPaintProperty('clusters', 'circle-opacity', on ? 0.25 : 0.88);
+    map.setPaintProperty('clusters', 'circle-stroke-opacity', on ? 0.25 : 1);
+  }
+  if (map.getLayer('cluster-count')) map.setPaintProperty('cluster-count', 'text-opacity', on ? 0.35 : 1);
+  if (map.getLayer('inst-ring')) map.setPaintProperty('inst-ring', 'circle-stroke-opacity', on ? DIMMED : 1);
 }
