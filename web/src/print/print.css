@@ -1,0 +1,290 @@
+/* Turf sheet — the paper fallback for phones that die, drown, or never find a signal.
+   This stylesheet is loaded only by the /turfs/:turfId/sheet chunk. It is written for the printer
+   first: the on-screen view is deliberately a preview of the paper (white, black text, no shadows)
+   so nothing about the print is a surprise. Nothing here may depend on colour — the sheets come off
+   a mono laser printer, and a tick box that only reads in blue is a tick box nobody sees. */
+
+/* Portrait, and margins that fit both A4 (210 × 297 mm) and US Letter (216 × 279 mm). We do NOT say
+   `size: A4`: on a Letter tray that makes the driver shrink the page. Leaving the paper to the
+   driver and designing to the narrower width (A4) and the shorter height (Letter) prints 1:1 on
+   both. @page cannot be scoped to a page, so keep it to something harmless everywhere. */
+@page {
+  size: portrait;
+  margin: 12mm 10mm;
+}
+
+/* ------------------------------------------------------------------ screen (paper preview) */
+
+.ts-page {
+  max-width: 210mm;
+}
+
+.ts-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+.ts-toolbar__links {
+  display: flex;
+  gap: 1rem;
+}
+.ts-toolbar__note {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+/* The preview is the paper at its real width (A4 minus margins). On a narrow screen it scrolls
+   sideways rather than reflowing — reflowing would show a layout that never gets printed. */
+.ts-paper {
+  overflow-x: auto;
+}
+
+/* The sheet renders as paper on screen too, in both themes: what you see is what comes out. */
+.ts-sheet {
+  width: 190mm;
+  min-width: 190mm;
+  border-collapse: collapse;
+  table-layout: fixed;
+  background: #fff;
+  color: #000;
+  /* Point sizes, on screen as well as on paper: the preview is only useful if it is the same size
+     as the print. 9pt is about 12px on a 96dpi screen. */
+  font-size: 9pt;
+  line-height: 1.2;
+}
+.ts-sheet th,
+.ts-sheet td {
+  border: 1px solid #000;
+  padding: 0.2rem 0.3rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ts-sheet__banner th {
+  border-width: 0 0 2px;
+  padding: 0 0 0.35rem;
+}
+.ts-sheet__title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+.ts-sheet__name {
+  font-size: 15pt;
+  font-weight: 700;
+}
+.ts-sheet__printed {
+  font-weight: 400;
+  font-size: 8pt;
+}
+.ts-sheet__meta {
+  font-weight: 400;
+  font-size: 8.5pt;
+  margin-top: 0.1rem;
+}
+.ts-sheet__legal {
+  font-weight: 400;
+  font-size: 8pt;
+  margin-top: 0.2rem;
+  padding: 0.15rem 0.25rem;
+  border: 1px solid #000; /* a box, not a colour — it survives greyscale */
+}
+
+.ts-sheet__labels th {
+  font-size: 7.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-width: 1px;
+}
+
+.ts-sheet tfoot td {
+  border-width: 2px 0 0;
+  padding: 0.3rem 0 0;
+  font-size: 7pt;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+}
+.ts-sheet__entered {
+  white-space: nowrap;
+}
+
+/* Column widths live on the <colgroup>: with `table-layout: fixed` only the first row (or the
+   colgroup) sets them, and the first row is the full-width banner. Percentages, so the same sheet
+   fills A4 and Letter. */
+.ts-sheet colgroup .ts-col-num {
+  width: 5%;
+}
+.ts-sheet colgroup .ts-col-addr {
+  width: 20%;
+}
+.ts-sheet colgroup .ts-col-names {
+  width: 19%;
+}
+/* Wide enough for two columns of "Not home" / "Literature" without the labels spilling into the
+   next column — they are nowrap on purpose, a wrapped tick label is unreadable at 7.5pt. */
+.ts-sheet colgroup .ts-col-result {
+  width: 21%;
+}
+.ts-sheet colgroup .ts-col-support {
+  width: 13%;
+}
+.ts-sheet colgroup .ts-col-note {
+  width: 22%;
+}
+.ts-sheet td.ts-col-num,
+.ts-sheet th.ts-col-num {
+  text-align: center;
+  font-weight: 700;
+}
+
+.ts-door > td {
+  height: 17mm; /* room to actually write in the boxes with a pen on a clipboard */
+}
+.ts-door__addr {
+  display: block;
+  font-weight: 700;
+}
+.ts-door__community,
+.ts-door__prev,
+.ts-door__count {
+  display: block;
+  font-size: 7pt;
+}
+.ts-door__prev {
+  font-style: italic; /* "already knocked" must read without colour */
+}
+.ts-door__names {
+  margin: 0.1rem 0 0;
+  padding-left: 1.1em;
+  font-size: 7.5pt;
+}
+
+/* Tick boxes: an empty bordered square, big enough for a pen tick. */
+.ts-ticks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.15rem 0.3rem;
+  font-size: 7.5pt;
+}
+.ts-tick {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+.ts-tick__box {
+  display: inline-block;
+  width: 3.6mm;
+  height: 3.6mm;
+  border: 1px solid #000;
+  flex: none;
+}
+
+/* Support 1–5: numbers in circles to ring, plus a rule for anything else worth writing. */
+.ts-scale {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.1rem;
+}
+.ts-scale__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 4mm;
+  height: 4mm;
+  border: 1px solid #000;
+  border-radius: 50%;
+  font-size: 7pt;
+}
+
+/* Ruled write-in space. A bottom border, so it prints even with backgrounds turned off. */
+.ts-rule {
+  display: block;
+  border-bottom: 1px solid #000;
+  margin-top: 0.45rem;
+}
+.ts-rule--full {
+  width: 100%;
+}
+.ts-rule--name {
+  display: inline-block;
+  width: 32mm;
+  margin: 0 0.2rem;
+}
+.ts-rule--date {
+  display: inline-block;
+  width: 22mm;
+  margin: 0 0.2rem;
+}
+
+/* ------------------------------------------------------------------ print */
+
+@media print {
+  /* Scoped to the body class TurfSheetPage sets while it is mounted: this file stays in the
+     document for the rest of the session, and unscoped rules would strip the header off every
+     other page a user tries to print. */
+  body.printing-sheet .topbar,
+  body.printing-sheet .footer,
+  body.printing-sheet .ts-toolbar,
+  body.printing-sheet .mc-install {
+    display: none !important;
+  }
+
+  /* Flatten the app shell so the table is a plain block that the printer can break across pages. */
+  body.printing-sheet,
+  body.printing-sheet .shell,
+  body.printing-sheet .shell__main,
+  body.printing-sheet .ts-page,
+  body.printing-sheet .ts-paper {
+    display: block;
+    max-width: none;
+    width: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    gap: 0;
+    overflow: visible;
+    background: #fff;
+    color: #000;
+  }
+
+  /* On paper the table takes the printable width the driver gives us, whatever the paper size. */
+  body.printing-sheet .ts-sheet {
+    width: 100%;
+    min-width: 0;
+  }
+  /* Repeat the identity block and the handling rule on every sheet of paper. */
+  .ts-sheet thead {
+    display: table-header-group;
+  }
+  .ts-sheet tfoot {
+    display: table-footer-group;
+  }
+  /* tfoot is flex on screen for the two-up layout; as a footer group it must stay a table cell. */
+  body.printing-sheet .ts-sheet tfoot td {
+    display: table-cell;
+  }
+  body.printing-sheet .ts-sheet__entered {
+    float: right;
+  }
+
+  /* A door must never be split across a page — half a row is a door nobody records. */
+  .ts-sheet tr,
+  .ts-sheet .ts-door {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Page numbers: browsers ignore @page margin boxes (Chrome and Safari print their own header and
+     footer instead), but real print engines honour this, so it costs nothing to be right. */
+  @page {
+    @bottom-right {
+      content: 'Page ' counter(page) ' of ' counter(pages);
+    }
+  }
+}

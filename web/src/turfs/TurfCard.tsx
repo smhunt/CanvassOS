@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { CSSProperties } from 'react';
 import type { TurfSummary } from '../api/types';
 import { fmtDate, n, wardLabel } from '../components/ui';
@@ -71,6 +72,10 @@ export function TurfCard({ turf, busy, error, onRename, onAssign, onToggleArchiv
         <button type="button" className="btn btn--small" disabled={busy} onClick={onAssign}>
           Assign
         </button>
+        {/* The paper fallback for a dead battery, no signal or rain. */}
+        <Link className="btn btn--small" to={`/turfs/${turf.id}/sheet`}>
+          Print sheet
+        </Link>
         <button type="button" className="btn btn--small" disabled={busy} onClick={onRename}>
           Rename
         </button>

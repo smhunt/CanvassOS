@@ -324,6 +324,26 @@ ends their sessions; the last active admin cannot be deactivated or demoted.
 
 The client-side role gates in `web/src/auth.tsx` are navigation sugar. **The API is the boundary.**
 
+### Printing a turf sheet
+
+Open a turf and choose **Print sheet** (or go straight to `/turfs/<turf-id>/sheet`), then **Print this
+sheet**. Portrait, one-sided, A4 or Letter — both fit without scaling, about 12 doors to a page. It
+lists every door in walking order with the residents' names, tick boxes for Spoke / Not home /
+Refused / Literature, a 1-5 support scale to ring and space for a note. It is the fallback for a dead
+battery, no signal or rain, and it prints fine in black and white.
+
+**Handling the paper.** It comes from the voters' list under the *Municipal Elections Act*: election
+use only. Do not photocopy it, do not post or share it, do not leave it in a vehicle. Enter the
+results in the app when you get back, then hand the sheet to your organiser or shred it. That rule is
+printed on every page of the sheet itself, next to a line for who entered it.
+
+### Installing it on a phone
+
+Volunteers should add MC Canvass to the home screen — it opens full screen and starts faster at the
+door. On Android/Chrome the app offers an **Add** button; on **iPhone and iPad, tap Share, then "Add
+to Home Screen"** (Safari has no install button, so the app shows those instructions instead). Either
+way it asks once: dismiss it and it stays dismissed on that phone.
+
 ## Municipal Elections Act — handling the voters list
 
 The voters list is personal information supplied under the Ontario *Municipal Elections Act, 1996*

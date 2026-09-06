@@ -6,13 +6,19 @@
   "start_url": "/map",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
   "background_color": "#f5f7fa",
   "theme_color": "#1f4e79",
   "lang": "en-CA",
+  "dir": "ltr",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "My turfs", "short_name": "Turfs", "url": "/canvass" },
+    { "name": "Map", "short_name": "Map", "url": "/map" }
   ]
 }
