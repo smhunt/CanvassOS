@@ -348,8 +348,10 @@ about. So it has different rules from the list:
 ## Implementation notes (Phase 1 backend — clarifications, no shape changes)
 - `stats.household_size[].size` is a **string label**: `"1"`, `"2"`, `"3"`, `"4"`, `"5"`, `"6+"`.
 - `stats.totals.nonresidents` / `by_ward[].nonresidents` / `by_community[].nonresidents` count voters with
-  `resident_class = 'non-resident'` (337). `household.n_nonresident` (used by `points.nonres`) is the pipeline's
-  count and also includes the 4 `unknown` voters (341 in total). `totals.po_box_only` = households where every
+  `resident_class = 'non-resident'` (**390** in the currently loaded data). `household.n_nonresident`
+  (used by `points.nonres`) is the pipeline's count and also includes the 4 `unknown` voters (**394**).
+  The often-quoted 337/341 are the *original* pipeline's figures; that pipeline was lost and
+  `pipeline/build_lists.py` is a reconstruction — see README "Rebuilding the importer's inputs". `totals.po_box_only` = households where every
   voter's mailing address is a PO box (`n_po_box >= n_voters`).
 - `GET /api/households/legal` rows are the household card fields (no `voters` array) plus `voter_names`
   ("A; B; C") for listing.

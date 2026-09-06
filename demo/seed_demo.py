@@ -16,7 +16,8 @@ import uuid
 
 import psycopg
 
-# Deliberately fictional-sounding, and checked against the real list at the end of this script.
+# Deliberately fictional-sounding. These were checked by hand against the real list when written
+# (no surname below appears in it); the script does NOT re-check, so if you add names, verify them.
 FIRST = ["Alma", "Bertie", "Cormac", "Delia", "Eamon", "Fenna", "Gus", "Hattie", "Ivo", "Juno",
          "Kester", "Lorne", "Marnie", "Nils", "Orla", "Pim", "Quill", "Rosalind", "Sable", "Tobias",
          "Ursa", "Vesper", "Wendell", "Xanthe", "Yarrow", "Zeb"]

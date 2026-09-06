@@ -18,7 +18,7 @@ STAMP := $(shell date +%Y%m%d-%H%M%S)
 # read one value out of .env without `include` (passwords may contain $ or # which make would mangle)
 envval = $$(sed -n 's/^$(1)=//p' $(ENV_FILE) 2>/dev/null | tail -1)
 
-.PHONY: help up up-tunnel devdb migrate migrate-status down restart restart-tunnel build logs ps import import-force backup restore purge psql test tunnel-status
+.PHONY: help up up-tunnel devdb demo migrate migrate-status down restart restart-tunnel build logs ps import import-force backup restore purge psql test tunnel-status
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -103,6 +103,19 @@ purge: ## AFTER THE ELECTION: stop the stack, delete ALL volumes (database, web,
 	  find data/sign-photos -type f -print -exec shred -u -z -n 3 {} + ; rmdir data/sign-photos 2>/dev/null || true; \
 	fi
 	@echo "purged. Also remove: $(BACKUP_DIR)/*.gpg, any copies of the list on laptops/phones, and the pipeline outputs."
+
+demo: ## (re)build canvass_demo — fabricated residents for screenshots, video and training
+	@echo "Building canvass_demo from entirely fabricated data (never the voters list)."
+	PW=$(call envval,POSTGRES_PASSWORD)
+	$(COMPOSE) exec -T db psql -U canvass -d postgres -c 'DROP DATABASE IF EXISTS canvass_demo'
+	$(COMPOSE) exec -T db psql -U canvass -d postgres -c 'CREATE DATABASE canvass_demo'
+	$(COMPOSE) exec -T db psql -U canvass -d canvass_demo -v ON_ERROR_STOP=1 < db/schema.sql > /dev/null
+	PSQL="$(COMPOSE) exec -T db psql -U canvass -d canvass_demo" ./db/migrate.sh
+	python3 demo/seed_demo.py --database-url "postgresql://canvass:$$PW@localhost:5443/canvass_demo"
+	@echo
+	@echo "Run the demo stack alongside the real one:"
+	@echo "  cd api && set -a && . ../.env.demo && set +a && npx tsx watch src/server.ts"
+	@echo "  cd web && CANVASS_WEB_PORT=3032 CANVASS_API_PORT=3132 npm run dev"
 
 migrate: ## apply pending db/migrations/*.sql to the running database
 	./db/migrate.sh

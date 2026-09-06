@@ -83,7 +83,9 @@ self.addEventListener('fetch', (event) => {
 export default defineConfig({
   plugins: [react(), appShellServiceWorker()],
   server: { port: WEB_PORT, strictPort: true, host: true, https, proxy: API_PROXY },
-  preview: { port: WEB_PORT + 1143, strictPort: true, host: true, https, proxy: API_PROXY },
+  // package.json's `preview` script passes --port explicitly; keep the default here in step
+  // with it so the two cannot disagree when CANVASS_WEB_PORT is set.
+  preview: { port: Number(process.env.CANVASS_PREVIEW_PORT ?? 4173), strictPort: true, host: true, https, proxy: API_PROXY },
   build: {
     target: 'es2020',
     sourcemap: false,

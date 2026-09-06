@@ -3,6 +3,53 @@
 Self-hosted (Docker) voter map + canvassing tool for the Sean Hunt mayoral campaign.
 Users: Sean (admin), a small core team (organizers), volunteers on phones at the door.
 
+---
+
+## Status — 2026-09-05
+
+Everything below this section is the **original plan, unedited**: a record of what was intended, not of
+what happened. This section is the difference between the two. `CHANGELOG.md` has the release-by-release
+detail; `docs/README.md` describes what the code actually does now.
+
+| Phase | State | Notes |
+|---|---|---|
+| 1. Foundation + read-only viewer | **shipped** | Compose stack, `db/schema.sql`, the Python importer, login/roles/invites, full-municipality map with filters and search, household card, stats dashboard. 7,140 households / 16,892 voters loaded; 7,067 mapped, 70 legal descriptions, 11 institutions. |
+| 2. Canvassing core | **shipped** | Turfs from picked streets *or* a drawn polygon, `turf_household.walk_order`, assignments, the door screen with results/support/notes/flags, latest-status colouring on the map, follow-up queue, per-user activity. |
+| 3. Field hardening | **shipped** (landing at the time of writing — in the working tree, not yet committed) | PWA install and the app-shell service worker shipped back in Phase 1; walking order along the street shipped with turfs. Now added: the offline turf cache and write queue (`web/src/offline/` — IndexedDB, backoff, parked entries surfaced to the volunteer), nearest-first ordering from device GPS (`web/src/canvass/nearMe.ts`, with walk order still the default), and the printable turf sheet at `/turfs/:turfId/sheet`. |
+| 4. Reporting + admin | **partly** | Encrypted backup/restore and `make purge` shipped in Phase 1; the audit log and admin user management with it. **Not landed:** coverage/support reports beyond `/api/stats/overview` and `/reports`, CSV export with audit entries, and the diff-based list re-import (today `make import-force` deletes canvass data instead — see CLAUDE.md). |
+
+### Added outside the original plan
+
+- **Lawn signs.** Not in this document at all. Place a sign from a phone with the device's GPS and its
+  reported accuracy, an optional photo (magic-byte sniffed, stored on a volume rather than in the
+  database), a pickup worklist of everything still standing, and a delivery list of doors whose latest
+  contact ticked `wants_sign`. The driver is a by-law deadline, not canvassing: a sign nobody can find
+  after election day is a fine. `db/migrations/001_signs.sql`.
+- **Doorstep phone numbers and email addresses**, in their own `voter_contact` table with per-purpose
+  consent, a recorded (never deleted) withdrawal, and an organizer-only GOTV send list. Deliberately
+  separate from `voter` because it is not list data and CASL, not the Municipal Elections Act, governs
+  it. `db/migrations/002_voter_contact.sql`.
+- **A migration runner.** The original plan assumed `db/migrations/` existed; it did not. `db/migrate.sh`
+  + `make migrate` + the `schema_migration` table now carry every change after first boot.
+- **A second deployment mode.** The plan assumed a public host with Let's Encrypt. The live setup is
+  `make up-tunnel`: Caddy on `127.0.0.1:3031` behind a Cloudflare Tunnel, with `X-Forwarded-For`
+  rewritten from `CF-Connecting-IP` so `audit_log` records the real client.
+- **A demo stack.** `demo/seed_demo.py` builds `canvass_demo` from entirely fabricated residents (web
+  3032 / API 3132), so screenshots, video and training never contain a real elector.
+- **The pipeline.** `pipeline/build_lists.py` reconstructs the importer's two CSVs from the clerk's list
+  and county address open data. The original was lost; `resident_class` differs from the original's
+  numbers and the non-resident layer should be treated as indicative.
+
+### Decisions from "Open decisions" that were settled
+
+Public domain with Let's Encrypt (then moved behind a Cloudflare Tunnel); email + password with invite
+links; MapLibre GL; the 1–5 support scale; volunteers see voter names but no mailing addresses or
+non-resident details. The four containers became five (`web` is a build-only service that copies the
+built SPA into a volume and exits). PostGIS is in the image but has never been enabled — turf polygons
+are point-in-polygon'd in TypeScript so the schema still runs on bare Postgres.
+
+---
+
 ## Ground rules
 
 - The voters list is personal information supplied under the Ontario Municipal Elections Act. It may only be used for election purposes, must be kept secure, and should be destroyed after the election. Everything below assumes: TLS only, login required for every page, role-based visibility, audit log, encrypted backups, a `make purge` target for after Oct 26.

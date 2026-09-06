@@ -10,10 +10,11 @@ Behaviour
   household table is populated, nothing is done (exit 0).
 - A new file replaces the data: household/voter are truncated and reloaded inside ONE
   transaction, so readers never see a half-loaded list.
-- Phase 1 safety: if the contact table has rows (canvass results reference voters and
-  households), the importer REFUSES to replace the data unless --force is given, because
-  truncating household cascades to contact/turf_household. Phase 4 adds a proper diff-based
-  re-import (new / removed / moved voters keyed on voter.natural_key) that preserves contacts.
+- Safety: TRUNCATE household CASCADE empties every table with a foreign key to household, so a
+  re-import can destroy far more than the list — canvass contacts, lawn signs and their photo rows,
+  doorstep phone/email records with their consent, and turf membership. The importer counts all of
+  them, REFUSES if any exist, and names exactly what --force would delete. Phase 4 adds a proper
+  diff-based re-import (new / removed / moved voters keyed on voter.natural_key) that preserves them.
 - Verifies row counts after loading and prints a summary (per ward, per community, legal,
   institutions, non-residents). Any mismatch raises and rolls the transaction back.
 
@@ -198,7 +199,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--households", required=True, help="households.csv")
     ap.add_argument("--label", required=True, help='source label, e.g. "voters list export 2026-09-03"')
     ap.add_argument("--database-url", default=os.environ.get("DATABASE_URL"), help="postgresql://... (default: $DATABASE_URL)")
-    ap.add_argument("--force", action="store_true", help="replace the data even if canvass contacts exist (they are DELETED)")
+    ap.add_argument("--force", action="store_true", help="replace the list even though contacts/signs/consent records reference it (ALL are DELETED)")
     args = ap.parse_args(argv)
 
     if not args.database_url:
@@ -236,19 +237,52 @@ def main(argv: Optional[list[str]] = None) -> int:
                 )
                 return 0
 
-            # --- Phase 1 safety: never silently destroy canvass results
-            cur.execute("SELECT count(*) FROM contact")
-            n_contacts = cur.fetchone()[0]
+            # --- Safety: never silently destroy work that references the list.
+            #
+            # `TRUNCATE household CASCADE` empties EVERY table with a foreign key to household,
+            # regardless of its ON DELETE rule — so it is not only contacts at risk. Counting just
+            # `contact` (as this did originally) let --force quietly destroy lawn signs and the
+            # doorstep consent records too. Everything that would go is counted and named here.
+            dependents = [
+                ("contact", "canvass results"),
+                ("sign", "lawn signs"),
+                ("sign_photo", "sign photos (files on the volume would be orphaned)"),
+                ("voter_contact", "doorstep phone/email records, with their consent"),
+                ("turf_household", "turf membership"),
+            ]
+            counts: list[tuple[str, str, int]] = []
+            for table, label in dependents:
+                # A table may not exist yet on a database that predates its migration.
+                cur.execute("SELECT to_regclass(%s) IS NOT NULL", (table,))
+                if not cur.fetchone()[0]:
+                    continue
+                cur.execute(f"SELECT count(*) FROM {table}")  # table names are from the literal list above
+                n = cur.fetchone()[0]
+                if n:
+                    counts.append((table, label, n))
+            n_contacts = next((n for t, _l, n in counts if t == "contact"), 0)
+
             if n_existing > 0:
-                if n_contacts > 0 and not args.force:
+                if counts and not args.force:
+                    print("REFUSING to re-import: replacing the list would destroy data that references it.",
+                          file=sys.stderr)
+                    for _t, label, n in counts:
+                        print(f"    {n:>7,}  {label}", file=sys.stderr)
                     print(
-                        f"REFUSING to re-import: {n_contacts:,} contact rows reference the current list. "
-                        "Re-run with --force to replace the list AND delete all contacts, or wait for the "
-                        "Phase 4 diff-based re-import which preserves them.",
+                        "  Re-run with --force to replace the list AND DELETE ALL OF THE ABOVE, or wait for "
+                        "the Phase 4 diff-based re-import which preserves them.",
                         file=sys.stderr,
                     )
                     return 2
-                print(f"replacing existing data ({n_existing:,} households, {n_contacts:,} contacts)")
+                if counts:
+                    print(f"replacing existing data ({n_existing:,} households) and DELETING:")
+                    for _t, label, n in counts:
+                        print(f"    {n:>7,}  {label}")
+                    if any(t == "sign_photo" for t, _l, _n in counts):
+                        print("  NOTE: sign photo FILES are not removed from the volume by this import; "
+                              "their database rows go, so they become unreferenced. Clean them up separately.")
+                else:
+                    print(f"replacing existing data ({n_existing:,} households, nothing references it)")
 
             # --- single transaction from here on
             cur.execute(
@@ -261,7 +295,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"import_run #{run_id}")
 
             if n_existing > 0 or n_contacts > 0:
-                # cascades to voter, contact, turf_household (see the --force guard above)
+                # Cascades to voter and to everything counted in the --force guard above.
                 cur.execute("TRUNCATE household CASCADE")
 
             # households
