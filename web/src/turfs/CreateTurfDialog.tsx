@@ -1,11 +1,30 @@
-import { useState, type FormEvent } from 'react';
-import { useCreateTurf, useMeta } from '../api/hooks';
+import { useMemo, useState, type FormEvent } from 'react';
+import { useCreateTurf, useMeta, useTurfs } from '../api/hooks';
 import type { TurfSummary } from '../api/types';
 import { ErrorBox, wardLabel } from '../components/ui';
 import { Dialog } from './Dialog';
 import { StreetPicker } from './StreetPicker';
 
 const FORM_ID = 'create-turf-form';
+const FOOTNOTE_ID = 'create-turf-footnote';
+
+/**
+ * `street_sort` → names of the turfs already covering it. Archived turfs are skipped deliberately:
+ * an archived turf is finished walking, so its roads are free to cut into a new one. GET /api/turfs
+ * returns archived rows whatever the `archived` param says, so the skip has to happen here.
+ */
+function claimsByStreet(turfs: TurfSummary[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const t of turfs) {
+    if (t.archived) continue;
+    for (const s of t.streets) {
+      const names = out.get(s);
+      if (names) names.push(t.name);
+      else out.set(s, [t.name]);
+    }
+  }
+  return out;
+}
 
 interface Props {
   onClose: () => void;
@@ -18,10 +37,15 @@ interface Props {
  */
 export function CreateTurfDialog({ onClose, onCreated }: Props) {
   const meta = useMeta();
+  const turfs = useTurfs();
   const create = useCreateTurf();
   const [name, setName] = useState('');
   const [ward, setWard] = useState('');
   const [streets, setStreets] = useState<string[]>([]);
+
+  const claimedBy = useMemo(() => claimsByStreet(turfs.data ?? []), [turfs.data]);
+  const overlap = streets.filter((s) => claimedBy.has(s));
+  const overlapTurfs = [...new Set(overlap.flatMap((s) => claimedBy.get(s) ?? []))];
 
   const ready = name.trim().length > 0 && streets.length > 0;
 
@@ -42,13 +66,28 @@ export function CreateTurfDialog({ onClose, onCreated }: Props) {
       wide
       footer={
         <>
-          <p className="muted small footnote">
-            {streets.length === 0 ? 'Pick at least one street.' : `${streets.length} street${streets.length === 1 ? '' : 's'} selected.`}
-          </p>
+          {overlap.length > 0 ? (
+            <p className="small footnote footnote--warn" id={FOOTNOTE_ID}>
+              <span aria-hidden="true">⚑ </span>
+              <span className="visually-hidden">Warning: </span>
+              {overlap.length} of {streets.length} selected streets {overlap.length === 1 ? 'is' : 'are'} already in{' '}
+              {overlapTurfs.join(', ')} — those doors get knocked twice unless you are splitting a road on purpose.
+            </p>
+          ) : (
+            <p className="muted small footnote" id={FOOTNOTE_ID}>
+              {streets.length === 0 ? 'Pick at least one street.' : `${streets.length} street${streets.length === 1 ? '' : 's'} selected.`}
+            </p>
+          )}
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" form={FORM_ID} className="btn btn--primary" disabled={!ready || create.isPending}>
+          <button
+            type="submit"
+            form={FORM_ID}
+            className="btn btn--primary"
+            aria-describedby={FOOTNOTE_ID}
+            disabled={!ready || create.isPending}
+          >
             {create.isPending ? 'Creating…' : 'Create turf'}
           </button>
         </>
@@ -92,15 +131,17 @@ export function CreateTurfDialog({ onClose, onCreated }: Props) {
           </div>
         </form>
 
-        <p className="muted small">
-          Streets already used by another turf are not flagged yet — check the turf list before cutting a turf that
-          overlaps one.
-        </p>
+        {turfs.isError && (
+          <p className="muted small">
+            The existing turfs could not be loaded, so streets already used by another turf are not flagged below.
+          </p>
+        )}
 
         <StreetPicker
           ward={ward}
           communities={meta.data?.communities.map((c) => c.community) ?? []}
           selected={streets}
+          claimedBy={claimedBy}
           onChange={setStreets}
         />
 

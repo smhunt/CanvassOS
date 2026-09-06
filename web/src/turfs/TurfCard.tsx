@@ -25,6 +25,7 @@ export function TurfCard({ turf, busy, error, onRename, onAssign, onToggleArchiv
       </div>
 
       <p className="turf__counts">
+        <strong>{n(turf.streets.length)}</strong> street{turf.streets.length === 1 ? '' : 's'} ·{' '}
         <strong>{n(turf.n_households)}</strong> doors · <strong>{n(turf.n_voters)}</strong> voters
       </p>
 

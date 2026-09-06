@@ -170,6 +170,44 @@
   overflow-y: auto;
   margin: 0;
 }
+/* Streets already inside a live turf are flagged, never blocked — a long road is legitimately split
+   between two walkers. The inset bar survives .check:hover (which only repaints the background), and
+   the state is spelled out in the badge text so it never rests on colour alone. */
+.picker__toggle {
+  flex: 0 0 auto;
+  align-self: center;
+}
+.street--claimed {
+  box-shadow: inset 3px 0 0 var(--warn);
+  padding-left: 0.55rem;
+}
+.street--overlap {
+  box-shadow: inset 3px 0 0 var(--danger);
+  background: var(--warn-bg);
+}
+.street__claim {
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.street--overlap .street__claim {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.chipbtn--claimed {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.footnote--warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+.picker__total-note {
+  flex: 1 1 100%;
+}
+
 .street .check__label {
   display: flex;
   flex-direction: column;
