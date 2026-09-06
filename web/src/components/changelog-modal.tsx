@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,19 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.4.0',
+    date: '2026-09-06',
+    changes: [
+      'Works with no signal: results and sign photos queue on the phone and sync themselves later.',
+      'Doors can be ordered nearest-first from your GPS, as well as in walking order.',
+      'Printable paper turf sheet, for a dead battery or no signal at all.',
+      'Proper iPad layout \u2014 the door list and the open door side by side.',
+      'Add MC Canvass to your home screen so it opens like an app.',
+      'Move a turf from one volunteer to another, or take it off them.',
+      'Optional street-level photo of a door, off unless a key is configured.',
+    ],
+  },
   {
     version: '0.3.0',
     date: '2026-09-05',

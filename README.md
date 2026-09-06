@@ -613,7 +613,7 @@ Honest version, as of v0.3.0:
 | **1 — Foundation and read-only viewer** | **Shipped.** Compose stack, schema, importer, sign-in with roles and invite links, municipality-wide map with filters and search, household card, stats, audit log, encrypted backups, purge. |
 | **2 — Canvassing core** | **Shipped.** Turfs from streets or a drawn polygon, assignments, the phone door screen, volunteers scoped to their turfs, latest-status colouring, follow-up queue, volunteer activity. |
 | **Lawn signs** (not in the original plan) | **Shipped.** GPS placement with accuracy and photo, boundary check, pickup list, delivery list from `contact.wants_sign`. |
-| **3 — Field hardening** | **In progress.** Walking order along the street and the printable paper turf sheet have landed. The offline turf cache and its sync queue are being built onto the idempotency key every write already carries. |
+| **3 — Field hardening** | **Shipped.** Offline write queue and turf cache, sign photos held until they can upload, nearest-first ordering, the printable paper turf sheet, add-to-home-screen, and a proper tablet layout. |
 | **4 — Reporting and admin** | **Planned.** Coverage and support reports by ward / community / turf / day, CSV export with an audit entry per download, diff-based re-import that preserves contacts. |
 
 Full history is in [`CHANGELOG.md`](CHANGELOG.md), and the same changelog, roadmap and a

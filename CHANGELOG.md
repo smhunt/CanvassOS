@@ -4,6 +4,53 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-06
+
+Phase 3 complete: the app works with no signal, on paper, and on a tablet.
+
+### Added
+
+**Field hardening beyond the offline queue**
+
+- **Sign photos survive going offline too.** A photo taken with no signal is downscaled and held in
+  IndexedDB against the sign's `client_id`, then uploaded once the outbox learns the real sign id.
+  It is a separate queue from the door outbox on purpose: the outbox count is what a volunteer reads
+  as "how many doors are still on my phone", and image blobs sharing that budget would silently
+  change what that number means.
+- **Nearest-first door ordering** from the device GPS, with walking order still the default.
+- **A printable paper turf sheet** at `/turfs/:turfId/sheet` — every door in walking order with tick
+  boxes, a support scale and note lines, A4 or Letter without scaling. The Municipal Elections Act
+  handling rule prints in the repeating table header, so it is on every page, with a
+  chain-of-custody line for who entered the results.
+- **Add to home screen**, with the manual Share instructions on iOS where `beforeinstallprompt`
+  never fires.
+- **A real tablet layout.** Four documented breakpoints replace six ad-hoc ones; every stop at or
+  above 640px used to mean "desktop", so an iPad mini got desktop density with a finger. The door
+  screen becomes master-detail at tablet width — list and open door side by side — and the
+  semantics change with it: a bottom sheet is a modal dialog, a side pane is a labelled region, not
+  a permanently-open modal.
+- **Move or remove a turf assignee.** The API supported it from Phase 2 but nothing called it, so a
+  turf could only ever accumulate people. A move is assign-then-unassign, and a half-completed move
+  says so rather than claiming success.
+- **Street-level imagery of a door** — optional, off unless a key is configured. Only coordinates
+  leave the server, the key never reaches the browser, and the imagery is never stored, which
+  Google's terms require anyway.
+- **A demo stack** (`make demo`): a second database of entirely fabricated residents on real public
+  street names, so screenshots, video and training never contain an elector.
+
+### Fixed
+
+- The door sheet was slicing the sticky turf header in half and clipping long turf names mid-word.
+- A sign queued offline said "Sign recorded" when it had only been saved to the phone.
+- `make import-force` counted only `contact` rows before refusing, but `TRUNCATE household CASCADE`
+  empties every referencing table — it would have silently destroyed lawn signs, sign photos and
+  doorstep consent records. It now names everything it would delete.
+- The sync pill carried the same visual weight as the address beside it; "synced" is the state that
+  needs no attention.
+- The Municipal Elections Act citation was wrong throughout (s. 23(7)-(8), not s. 23 and s. 88), the
+  "no merging" rule was presented as law when it is this campaign's own policy, and the s. 23(8)
+  duty to collect written acknowledgements of destruction was missing entirely.
+
 ## [Unreleased]
 
 ### Added
