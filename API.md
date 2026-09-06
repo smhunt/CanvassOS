@@ -117,26 +117,50 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
   Audit: **one** `view_turf_doors` entry per call with `{ n_doors }`, not one per door.
 
 ## Contacts
-- `POST /api/contacts` → `201 { contact }`
+- `POST /api/contacts` → `201 { contacts, contact }`
   ```
-  { household_id, voter_id?, turf_id?, result, support?, issues?, wants_sign?, wants_volunteer?,
-    needs_ride?, follow_up?, note?, client_id? }
+  { household_id, voter_id?, voter_ids?, turf_id?, result, support?, supports?, issues?, wants_sign?,
+    wants_volunteer?, needs_ride?, follow_up?, note?, client_id? }
   ```
   `result` ∈ `not_home` | `spoke` | `refused` | `moved` | `deceased` | `do_not_knock` | `inaccessible` |
   `left_literature`. `support` 1–5 (only when given). `issues` ≤ 20 tags of ≤ 40 chars. `note` ≤ 2000 chars.
-  `voter_id` NULL/absent means the whole door; when given it must belong to `household_id`
-  (`400 voter_not_in_household`). Unknown household → `404`.
+  Unknown household → `404`.
   Every optional field also accepts an explicit `null` (a serialized door form sends `null` for the boxes nobody
   ticked); `null` and absent mean the same thing and both fall back to the column default —
   `issues: []`, the four flags `false`, everything else NULL.
+
+  **More than one person at a door.** `voter_ids` is a list of ≤ 12 voter ids (`400 too_many_voters` beyond that);
+  `voter_id` is the one-element form and is merged into it, so an existing caller sending only `voter_id` keeps
+  working unchanged. Every named voter must belong to `household_id` (`400 voter_not_in_household`, message names
+  the offending ids). **One `contact` row is written per named voter, all in one transaction**, sharing the
+  door-level fields (`result`, `turf_id`, `issues`, the four flags, `note`). That is not a join table on purpose:
+  `voter_status` already takes the latest `contact` row per voter, so per-person rows are what lets two people at
+  one door hold different support levels — the common case, not an edge case. With no voter named, behaviour is
+  exactly as before: a single door-level row with `voter_id` NULL.
+  `support` applies to everyone named; `supports` is `{ "<voter_id>": 1..5 }` for per-person values and wins over
+  `support` for the voters it names. A key in `supports` that is not among the named voters is
+  `400 support_voter_not_named` (silently dropping it would show up later as a wrong canvass number).
+
   **Authorisation:** a volunteer may only record a contact for a household inside one of their assigned turfs
   (`403 not_your_turf`); organizer/admin may record anywhere.
-  **Idempotency:** when `client_id` is supplied and a contact with it already exists, the stored row is returned with
-  `200` instead of inserting (`ON CONFLICT (client_id) DO NOTHING` + re-select, in one transaction) — this is how the
-  Phase 3 offline queue retries safely. The stored row wins; a replay with a changed body does not update anything.
-  Contacts are append-only: a correction is a new row, never an UPDATE.
-  Audit `contact` with `{ result, household_id }` — on the insert only, not on an idempotent replay.
-  Response `contact = { id, household_id, voter_id, turf_id, at, client_id, result, support, issues, wants_sign,
+
+  **Idempotency:** `client_id` is UNIQUE on `contact`, so N rows cannot all carry the submitted key. When voters
+  are named, the stored key of each row is derived deterministically as **`<client_id>:<voter_id>`**; with nobody
+  named the single door-level row stores `client_id` verbatim, unchanged from before. A retry from a phone that
+  lost signal therefore re-derives the same keys and every row collapses onto the row it already wrote
+  (`ON CONFLICT (client_id) DO NOTHING` + re-select of the whole set, in one transaction). The response is `200`
+  when nothing new was inserted, `201` when at least one row was. The stored rows win; a replay with a changed
+  body does not update anything. Contacts stay append-only: a correction is a new row, never an UPDATE.
+  Note that the `client_id` echoed back is the **stored** (derived) key, not the submitted one.
+
+  Audit `contact` with `{ result, household_id, voter_id }` — **one entry per row actually inserted** (each names a
+  different person on the list), and never on an idempotent replay.
+
+  Response: `contacts` is the array of rows, in the order the voters were named.
+  `contact = contacts[0]` is **also** returned — the pre-multi-voter shape, kept populated so the existing web
+  client does not break the moment this deploys. It is transitional: new clients should read `contacts`, and
+  `contact` will be dropped once the web app has moved over.
+  Each row is `{ id, household_id, voter_id, turf_id, at, client_id, result, support, issues, wants_sign,
   wants_volunteer, needs_ride, follow_up, note, user_id, user_name }`.
 - `GET /api/contacts?household_id=<id>&limit=50` (1–200, default 50) →
   `{ contacts: [{ id, at, user_name, result, support, issues, wants_sign, wants_volunteer, needs_ride, follow_up,
@@ -229,6 +253,70 @@ nullable and most fields are free text. The two exceptions to "not voter data" a
 - `DELETE /api/signs/photo/:photoId` → `204`. **Organizer/admin only**; removes the row and the file.
   Audit `delete_sign` with `{ photo_id, sign_id }`.
 
+## Voter contacts — phone / email collected at the door
+**This is not voters-list data, and that is the whole reason it is a separate table (`voter_contact`,
+`db/migrations/002_voter_contact.sql`) rather than columns on `voter`.** The clerk's list carries no phone numbers
+and no email addresses; everything here was given directly by the person at the door, for a purpose they were told
+about. So it has different rules from the list:
+
+- **Consent is per purpose**, not one "ok to contact" boolean — `consent_gotv` (a reminder to vote, around election
+  day) and `consent_updates` (general campaign updates) are separate columns, because a single flag cannot answer
+  "did they agree to *this*?". A value offered with neither is **refused** (`400 consent_required`): a number nobody
+  agreed to us using is not something to keep.
+- **Withdrawal is recorded, never deleted.** `PATCH { withdrawn: true }` stamps `withdrawn_at` and the row stays.
+  A deleted row would simply be re-collected at the next canvass; the point is to remember that somebody asked us
+  to stop. `DELETE` exists only for a genuine mistake (a wrong number typed) and is organizer/admin only.
+- **It must never be merged back into an export of the voters list**, and it is destroyed by `make purge` with
+  everything else after the election.
+- Canada's Anti-Spam Legislation governs the messages this feeds, so recording *what* was agreed, *when* and *who*
+  took it is what makes the consent defensible. Every read and every change of consent writes `audit_log`, and the
+  audit `detail` deliberately never contains the value itself — `audit_log` would otherwise become a second,
+  un-withdrawable copy of every number the campaign was ever given.
+
+- `POST /api/voter-contacts` → `201 { voter_contact }` (or `200` on a re-offer, below)
+  ```
+  { household_id, voter_id?, channel, value, consent_gotv?, consent_updates?, consent_note?, contact_id? }
+  ```
+  `channel` ∈ `phone` | `email`. `voter_id` is optional — a number can belong to the house rather than to a named
+  person — but when given it must belong to `household_id` (`400 voter_not_in_household`). `contact_id` optionally
+  ties the value to the doorstep conversation it came out of and must be a contact at the same household
+  (`400 contact_not_found`). `consent_note` ≤ 500 chars. Unknown household → `404`.
+  **At least one of `consent_gotv` / `consent_updates` must be true**, else `400 consent_required`.
+  **Normalisation** (the UNIQUE key is on the stored value, so the same number offered twice in two formats has to
+  become one row): a phone is reduced to digits and stored as `+1XXXXXXXXXX` when it is a valid 10- or 11-digit
+  North American number (area code and exchange must start 2–9); an explicitly international value (leading `+`,
+  8–15 digits) is stored as `+<digits>`; anything else is `400 invalid_phone`. An email is trimmed, lower-cased and
+  syntax-checked, else `400 invalid_email`.
+  **Duplicate `(household_id, channel, value)` is not a conflict**: somebody re-offering their number is granting
+  consent again. The existing row is updated — consent flags are OR-ed (a re-offer grants, it never silently
+  revokes), `consent_note` / `contact_id` / `voter_id` fill in when supplied, `consented_at` and `collected_by` are
+  refreshed — and returned with `200`. `withdrawn_at` is deliberately **not** cleared by a re-offer: a door-side
+  re-offer must not quietly undo "please stop"; lifting it is an explicit `PATCH { withdrawn: false }`.
+  **Authorisation:** volunteers only for households inside their assigned turfs (`403 not_your_turf`).
+  Audit `collect_voter_contact` with `{ household_id, voter_id, channel, consent_gotv, consent_updates, re_offered }`.
+- `GET /api/voter-contacts?household_id=<id>` → `{ voter_contacts: [...] }` — the door's details, ordered by
+  channel then value. Volunteers: only households in their turfs (`403 not_your_turf`); they collected these and
+  have to be able to see and correct a mistyped number. Audit `view_voter_contacts` with `{ n }`.
+  Row = `{ id, household_id, voter_id, voter_name, channel, value, consent_gotv, consent_updates, consent_note,
+  consented_at, collected_by, collected_by_name, contact_id, withdrawn_at, withdrawn_note, created_at }` — the
+  consent state always travels with the value, so no caller holds the number without holding what it may be used for.
+- `PATCH /api/voter-contacts/:id` `{ consent_gotv?, consent_updates?, withdrawn?, withdrawn_note? }` →
+  `{ voter_contact }`. `withdrawn: true` stamps `withdrawn_at` (`coalesce`d, so a second request keeps the moment
+  they first asked) and keeps the row; `withdrawn: false` lifts it and clears `withdrawn_note` with it. Any
+  signed-in user may patch a row for a door in their scope — the person is standing there asking, and the volunteer
+  must be able to act on it without finding an organizer. `404` if unknown, `403 not_your_turf` out of scope.
+  Audit `withdraw_voter_contact` when `withdrawn: true`, otherwise `update_voter_contact`.
+- `DELETE /api/voter-contacts/:id` → `204`. **Organizer/admin only**, for a genuine mistake such as a wrong number
+  typed at the door. Somebody asking us to stop is a *withdrawal*, not a delete. `404` if unknown.
+  Audit `delete_voter_contact`.
+- `GET /api/voter-contacts/gotv?channel=&limit=1000` (1–5000) — **organizer/admin only**. The send list: rows with
+  `consent_gotv` and `withdrawn_at IS NULL`, optionally one channel, ordered ward → address → value. This is the
+  one thing here that would ever leave the system, so it is role-gated and **audited on every call**, empty result
+  included, with `{ channel, n }` — who pulled the list and when is exactly what has to be answerable later.
+  Row = `{ id, channel, value, voter_id, voter_name, household_id, address, ward, community, consent_note,
+  consented_at }`; `consent_gotv`/`consented_at` ride along because whoever exports this is the person who has to
+  answer "what did they agree to?".
+
 ## Stats (organizer/admin)
 - `GET /api/stats/overview` →
   ```
@@ -274,7 +362,9 @@ nullable and most fields are free text. The two exceptions to "not voter data" a
   `login_failed`, `accept_invite`, `change_password`, `reinvite`, `update_user`. Phase 2 adds `create_turf`,
   `update_turf`, `delete_turf`, `assign_turf`, `unassign_turf`, `update_assignment`, `view_turf_doors`,
   `view_follow_ups`, `contact`. Lawn signs add `place_sign`, `update_sign`, `delete_sign`, `upload_sign_photo`,
-  `view_sign_photo` and `view_sign_requests`.
+  `view_sign_photo` and `view_sign_requests`. Doorstep phone/email adds `collect_voter_contact`,
+  `view_voter_contacts`, `update_voter_contact`, `withdraw_voter_contact`, `delete_voter_contact` and
+  `view_gotv_list`.
 - `POST /api/users/:id/reinvite` also works for a user who already has a password (acts as an admin-driven
   password reset: accepting the new invite sets a new password and drops old sessions).
 - Invite tokens are stored hashed (sha256) in `app_user.invite_token`; the raw token appears only in `invite_url`.
@@ -324,3 +414,26 @@ nullable and most fields are free text. The two exceptions to "not voter data" a
   the entries that matter. `GET /api/signs/requests` and every photo read are audited, because those are voter data.
 - `sign.placed_by` / `removed_by` reference `app_user` without `ON DELETE`, so the test suite deletes the signs it
   created before the users that created them.
+
+## Implementation notes (multi-voter contacts, doorstep phone/email)
+- **No migration for either.** `db/migrations/002_voter_contact.sql` (table `voter_contact`, enum `contact_channel`)
+  is already applied to `canvass` and `canvass_test`; the multi-voter change is pure API — it writes more rows into
+  the `contact` table Phase 1 already had.
+- The per-voter rows of one `POST /api/contacts` are written by a single `INSERT ... SELECT ... FROM unnest(...)`
+  inside one transaction: the door-level fields are passed as scalars (every row shares them, and it keeps `issues`
+  a single `text[]` rather than an array of arrays) and only `voter_id` / `support` / `client_id` are unnested. With
+  a `client_id` the whole stored set is re-read inside the same transaction, so a partial replay (a client that
+  added a second person to a submission it had already sent) still answers with every row.
+- Derived idempotency keys mean the `client_id` a client sends is **not** the one stored when voters are named
+  (`<client_id>:<voter_id>`). Anything that looks a contact up by client id — an offline queue reconciling its
+  outbox — must match on the prefix, not on equality. A request that was in flight across this deploy is the one
+  case that can double-write, because the pre-deploy attempt stored the bare key.
+- `serializeContact` was added to `api/src/lib/serialize.ts` for the same reason as the rest: the insert uses
+  `RETURNING *`, and a column added to `contact` later must not become part of the response by accident.
+- Phone normalisation lives in `api/src/routes/voter-contacts.ts` (`normalizeContactValue`, exported for the tests).
+  It is deliberately strict — a value that is not dialable is a GOTV send that silently goes nowhere, and a value
+  stored in two formats defeats the `(household_id, channel, value)` UNIQUE key that makes a re-offer one row.
+- The `201` / `200` split on `POST /api/voter-contacts` is decided by `(xmax = 0)` on the upsert's `RETURNING`,
+  which is true only for a row that statement actually inserted — no second query.
+- `voter_contact.collected_by` references `app_user` without `ON DELETE`, so the test suite deletes the
+  voter contacts it collected before the users that collected them (and before the contacts they cite).

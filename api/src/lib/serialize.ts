@@ -267,6 +267,148 @@ export function serializeDoor(row: DoorRow, voters: VoterRow[], role: Role): Doo
   };
 }
 
+// ------------------------------------------------------------------ contacts
+
+/**
+ * One `contact` row as it leaves the API (POST /api/contacts, and the plural `contacts` array).
+ *
+ * A contact carries no field off the voters list except the joined `voter_id` the canvasser chose
+ * and the name of the user who knocked, so this projection gives a volunteer nothing new. It is an
+ * explicit allow-list all the same: the insert uses `RETURNING *` and a column added to `contact`
+ * later must not become part of the response by accident.
+ */
+export interface ContactRow {
+  id: string;
+  household_id: string;
+  voter_id: string | null;
+  turf_id: string | null;
+  at: Date | string;
+  client_id: string | null;
+  result: string;
+  support: number | null;
+  issues: string[];
+  wants_sign: boolean;
+  wants_volunteer: boolean;
+  needs_ride: boolean;
+  follow_up: boolean;
+  note: string | null;
+  user_id: string;
+  user_name: string;
+}
+
+export function serializeContact(row: ContactRow): ContactRow {
+  return {
+    id: row.id,
+    household_id: row.household_id,
+    voter_id: row.voter_id,
+    turf_id: row.turf_id,
+    at: row.at,
+    client_id: row.client_id,
+    result: row.result,
+    support: row.support,
+    issues: row.issues,
+    wants_sign: row.wants_sign,
+    wants_volunteer: row.wants_volunteer,
+    needs_ride: row.needs_ride,
+    follow_up: row.follow_up,
+    note: row.note,
+    user_id: row.user_id,
+    user_name: row.user_name,
+  };
+}
+
+// ------------------------------------------------------------------ voter contacts (phone / email)
+
+/**
+ * A phone number or email address given AT THE DOOR (`voter_contact`, db/migrations/002).
+ *
+ * This is NOT list data — the clerk's list carries no phone numbers — so the role rules that shape
+ * `serializeVoter` do not apply to it, and a different rule does: it may only be used for the
+ * purpose that was consented to. The projection therefore always carries the consent state next to
+ * the value, so no caller can hold the number without also holding what it may be used for, and
+ * `withdrawn_at` travels with it because a withdrawn number is still a row (see the migration).
+ *
+ * Volunteers see the details of doors in their own turfs (they collected them, and they have to be
+ * able to correct a mistyped number); the send list that leaves the system is organizer/admin only.
+ */
+export interface VoterContactRow {
+  id: string;
+  household_id: string;
+  voter_id: string | null;
+  voter_name: string | null;
+  channel: string;
+  value: string;
+  consent_gotv: boolean;
+  consent_updates: boolean;
+  consent_note: string | null;
+  consented_at: Date | string;
+  collected_by: string | null;
+  collected_by_name: string | null;
+  contact_id: string | null;
+  withdrawn_at: Date | string | null;
+  withdrawn_note: string | null;
+  created_at: Date | string;
+}
+
+export function serializeVoterContact(row: VoterContactRow): VoterContactRow {
+  return {
+    id: row.id,
+    household_id: row.household_id,
+    voter_id: row.voter_id,
+    voter_name: row.voter_name,
+    channel: row.channel,
+    value: row.value,
+    consent_gotv: row.consent_gotv,
+    consent_updates: row.consent_updates,
+    consent_note: row.consent_note,
+    consented_at: row.consented_at,
+    collected_by: row.collected_by,
+    collected_by_name: row.collected_by_name,
+    contact_id: row.contact_id,
+    withdrawn_at: row.withdrawn_at,
+    withdrawn_note: row.withdrawn_note,
+    created_at: row.created_at,
+  };
+}
+
+/**
+ * One line of the GOTV send list (GET /api/voter-contacts/gotv) — organizer/admin only.
+ *
+ * The narrowest thing that can still address a message and be checked afterwards: who, how to
+ * reach them, and the consent that authorises it. `consent_gotv` and `consented_at` are on the row
+ * deliberately — whoever exports this list is the person who has to answer "what did they agree
+ * to?" if it is ever questioned.
+ */
+export interface GotvContactRow {
+  id: string;
+  channel: string;
+  value: string;
+  voter_id: string | null;
+  voter_name: string | null;
+  household_id: string;
+  address: string;
+  ward: string;
+  community: string | null;
+  consent_note: string | null;
+  consented_at: Date | string;
+}
+
+export function serializeGotvContact(row: GotvContactRow): GotvContactRow {
+  return {
+    id: row.id,
+    channel: row.channel,
+    value: row.value,
+    voter_id: row.voter_id,
+    voter_name: row.voter_name,
+    household_id: row.household_id,
+    address: row.address,
+    ward: row.ward,
+    community: row.community,
+    consent_note: row.consent_note,
+    consented_at: row.consented_at,
+  };
+}
+
 // ------------------------------------------------------------------ lawn signs
 
 /**

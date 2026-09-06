@@ -5,7 +5,11 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
 // Ports are registered in ~/.claude/PORTS.md: web 3030, API 3130, Postgres 5443.
-const API_PROXY = { '/api': { target: 'http://localhost:3130', changeOrigin: false } };
+// Overridable so a second stack can run alongside the first against a different database — the
+// demo stack (web 3032, API 3132, canvass_demo) uses this for screenshots and video.
+const WEB_PORT = Number(process.env.CANVASS_WEB_PORT ?? 3030);
+const API_PORT = Number(process.env.CANVASS_API_PORT ?? 3130);
+const API_PROXY = { '/api': { target: `http://localhost:${API_PORT}`, changeOrigin: false } };
 
 // Shared mkcert cert for *.dev.ecoworks.ca, so dev runs on https://dev.ecoworks.ca:3030 like the
 // rest of the machine's projects. Serving TLS in dev also means the session cookie keeps its
@@ -78,8 +82,8 @@ self.addEventListener('fetch', (event) => {
 
 export default defineConfig({
   plugins: [react(), appShellServiceWorker()],
-  server: { port: 3030, strictPort: true, host: true, https, proxy: API_PROXY },
-  preview: { port: 4173, strictPort: true, host: true, https, proxy: API_PROXY },
+  server: { port: WEB_PORT, strictPort: true, host: true, https, proxy: API_PROXY },
+  preview: { port: WEB_PORT + 1143, strictPort: true, host: true, https, proxy: API_PROXY },
   build: {
     target: 'es2020',
     sourcemap: false,

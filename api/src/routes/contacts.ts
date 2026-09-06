@@ -5,6 +5,10 @@ import { one, q, withTx } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { assertHouseholdAccess } from '../lib/scope.js';
+import { serializeContact, type ContactRow } from '../lib/serialize.js';
+
+/** Nobody speaks to thirteen people at one door; a longer list is a client bug, not a canvass. */
+const MAX_NAMED_VOTERS = 12;
 
 // contact_result enum (db/schema.sql)
 const RESULTS = [
@@ -26,10 +30,16 @@ const householdId = z.string().regex(/^H-[A-Z]+-\d{1,8}$/, 'invalid household id
 // Null and absent mean the same thing here and both become the column default below.
 const createBody = z.object({
   household_id: householdId,
+  // A door where two people answer is the common case, not an edge case, so a contact may name
+  // several voters. `voter_id` stays for existing callers and is folded into `voter_ids`.
   voter_id: z.string().uuid().nullish(),
+  voter_ids: z.array(z.string().uuid()).max(MAX_NAMED_VOTERS).nullish(),
   turf_id: z.string().uuid().nullish(),
   result: z.enum(RESULTS),
+  // One support level for everyone spoken to, or a per-person map when they differ (the usual
+  // outcome of a two-person doorstep). `supports` wins over `support` for the voters it names.
   support: z.coerce.number().int().min(1).max(5).nullish(),
+  supports: z.record(z.string().uuid(), z.coerce.number().int().min(1).max(5)).nullish(),
   issues: z.array(z.string().trim().min(1).max(40)).max(20).nullish(),
   wants_sign: z.boolean().nullish(),
   wants_volunteer: z.boolean().nullish(),
@@ -52,34 +62,22 @@ const CONTACT_COLS = `
   c.id, c.household_id, c.voter_id, c.turf_id, c.at, c.client_id, c.result, c.support, c.issues,
   c.wants_sign, c.wants_volunteer, c.needs_ride, c.follow_up, c.note, c.user_id`;
 
-interface ContactRow {
-  id: string;
-  household_id: string;
-  voter_id: string | null;
-  turf_id: string | null;
-  at: Date;
-  client_id: string | null;
-  result: string;
-  support: number | null;
-  issues: string[];
-  wants_sign: boolean;
-  wants_volunteer: boolean;
-  needs_ride: boolean;
-  follow_up: boolean;
-  note: string | null;
-  user_id: string;
-  user_name: string;
-}
-
 export const contactRoutes: FastifyPluginAsync = async (app) => {
   const organizerOnly = requireRole('organizer');
 
   /**
-   * POST /api/contacts → 201 { contact }, or 200 { contact } when `client_id` has been seen.
+   * POST /api/contacts → 201 { contacts, contact }, or 200 when every row already existed.
    *
    * Append-only: a correction is a new row, never an UPDATE. The `client_id` unique index is what
    * makes the Phase 3 offline queue safe to retry — an interrupted request that actually landed
-   * comes back as the stored row instead of a duplicate door knock.
+   * comes back as the stored rows instead of a duplicate door knock.
+   *
+   * A door where two people answer writes ONE ROW PER NAMED VOTER in one transaction, sharing the
+   * door-level fields (result, flags, note). That is not a join table because the rest of the
+   * system already reads `contact` per voter: `voter_status` takes the latest row for each voter,
+   * so per-person rows are what makes "he is a 5, she is a 2" — the common outcome, not an edge
+   * case — expressible at all. With nobody named it is one door-level row with `voter_id` NULL,
+   * exactly as before.
    */
   app.post('/contacts', { preHandler: requireAuth }, async (req, reply) => {
     const body = createBody.parse(req.body);
@@ -90,65 +88,125 @@ export const contactRoutes: FastifyPluginAsync = async (app) => {
     // Volunteers may only record contacts inside a turf assigned to them.
     await assertHouseholdAccess(app.db, me.role, body.household_id, me.id);
 
-    if (body.voter_id) {
-      const v = await one<{ id: string }>(app.db, `SELECT id FROM voter WHERE id = $1 AND household_id = $2`, [
-        body.voter_id,
-        body.household_id,
-      ]);
-      if (!v) throw badRequest('voter_id does not belong to household_id', 'voter_not_in_household');
+    // `voter_id` is the one-element form of `voter_ids`; a client sending both (an old field plus a
+    // new one) means one door, one list of people, so they are merged and de-duplicated.
+    const named = [...new Set([...(body.voter_id ? [body.voter_id] : []), ...(body.voter_ids ?? [])])];
+    if (named.length > MAX_NAMED_VOTERS) {
+      throw badRequest(`at most ${MAX_NAMED_VOTERS} voters may be named on one contact`, 'too_many_voters');
     }
 
-    const { contact, created } = await withTx(app.db, async (tx) => {
+    if (named.length > 0) {
+      const rows = await q<{ id: string }>(
+        app.db,
+        `SELECT id FROM voter WHERE id = ANY($1::uuid[]) AND household_id = $2`,
+        [named, body.household_id],
+      );
+      const known = new Set(rows.map((r) => r.id));
+      const stray = named.filter((id) => !known.has(id));
+      if (stray.length > 0) {
+        // Same code as before the plural form existed: the message names who, the code does not change.
+        throw badRequest(
+          `voter_id does not belong to household_id: ${stray.join(', ')}`,
+          'voter_not_in_household',
+        );
+      }
+    }
+
+    const supports = body.supports ?? {};
+    for (const id of Object.keys(supports)) {
+      // A support level for somebody who is not on the contact would be silently dropped, and a
+      // dropped support level is a wrong canvass number later. Say so instead.
+      if (!named.includes(id)) {
+        throw badRequest(`supports names a voter that is not on this contact: ${id}`, 'support_voter_not_named');
+      }
+    }
+
+    /**
+     * One insert per named voter, with a deterministic idempotency key each.
+     *
+     * `contact.client_id` is UNIQUE, so N rows cannot all carry the submitted key. Deriving
+     * `<client_id>:<voter_id>` keeps the retry safe: the phone that lost signal halfway through
+     * re-sends the same body and every row collapses onto the row it already wrote. With nobody
+     * named there is a single row and the key is stored exactly as submitted — unchanged from
+     * before this endpoint learned to take a list.
+     */
+    const targets =
+      named.length === 0
+        ? [{ voter_id: null, support: body.support ?? null, client_id: body.client_id ?? null }]
+        : named.map((voter_id) => ({
+            voter_id,
+            support: supports[voter_id] ?? body.support ?? null,
+            client_id: body.client_id ? `${body.client_id}:${voter_id}` : null,
+          }));
+    const keys = targets.map((t) => t.client_id);
+
+    const { contacts, created } = await withTx(app.db, async (tx) => {
       // client_id is NULL-able and NULLs never conflict, so the same statement serves both cases.
-      const ins = await one<ContactRow>(
+      // The door-level fields are scalars (every row shares them); only the per-person columns are
+      // unnested, which also keeps `issues` a single text[] instead of an array of arrays.
+      const inserted = await q<ContactRow>(
         tx,
         `WITH ins AS (
            INSERT INTO contact (household_id, voter_id, user_id, turf_id, client_id, result, support, issues,
                                 wants_sign, wants_volunteer, needs_ride, follow_up, note)
-           VALUES ($1, $2, $3, $4, $5, $6::contact_result, $7, $8::text[], $9, $10, $11, $12, $13)
+           SELECT $1, t.voter_id, $2, $3, t.client_id, $4::contact_result, t.support, $5::text[],
+                  $6, $7, $8, $9, $10
+           FROM unnest($11::uuid[], $12::smallint[], $13::text[]) AS t(voter_id, support, client_id)
            ON CONFLICT (client_id) DO NOTHING
            RETURNING *
          )
          SELECT ${CONTACT_COLS}, u.name AS user_name FROM ins c JOIN app_user u ON u.id = c.user_id`,
         [
           body.household_id,
-          body.voter_id ?? null,
           me.id,
           body.turf_id ?? null,
-          body.client_id ?? null,
           body.result,
-          body.support ?? null,
           body.issues ?? [],
           body.wants_sign ?? false,
           body.wants_volunteer ?? false,
           body.needs_ride ?? false,
           body.follow_up ?? false,
           body.note ?? null,
+          targets.map((t) => t.voter_id),
+          targets.map((t) => t.support),
+          keys,
         ],
       );
-      if (ins) return { contact: ins, created: true };
 
-      const existing = await one<ContactRow>(
+      // Without a client_id nothing can conflict, so the insert is the whole answer. With one, a
+      // replay may have inserted some rows and skipped others (a client that added a second person
+      // to a submission it already sent), so the stored set is re-read inside the same transaction.
+      if (!body.client_id) return { contacts: inserted, created: inserted };
+      const stored = await q<ContactRow>(
         tx,
         `SELECT ${CONTACT_COLS}, u.name AS user_name
-         FROM contact c JOIN app_user u ON u.id = c.user_id WHERE c.client_id = $1`,
-        [body.client_id ?? null],
+         FROM contact c JOIN app_user u ON u.id = c.user_id WHERE c.client_id = ANY($1::text[])`,
+        [keys],
       );
-      if (!existing) throw new Error('contact insert returned no row');
-      return { contact: existing, created: false };
+      if (stored.length !== targets.length) throw new Error('contact insert returned no row');
+      return { contacts: stored, created: inserted };
     });
 
+    // Answer in the order the door screen named them, not in whatever order postgres returned.
+    const order = new Map(targets.map((t, i) => [t.voter_id ?? '', i]));
+    contacts.sort((a, b) => (order.get(a.voter_id ?? '') ?? 0) - (order.get(b.voter_id ?? '') ?? 0));
+
     // A replay of an already-stored client_id is not a new door knock, so it is not re-audited.
-    if (created) {
+    // One entry per row actually written: each names a different person on the list.
+    for (const c of created) {
       await audit(app.db, req.log, {
         userId: me.id,
         action: 'contact',
-        target: contact.id,
-        detail: { result: contact.result, household_id: contact.household_id },
+        target: c.id,
+        detail: { result: c.result, household_id: c.household_id, voter_id: c.voter_id },
         ip: req.ip,
       });
     }
-    return reply.status(created ? 201 : 200).send({ contact });
+
+    const serialized = contacts.map(serializeContact);
+    // `contact` (singular) is the pre-multi-voter shape, kept populated with the first row so a
+    // client written against it keeps working across this deploy. See API.md.
+    return reply.status(created.length > 0 ? 201 : 200).send({ contacts: serialized, contact: serialized[0] });
   });
 
   // GET /api/contacts?household_id=&limit= — history for one door. Volunteers: their turfs only.

@@ -32,7 +32,16 @@ export type AuditAction =
   | 'upload_sign_photo'
   // GET /api/signs/requests reads doors off the voters list, so it audits like any other
   // personal-data read; the rest of /api/signs is campaign logistics and does not.
-  | 'view_sign_requests';
+  | 'view_sign_requests'
+  // Phone / email collected at the door (voter_contact). Everything here touches data the person
+  // handed over under a consent, so every read AND every change to that consent is recorded — the
+  // consent is only defensible if we can say what was agreed, when, and who took or changed it.
+  | 'collect_voter_contact'
+  | 'view_voter_contacts'
+  | 'update_voter_contact'
+  | 'withdraw_voter_contact'
+  | 'delete_voter_contact'
+  | 'view_gotv_list';
 
 export interface AuditEntry {
   userId: string | null;

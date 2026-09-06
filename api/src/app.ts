@@ -22,6 +22,7 @@ import { statsRoutes } from './routes/stats.js';
 import { streetRoutes } from './routes/streets.js';
 import { assignmentRoutes, turfRoutes } from './routes/turfs.js';
 import { userRoutes } from './routes/users.js';
+import { voterContactRoutes } from './routes/voter-contacts.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -130,6 +131,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       await api.register(assignmentRoutes);
       await api.register(contactRoutes);
       await api.register(signRoutes, { prefix: '/signs' });
+      await api.register(voterContactRoutes, { prefix: '/voter-contacts' });
       await api.register(auditRoutes);
     },
     { prefix: '/api' },

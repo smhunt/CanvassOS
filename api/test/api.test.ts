@@ -35,6 +35,7 @@ import { buildApp } from '../src/app.js';
 import { hashPassword } from '../src/auth/password.js';
 import { loadConfig } from '../src/config.js';
 import { createPool, type Db } from '../src/db.js';
+import { normalizeContactValue } from '../src/routes/voter-contacts.js';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
@@ -196,6 +197,9 @@ after(async () => {
   }
   if (ids.length > 0) {
     await db.query(`DELETE FROM sign WHERE placed_by = ANY($1::uuid[]) OR removed_by = ANY($1::uuid[])`, [ids]);
+    // voter_contact.collected_by references app_user without ON DELETE, and its rows must also go
+    // before the contacts they cite; they are the doorstep phone/email numbers this run collected.
+    await db.query(`DELETE FROM voter_contact WHERE collected_by = ANY($1::uuid[])`, [ids]);
     await db.query(`DELETE FROM contact WHERE user_id = ANY($1::uuid[])`, [ids]);
     await db.query(`DELETE FROM turf WHERE created_by = ANY($1::uuid[])`, [ids]); // cascades turf_household, assignment
     await db.query(`DELETE FROM assignment WHERE user_id = ANY($1::uuid[])`, [ids]);
@@ -1442,6 +1446,454 @@ describe('lawn signs', () => {
       ['GET', '/api/signs/pickup'],
       ['GET', '/api/signs/requests'],
       ['POST', '/api/signs'],
+    ] as const) {
+      const res = await app.inject({ method, url, ...(method === 'POST' ? { payload: {} } : {}) });
+      assert.equal(res.statusCode, 401, `${method} ${url}`);
+    }
+  });
+});
+
+// ------------------------------------------------------------------ two people at one door
+// Runs after the counting assertions above (stats.canvass, /activity, /follow-ups), because it
+// writes several more contacts at doors those tests have already measured.
+
+interface MultiCtx {
+  /** A door in the volunteer's turf where more than one person is on the list. */
+  householdId: string;
+  voterIds: string[];
+  /** A voter at a household the turf does not contain — used for the cross-household check. */
+  strayVoterId: string;
+}
+const multi = {} as MultiCtx;
+
+describe('contacts (more than one person at the door)', () => {
+  before(async () => {
+    const door = await db.query<{ household_id: string }>(
+      `SELECT household_id FROM voter WHERE household_id = ANY($1::text[])
+       GROUP BY household_id HAVING count(*) >= 2
+       ORDER BY household_id LIMIT 1`,
+      [ctx.streetHouseholdIds],
+    );
+    assert.ok(door.rows[0], 'the test turf needs at least one door with two voters on the list');
+    multi.householdId = door.rows[0]!.household_id;
+    const voters = await db.query<{ id: string }>(
+      `SELECT id FROM voter WHERE household_id = $1 ORDER BY id LIMIT 2`,
+      [multi.householdId],
+    );
+    multi.voterIds = voters.rows.map((r) => r.id);
+    const stray = await db.query<{ id: string }>(`SELECT id FROM voter WHERE household_id = $1 LIMIT 1`, [
+      ctx.outsideHouseholdId,
+    ]);
+    assert.ok(stray.rows[0], 'the out-of-turf household needs a voter for the cross-household check');
+    multi.strayVoterId = stray.rows[0]!.id;
+  });
+
+  it('writes one row per named voter in one transaction, with per-person support levels', async () => {
+    const [a, b] = multi.voterIds as [string, string];
+    const payload = {
+      household_id: multi.householdId,
+      voter_ids: [a, b],
+      turf_id: ctx.streetTurfId,
+      result: 'spoke',
+      support: 3, // the door-level default...
+      supports: { [b]: 5 }, // ...overridden for the person who actually said so
+      issues: ['roads'],
+      wants_volunteer: true,
+      note: 'Two at the door.',
+      client_id: 'multi-voter-key-0001',
+    };
+    const res = await call('POST', '/api/contacts', volunteerCookie, payload);
+    assert.equal(res.statusCode, 201, res.body);
+    const body = res.json() as { contacts: Array<Record<string, unknown>>; contact: Record<string, unknown> };
+
+    assert.equal(body.contacts.length, 2);
+    // the singular field stays populated with the first row so the existing web client keeps working
+    assert.deepEqual(body.contact, body.contacts[0]);
+
+    assert.deepEqual(body.contacts.map((c) => c.voter_id), [a, b]);
+    assert.deepEqual(body.contacts.map((c) => c.support), [3, 5]);
+    for (const c of body.contacts) {
+      assert.equal(c.result, 'spoke');
+      assert.equal(c.household_id, multi.householdId);
+      assert.deepEqual(c.issues, ['roads']);
+      assert.equal(c.wants_volunteer, true);
+      assert.equal(c.note, 'Two at the door.');
+      assert.equal(c.user_name, 'volunteer accepted');
+    }
+    // per-row idempotency keys derived from the submitted one — client_id is UNIQUE, so N rows
+    // cannot all carry the same key
+    assert.deepEqual(body.contacts.map((c) => c.client_id), [
+      `multi-voter-key-0001:${a}`,
+      `multi-voter-key-0001:${b}`,
+    ]);
+
+    const rows = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM contact WHERE client_id LIKE 'multi-voter-key-0001:%'`,
+    );
+    assert.equal(rows.rows[0]!.n, 2, 'both rows landed');
+
+    // `voter_status` takes the latest row per voter, which is what makes two different support
+    // levels at one door expressible at all.
+    const status = await db.query<{ id: string; last_support: number }>(
+      `SELECT voter_id AS id, last_support FROM voter_status WHERE voter_id = ANY($1::uuid[]) ORDER BY voter_id`,
+      [[a, b]],
+    );
+    assert.deepEqual(status.rows.map((r) => r.last_support), [3, 5]);
+  });
+
+  it('collapses a replay of a multi-voter submission onto the same rows', async () => {
+    const [a, b] = multi.voterIds as [string, string];
+    const before = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_log WHERE action = 'contact'
+       AND user_id IN (SELECT id FROM app_user WHERE email LIKE $1)`,
+      [EMAIL_PATTERN],
+    );
+    const first = await call('GET', `/api/contacts?household_id=${multi.householdId}`, volunteerCookie);
+    const nBefore = (first.json() as { contacts: unknown[] }).contacts.length;
+
+    const replay = await call('POST', '/api/contacts', volunteerCookie, {
+      household_id: multi.householdId,
+      voter_ids: [a, b],
+      result: 'spoke',
+      support: 3,
+      supports: { [b]: 5 },
+      note: 'changed on the retry',
+      client_id: 'multi-voter-key-0001',
+    });
+    assert.equal(replay.statusCode, 200, replay.body);
+    const body = replay.json() as { contacts: Array<Record<string, unknown>> };
+    assert.equal(body.contacts.length, 2);
+    // the stored rows win: a replay with a changed body updates nothing
+    for (const c of body.contacts) assert.equal(c.note, 'Two at the door.');
+
+    const after = await call('GET', `/api/contacts?household_id=${multi.householdId}`, volunteerCookie);
+    assert.equal((after.json() as { contacts: unknown[] }).contacts.length, nBefore, 'no double write');
+
+    const audits = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_log WHERE action = 'contact'
+       AND user_id IN (SELECT id FROM app_user WHERE email LIKE $1)`,
+      [EMAIL_PATTERN],
+    );
+    assert.equal(audits.rows[0]!.n, before.rows[0]!.n, 'a replay is not audited a second time');
+  });
+
+  it('keeps the single-voter and no-voter forms exactly as they were', async () => {
+    const [a] = multi.voterIds as [string];
+    const single = await call('POST', '/api/contacts', volunteerCookie, {
+      household_id: multi.householdId,
+      voter_id: a,
+      result: 'refused',
+    });
+    assert.equal(single.statusCode, 201, single.body);
+    const sb = single.json() as { contact: Record<string, unknown>; contacts: unknown[] };
+    assert.equal(sb.contacts.length, 1);
+    assert.equal(sb.contact.voter_id, a);
+
+    // nobody named: one door-level row, client_id stored verbatim
+    const door = await call('POST', '/api/contacts', volunteerCookie, {
+      household_id: multi.householdId,
+      result: 'not_home',
+      client_id: 'door-level-key-0001',
+    });
+    assert.equal(door.statusCode, 201, door.body);
+    const db1 = (door.json() as { contact: Record<string, unknown> }).contact;
+    assert.equal(db1.voter_id, null);
+    assert.equal(db1.client_id, 'door-level-key-0001');
+    const again = await call('POST', '/api/contacts', volunteerCookie, {
+      household_id: multi.householdId,
+      result: 'not_home',
+      client_id: 'door-level-key-0001',
+    });
+    assert.equal(again.statusCode, 200);
+    assert.equal((again.json() as { contact: { id: string } }).contact.id, db1.id);
+  });
+
+  it('refuses a voter from another household, and a support level for somebody not named', async () => {
+    const [a] = multi.voterIds as [string];
+    const stray = await call('POST', '/api/contacts', volunteerCookie, {
+      household_id: multi.householdId,
+      voter_ids: [a, multi.strayVoterId],
+      result: 'spoke',
+    });
+    assert.equal(stray.statusCode, 400, stray.body);
+    assert.equal((stray.json() as { error: { code: string } }).error.code, 'voter_not_in_household');
+    const none = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM contact WHERE voter_id = $1`,
+      [multi.strayVoterId],
+    );
+    assert.equal(none.rows[0]!.n, 0, 'nothing was written for the rejected submission');
+
+    const unnamed = await call('POST', '/api/contacts', volunteerCookie, {
+      household_id: multi.householdId,
+      voter_ids: [a],
+      result: 'spoke',
+      supports: { [multi.strayVoterId]: 4 },
+    });
+    assert.equal(unnamed.statusCode, 400, unnamed.body);
+    assert.equal((unnamed.json() as { error: { code: string } }).error.code, 'support_voter_not_named');
+
+    const tooMany = await call('POST', '/api/contacts', volunteerCookie, {
+      household_id: multi.householdId,
+      voter_ids: Array.from({ length: 13 }, () => randomUUID()),
+      result: 'spoke',
+    });
+    assert.equal(tooMany.statusCode, 400);
+  });
+});
+
+// ------------------------------------------------------------------ phone / email at the door
+
+interface VcCtx {
+  householdId: string;
+  voterId: string;
+  phoneId: string;
+  emailId: string;
+}
+const vc = {} as VcCtx;
+
+const PHONE_TYPED = '(519) 555-0134';
+const PHONE_E164 = '+15195550134';
+
+describe('voter contacts (phone / email collected at the door)', () => {
+  before(async () => {
+    vc.householdId = ctx.streetHouseholdIds[0]!;
+    const v = await db.query<{ id: string }>(`SELECT id FROM voter WHERE household_id = $1 LIMIT 1`, [
+      vc.householdId,
+    ]);
+    vc.voterId = v.rows[0]!.id;
+  });
+
+  it('refuses to store a value nobody consented to', async () => {
+    for (const consent of [{}, { consent_gotv: false, consent_updates: false }]) {
+      const res = await call('POST', '/api/voter-contacts', volunteerCookie, {
+        household_id: vc.householdId,
+        channel: 'phone',
+        value: PHONE_TYPED,
+        ...consent,
+      });
+      assert.equal(res.statusCode, 400, res.body);
+      assert.equal((res.json() as { error: { code: string } }).error.code, 'consent_required');
+    }
+    const none = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM voter_contact WHERE household_id = $1`, [
+      vc.householdId,
+    ]);
+    assert.equal(none.rows[0]!.n, 0, 'nothing was stored');
+  });
+
+  it('normalises a phone number and lower-cases an email, and rejects what is neither', async () => {
+    const phone = await call('POST', '/api/voter-contacts', volunteerCookie, {
+      household_id: vc.householdId,
+      voter_id: vc.voterId,
+      channel: 'phone',
+      value: PHONE_TYPED,
+      consent_gotv: true,
+      consent_note: 'Text me the day before.',
+    });
+    assert.equal(phone.statusCode, 201, phone.body);
+    const p = (phone.json() as { voter_contact: Record<string, unknown> }).voter_contact;
+    vc.phoneId = p.id as string;
+    assert.equal(p.value, PHONE_E164);
+    assert.equal(p.consent_gotv, true);
+    assert.equal(p.consent_updates, false);
+    assert.equal(p.withdrawn_at, null);
+    assert.equal(p.collected_by_name, 'volunteer accepted');
+    assert.ok(p.voter_name, 'the named person travels with the value');
+
+    const email = await call('POST', '/api/voter-contacts', volunteerCookie, {
+      household_id: vc.householdId,
+      channel: 'email',
+      value: '  Sean.Voter@Example.CA ',
+      consent_updates: true,
+    });
+    assert.equal(email.statusCode, 201, email.body);
+    const e = (email.json() as { voter_contact: Record<string, unknown> }).voter_contact;
+    vc.emailId = e.id as string;
+    assert.equal(e.value, 'sean.voter@example.ca');
+    assert.equal(e.voter_id, null, 'a number can belong to the house rather than a named person');
+
+    // every common way of writing the same number lands on the one stored value
+    for (const written of ['519.555.0134', '1-519-555-0134', '+1 (519) 555 0134']) {
+      assert.equal(normalizeContactValue('phone', written), PHONE_E164, written);
+    }
+    for (const bad of [
+      { channel: 'phone', value: '12345', code: 'invalid_phone' },
+      { channel: 'phone', value: '019-555-0134', code: 'invalid_phone' },
+      { channel: 'phone', value: '519-555-0134 ext 22', code: 'invalid_phone' },
+      { channel: 'email', value: 'not-an-email', code: 'invalid_email' },
+      { channel: 'email', value: 'two@@example.ca', code: 'invalid_email' },
+    ] as const) {
+      const res = await call('POST', '/api/voter-contacts', volunteerCookie, {
+        household_id: vc.householdId,
+        channel: bad.channel,
+        value: bad.value,
+        consent_gotv: true,
+      });
+      assert.equal(res.statusCode, 400, `${bad.value}: ${res.body}`);
+      assert.equal((res.json() as { error: { code: string } }).error.code, bad.code, bad.value);
+    }
+
+    const stray = await call('POST', '/api/voter-contacts', volunteerCookie, {
+      household_id: vc.householdId,
+      voter_id: multi.strayVoterId,
+      channel: 'phone',
+      value: '519-555-0199',
+      consent_gotv: true,
+    });
+    assert.equal(stray.statusCode, 400);
+    assert.equal((stray.json() as { error: { code: string } }).error.code, 'voter_not_in_household');
+  });
+
+  it('treats a re-offer of the same value as consent granted again, not a conflict', async () => {
+    const res = await call('POST', '/api/voter-contacts', volunteerCookie, {
+      household_id: vc.householdId,
+      channel: 'phone',
+      value: '519.555.0134', // the same number, written differently
+      consent_updates: true,
+      consent_note: 'And campaign updates too.',
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const p = (res.json() as { voter_contact: Record<string, unknown> }).voter_contact;
+    assert.equal(p.id, vc.phoneId, 'the same row, not a second one');
+    assert.equal(p.consent_gotv, true, 'the earlier consent is not silently revoked');
+    assert.equal(p.consent_updates, true, 'the new one is granted');
+    assert.equal(p.consent_note, 'And campaign updates too.');
+    assert.equal(p.voter_id, vc.voterId, 'the named person is kept');
+
+    const n = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM voter_contact WHERE household_id = $1`, [
+      vc.householdId,
+    ]);
+    assert.equal(n.rows[0]!.n, 2, 'still one phone and one email at this door');
+  });
+
+  it('serves the door’s details to the volunteer whose turf it is, and nobody else’s', async () => {
+    const res = await call('GET', `/api/voter-contacts?household_id=${vc.householdId}`, volunteerCookie);
+    assert.equal(res.statusCode, 200);
+    const { voter_contacts } = res.json() as { voter_contacts: Array<Record<string, unknown>> };
+    assert.equal(voter_contacts.length, 2);
+    assert.deepEqual(Object.keys(voter_contacts[0]!).sort(), [
+      'channel', 'collected_by', 'collected_by_name', 'consent_gotv', 'consent_note', 'consent_updates',
+      'consented_at', 'contact_id', 'created_at', 'household_id', 'id', 'value', 'voter_id', 'voter_name',
+      'withdrawn_at', 'withdrawn_note',
+    ]);
+
+    const denied = await call('GET', `/api/voter-contacts?household_id=${ctx.outsideHouseholdId}`, volunteerCookie);
+    assert.equal(denied.statusCode, 403);
+    assert.equal((denied.json() as { error: { code: string } }).error.code, 'not_your_turf');
+
+    const write = await call('POST', '/api/voter-contacts', volunteerCookie, {
+      household_id: ctx.outsideHouseholdId,
+      channel: 'phone',
+      value: '519-555-0177',
+      consent_gotv: true,
+    });
+    assert.equal(write.statusCode, 403);
+    assert.equal((write.json() as { error: { code: string } }).error.code, 'not_your_turf');
+
+    const aud = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_log WHERE action = 'view_voter_contacts' AND target = $1`,
+      [vc.householdId],
+    );
+    assert.ok(aud.rows[0]!.n >= 1, 'reading somebody’s phone number is audited');
+  });
+
+  it('serves the GOTV send list to organizers only, and audits every call', async () => {
+    assert.equal((await call('GET', '/api/voter-contacts/gotv', volunteerCookie)).statusCode, 403);
+
+    const res = await call('GET', '/api/voter-contacts/gotv?channel=phone', organizerCookie);
+    assert.equal(res.statusCode, 200);
+    const { contacts } = res.json() as { contacts: Array<Record<string, unknown>> };
+    const mine = contacts.find((c) => c.id === vc.phoneId)!;
+    assert.ok(mine, 'the consented number is on the send list');
+    assert.equal(mine.value, PHONE_E164);
+    assert.ok(mine.address, 'the list carries enough to segment a send');
+
+    // the email consented to updates only — never to GOTV — must not be on it
+    assert.ok(!contacts.some((c) => c.id === vc.emailId), 'consent is per purpose');
+
+    const aud = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_log WHERE action = 'view_gotv_list'
+       AND user_id IN (SELECT id FROM app_user WHERE email LIKE $1)`,
+      [EMAIL_PATTERN],
+    );
+    assert.equal(aud.rows[0]!.n, 1, 'the send list is audited on every call');
+  });
+
+  it('records a withdrawal without deleting the row, and drops it from the send list', async () => {
+    const res = await call('PATCH', `/api/voter-contacts/${vc.phoneId}`, volunteerCookie, {
+      withdrawn: true,
+      withdrawn_note: 'Asked us to stop texting.',
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const p = (res.json() as { voter_contact: Record<string, unknown> }).voter_contact;
+    assert.ok(p.withdrawn_at, 'the withdrawal is stamped');
+    assert.equal(p.withdrawn_note, 'Asked us to stop texting.');
+    assert.equal(p.consent_gotv, true, 'what they once agreed to is still on the record');
+
+    // The row STAYS: a deleted row would just be re-collected at the next canvass.
+    const still = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM voter_contact WHERE id = $1`, [
+      vc.phoneId,
+    ]);
+    assert.equal(still.rows[0]!.n, 1);
+
+    const gotv = await call('GET', '/api/voter-contacts/gotv', organizerCookie);
+    assert.ok(
+      !(gotv.json() as { contacts: Array<{ id: string }> }).contacts.some((c) => c.id === vc.phoneId),
+      'a withdrawn number is off the send list',
+    );
+
+    const aud = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_log WHERE action = 'withdraw_voter_contact' AND target = $1`,
+      [vc.phoneId],
+    );
+    assert.equal(aud.rows[0]!.n, 1);
+
+    // a re-offer at the door must not quietly resurrect it — only an explicit lift does
+    const reoffer = await call('POST', '/api/voter-contacts', volunteerCookie, {
+      household_id: vc.householdId,
+      channel: 'phone',
+      value: PHONE_TYPED,
+      consent_gotv: true,
+    });
+    assert.equal(reoffer.statusCode, 200);
+    assert.ok((reoffer.json() as { voter_contact: { withdrawn_at: string | null } }).voter_contact.withdrawn_at);
+
+    const lift = await call('PATCH', `/api/voter-contacts/${vc.phoneId}`, organizerCookie, { withdrawn: false });
+    assert.equal(lift.statusCode, 200);
+    const lifted = (lift.json() as { voter_contact: Record<string, unknown> }).voter_contact;
+    assert.equal(lifted.withdrawn_at, null);
+    assert.equal(lifted.withdrawn_note, null);
+    const back = await call('GET', '/api/voter-contacts/gotv?channel=phone', organizerCookie);
+    assert.ok((back.json() as { contacts: Array<{ id: string }> }).contacts.some((c) => c.id === vc.phoneId));
+  });
+
+  it('deletes only for a genuine mistake, and only for an organizer', async () => {
+    const mistake = await call('POST', '/api/voter-contacts', organizerCookie, {
+      household_id: ctx.outsideHouseholdId,
+      channel: 'phone',
+      value: '519-555-0166',
+      consent_gotv: true,
+    });
+    assert.equal(mistake.statusCode, 201, mistake.body);
+    const id = (mistake.json() as { voter_contact: { id: string } }).voter_contact.id;
+
+    assert.equal((await call('DELETE', `/api/voter-contacts/${id}`, volunteerCookie)).statusCode, 403);
+    assert.equal((await call('DELETE', `/api/voter-contacts/${id}`, organizerCookie)).statusCode, 204);
+    assert.equal((await call('DELETE', `/api/voter-contacts/${id}`, organizerCookie)).statusCode, 404);
+    const gone = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM voter_contact WHERE id = $1`, [id]);
+    assert.equal(gone.rows[0]!.n, 0);
+
+    const aud = await db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_log WHERE action = 'delete_voter_contact' AND target = $1`,
+      [id],
+    );
+    assert.equal(aud.rows[0]!.n, 1);
+  });
+
+  it('requires a session for every voter-contact route', async () => {
+    for (const [method, url] of [
+      ['GET', '/api/voter-contacts?household_id=H-ARVA-1'],
+      ['GET', '/api/voter-contacts/gotv'],
+      ['POST', '/api/voter-contacts'],
     ] as const) {
       const res = await app.inject({ method, url, ...(method === 'POST' ? { payload: {} } : {}) });
       assert.equal(res.statusCode, 401, `${method} ${url}`);
