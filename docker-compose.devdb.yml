@@ -1,0 +1,14 @@
+# Publishes the database on the loopback interface so the `npm run dev` API (port 3130) and
+# `npm test` can reach it. Keeping one database for both means one copy of the voters list on
+# the machine rather than two, which is the point — every extra copy is another thing to destroy
+# after October 26, 2026.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml -f docker-compose.devdb.yml up -d
+#   (or `make devdb`)
+#
+# Never add this overlay on a public host.
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:5443:5432"

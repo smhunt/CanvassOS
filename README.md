@@ -221,6 +221,36 @@ Therefore **`web/Dockerfile` must produce the production build at `/app/dist`** 
 `alpine` base does; do not use a `scratch`/nginx image). The SPA calls the API at the same origin under
 `/api/*` and must route `/invite/<token>` to the accept-invite screen. No nginx: Caddy serves the files.
 
+## Rebuilding the importer's inputs
+
+`pipeline/build_lists.py` produces `data/voters_final.csv` and `data/households.csv` from the two raw
+sources — the clerk's list and the county's open address points:
+
+```bash
+pip install openpyxl
+python3 pipeline/build_lists.py \
+    --xlsx ../election-website-2026/voter-data/voter-data-sep3.xlsx \
+    --addresses ../election-website-2026/voter-data/Address.geojson \
+    --out-dir data
+```
+
+It parses names and civic addresses, geocodes each door against the 8,016 Middlesex Centre address
+points, groups voters into households, classifies residency, and prints a summary to check against
+the numbers below. The outputs are git-ignored.
+
+**This is a reconstruction.** The original pipeline was not kept, so the derived columns are produced
+by the rules documented in the script rather than recovered. It reproduces the original's published
+figures exactly for voters (16,892), legal descriptions (70), institutions (11), duplicate list
+entries (2) and `resident_class = unknown` (4), and lands one household high (7,140 vs 7,139).
+
+`resident_class` is the one column that differs materially: this version counts **390** non-residents
+where the original counted 337. A voter is treated as a resident when their mail arrives at the
+property itself, in a Middlesex Centre community, or at another address that geocodes inside the
+municipality; anything else is a non-resident. The original's rule is unknown, so treat the
+non-resident layer as indicative and confirm at the door before relying on it.
+
+Three addresses still fail to geocode (`record_quality = check`) and have no map point.
+
 ## Importer field mapping
 
 `households.csv` → `household`: `address = address_clean`, `property_address_raw = property_address`,
