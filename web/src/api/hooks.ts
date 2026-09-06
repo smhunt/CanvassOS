@@ -334,7 +334,7 @@ export function useRecordContact() {
 export function useFollowUps() {
   return useQuery({
     queryKey: ['follow-ups'],
-    queryFn: () => api.get<{ households: FollowUp[] }>('/follow-ups').then((r) => r.households),
+    queryFn: () => api.get<{ follow_ups: FollowUp[] }>('/follow-ups').then((r) => r.follow_ups),
     staleTime: 30_000,
   });
 }

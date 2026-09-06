@@ -241,6 +241,17 @@ export interface FollowUp {
   last_contact_at: string;
   user_name: string | null;
   note: string | null;
+  /** Present on the wire — enough to fly the map to the door once /map takes a household param. */
+  lat: number | null;
+  lon: number | null;
+  contact_id: string;
+  last_support: number | null;
+  issues: string[];
+  wants_sign: boolean;
+  wants_volunteer: boolean;
+  needs_ride: boolean;
+  voter_id: string | null;
+  voter_name: string | null;
 }
 
 export interface Activity {
