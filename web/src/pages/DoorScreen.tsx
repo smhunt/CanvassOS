@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { isApiError } from '../api/client';
-import { useDoors, useOfflineSync } from '../api/hooks';
+import { useDoors, useMyAssignments, useOfflineSync } from '../api/hooks';
 import type { ContactResult, Door } from '../api/types';
 import '../canvass/canvass.css';
 import { coordsOf, type Coords } from '../canvass/directions';
@@ -11,6 +11,8 @@ import { formatDistance, orderByDistance, readDoorOrder, useNearMe, writeDoorOrd
 import { Progress } from '../canvass/Progress';
 import { agoLabel, latestResult } from '../canvass/status';
 import { SyncStatus } from '../canvass/SyncStatus';
+import { TurfDrawer } from '../canvass/TurfDrawer';
+import { writeLastTurf } from '../canvass/lastTurf';
 import { useIsTablet } from '../canvass/useBreakpoint';
 import { useOutbox, useQueuedResults } from '../offline/useOutbox';
 import { EmptyState, ErrorBox, FullPageSpinner, Spinner, n, wardLabel } from '../components/ui';
@@ -50,6 +52,17 @@ export function DoorScreen() {
   // away it is. Null whenever a door is opened by hand — then there is no walk to describe.
   const [from, setFrom] = useState<Coords | null>(null);
   const restoreFocus = useRef<string | null>(null);
+  const [turfsOpen, setTurfsOpen] = useState(false);
+  // Already in the query cache from the turf list, so opening the drawer costs no round trip.
+  const mine = useMyAssignments();
+
+  // Remember where this phone was working, so /canvass reopens it next time. Written as soon as the
+  // doors are in hand rather than on leaving — a volunteer's app is far more likely to be killed by
+  // the OS mid-shift than closed deliberately — but never before, or a turf that 403s or times out
+  // would be remembered and /canvass would reopen the failure every time.
+  useEffect(() => {
+    if (turfId && doorsQ.data) writeLastTurf(turfId);
+  }, [turfId, doorsQ.data]);
 
   const serverDoors = useMemo(() => doorsQ.data?.doors ?? [], [doorsQ.data]);
   // Ordering the array itself, not just the rendering, so prev/next and the auto-advance send the
@@ -127,7 +140,9 @@ export function DoorScreen() {
           onRetry={forbidden ? undefined : () => void doorsQ.refetch()}
         />
         <p>
-          <Link to="/canvass">Back to my turfs</Link>
+          {/* `list=1`: without it /canvass would auto-open the turf that just failed, and the only
+              way out of a broken turf would loop back into it. */}
+          <Link to="/canvass?list=1">Back to my turfs</Link>
         </p>
       </div>
     );
@@ -170,12 +185,23 @@ export function DoorScreen() {
     <div className={pageClass}>
       <header className="cv-head">
         <div className="cv-head__row">
-          <Link to="/canvass" className="cv-back">
+          {/* Opens the turf drawer rather than going back to the list. Going "back" would land on
+              /canvass, which now reopens this very turf — so the list is reached from inside the
+              drawer instead, where it cannot be a loop. */}
+          <button
+            type="button"
+            className="cv-turfbtn"
+            onClick={() => setTurfsOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={turfsOpen}
+          >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <polyline points="15 5 8 12 15 19" />
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="14" y2="17" />
             </svg>
             Turfs
-          </Link>
+          </button>
           <h1 className="cv-head__name">{turf.name}</h1>
           {turf.ward && <span className="cv-head__ward muted small nowrap">{wardLabel(turf.ward)}</span>}
           <SyncStatus />
@@ -309,6 +335,14 @@ export function DoorScreen() {
       ) : (
         door
       )}
+
+      <TurfDrawer
+        open={turfsOpen}
+        onClose={() => setTurfsOpen(false)}
+        assignments={mine.data ?? []}
+        currentTurfId={turfId}
+        loading={mine.isPending}
+      />
     </div>
   );
 }

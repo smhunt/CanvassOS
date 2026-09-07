@@ -1425,3 +1425,102 @@
     flex: 1;
   }
 }
+
+/* ------------------------------------------------------------------ turf drawer
+   Switch turfs without leaving the doors (canvass/TurfDrawer.tsx). Portalled to <body>, so it is
+   positioned against the viewport and carries its own z-index above the app chrome — .topbar is 30,
+   the nav menu 40, the install banner 60. */
+.cv-drawer-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+.cv-drawer__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 20, 30, 0.45);
+}
+.cv-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(340px, 88vw);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  animation: cv-drawer-in 0.18s ease-out;
+  /* The notch and the home indicator both land on this panel when it is full-height. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@keyframes cv-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+/* Respect a system-level request for less motion: the drawer still appears, it just does not slide. */
+@media (prefers-reduced-motion: reduce) {
+  .cv-drawer {
+    animation: none;
+  }
+}
+.cv-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.7rem 0.6rem 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.cv-drawer__head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.cv-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.7rem;
+}
+.cv-drawer__foot {
+  padding: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+.cv-turfs--drawer {
+  margin: 0;
+}
+/* The open turf is a div, not a link, so it needs the card's own padding back. */
+.cv-turfs--drawer .cv-turf {
+  cursor: pointer;
+}
+.cv-turf--current {
+  cursor: default;
+  border-color: var(--brand);
+  background: var(--surface-2);
+}
+.cv-turf__here {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--brand);
+  white-space: nowrap;
+}
+/* The header button that opens it, in place of the old back link. */
+.cv-turfbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: none;
+  border: 0;
+  padding: 0.35rem 0.2rem;
+  margin: 0;
+  font: inherit;
+  color: var(--brand);
+  cursor: pointer;
+  flex: none;
+}
