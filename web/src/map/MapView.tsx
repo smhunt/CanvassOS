@@ -40,6 +40,14 @@ interface Props {
   turfHighlight?: TurfHighlight | null;
   /** While true the map drops its own click handling: no selection, no cluster zoom, crosshair cursor. */
   drawing?: boolean;
+  /**
+   * Lawn signs and outstanding sign requests, drawn over the doors. Each feature carries `id` and
+   * `kind` ('placed' | 'requested' | ...); clicking one calls onSelectSign instead of onSelect.
+   */
+  signs?: FeatureCollection | null;
+  /** Id of the sign to ring, or null. */
+  selectedSignId?: string | null;
+  onSelectSign?: (id: string, lngLat: [number, number]) => void;
   onSelect: (props: PointProps, lngLat: [number, number]) => void;
   onViewport: (stats: ViewportStats) => void;
   /** Handed the live map once its style is parsed, and null when the map is torn down. */
@@ -70,7 +78,22 @@ function polygonBounds(geom: NonNullable<Meta['boundary']>): LngLatBoundsLike | 
 }
 
 export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
-  { points, boundary, colourMode, communities, base, selectedId, turfHighlight = null, drawing = false, onSelect, onViewport, onMapReady },
+  {
+    points,
+    boundary,
+    colourMode,
+    communities,
+    base,
+    selectedId,
+    turfHighlight = null,
+    drawing = false,
+    signs = null,
+    selectedSignId = null,
+    onSelect,
+    onSelectSign,
+    onViewport,
+    onMapReady,
+  },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -84,11 +107,13 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
   const emitViewportRef = useRef<() => void>(() => undefined);
   const drawingRef = useRef(drawing);
   const onMapReadyRef = useRef(onMapReady);
+  const onSelectSignRef = useRef(onSelectSign);
   pointsRef.current = points;
   onSelectRef.current = onSelect;
   onViewportRef.current = onViewport;
   drawingRef.current = drawing;
   onMapReadyRef.current = onMapReady;
+  onSelectSignRef.current = onSelectSign;
 
   useImperativeHandle(ref, () => ({
     flyTo(lon, lat, zoom) {
@@ -184,18 +209,26 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
           [e.point.x - CLICK_PAD, e.point.y - CLICK_PAD],
           [e.point.x + CLICK_PAD, e.point.y + CLICK_PAD],
         ],
-        { layers: ['points', 'clusters'] },
+        // 'sign-dots' first: a sign is drawn over the doors, so when both are under the finger the
+        // sign is what the user aimed at. queryRenderedFeatures returns top-most first per layer,
+        // but the order of `layers` is not a priority, so the pick below breaks the tie explicitly.
+        { layers: ['sign-dots', 'points', 'clusters'] },
       );
       if (!feats.length) return null;
       let best: MapGeoJSONFeature | null = null;
       let bestD = Infinity;
+      let bestIsSign = false;
       for (const f of feats) {
         if (f.geometry.type !== 'Point') continue;
+        const isSign = f.layer.id === 'sign-dots';
+        // A sign always beats a door, however far away; between two of a kind, nearest wins.
+        if (bestIsSign && !isSign) continue;
         const p = map.project(f.geometry.coordinates as [number, number]);
         const d = (p.x - e.point.x) ** 2 + (p.y - e.point.y) ** 2;
-        if (d < bestD) {
+        if ((isSign && !bestIsSign) || d < bestD) {
           bestD = d;
           best = f;
+          bestIsSign = isSign;
         }
       }
       return best;
@@ -208,6 +241,10 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
       if (!f || f.geometry.type !== 'Point') return;
       const coords = f.geometry.coordinates as [number, number];
       const props = f.properties as Record<string, unknown>;
+      if (f.layer.id === 'sign-dots') {
+        onSelectSignRef.current?.(String(props.id), coords);
+        return;
+      }
       if (props.cluster) {
         const src = map.getSource('households') as GeoJSONSource | undefined;
         if (!src) return;
@@ -314,6 +351,20 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     outline?.setData(turfHighlight?.outline ?? EMPTY_FC);
     applyTurfHighlight(map, turfHighlight?.ids ?? null);
   }, [turfHighlight, ready]);
+
+  // ---- lawn signs overlay
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource('signs') as GeoJSONSource | undefined;
+    src?.setData(signs ?? EMPTY_FC);
+  }, [signs, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !map.getLayer('sign-selected')) return;
+    map.setFilter('sign-selected', ['==', ['get', 'id'], selectedSignId ?? '']);
+  }, [selectedSignId, ready]);
 
   // ---- selection ring
   useEffect(() => {

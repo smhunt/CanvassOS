@@ -10,6 +10,8 @@ import {
   NONRES_MUTED,
   QUALITY_COLOURS,
   SELECTED_COLOUR,
+  SIGN_COLOURS,
+  SIGN_FALLBACK,
   TURF_CONTRAST,
   TURF_CONTRAST_ON_IMAGERY,
   TURF_OUTLINE,
@@ -80,6 +82,9 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
       // whether the turf holds 18 doors or 1,330 — which is the whole reason it exists (see the
       // turf-ring comment). Empty for a street-picked turf that was never given a polygon.
       'turf-outline': { type: 'geojson', data: EMPTY_FC },
+      // Lawn signs and outstanding sign requests. Never clustered: there are tens of these, not
+      // thousands, and each one is an individual job somebody has to drive to.
+      signs: { type: 'geojson', data: EMPTY_FC },
       households: {
         type: 'geojson',
         data: EMPTY_FC,
@@ -216,6 +221,36 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
           'circle-stroke-width': turfStrokeWidth(RING_STROKE),
         },
       },
+      // ---- lawn signs, drawn above the doors: this is an overlay on the map, not a door state.
+      // A requested sign has no post in the ground yet, so it is drawn hollow — filled means placed.
+      {
+        id: 'sign-dots',
+        type: 'circle',
+        source: 'signs',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 5, 14, 7, 17, 10],
+          'circle-color': [
+            'case',
+            ['==', ['get', 'kind'], 'requested'],
+            'rgba(255,255,255,0.92)',
+            signColour(),
+          ],
+          'circle-stroke-color': signColour(),
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 2.5, 17, 3.5],
+        },
+      },
+      {
+        id: 'sign-selected',
+        type: 'circle',
+        source: 'signs',
+        filter: ['==', ['get', 'id'], ''],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 10, 14, 12, 17, 16],
+          'circle-color': 'rgba(0,0,0,0)',
+          'circle-stroke-color': SELECTED_COLOUR,
+          'circle-stroke-width': 4,
+        },
+      },
       {
         id: 'selected',
         type: 'circle',
@@ -253,6 +288,13 @@ const CONTRAST_STROKE = 3.6;
  * they are separate. Deliberately a single flat zoom ramp rather than zoomScaled() wrapping a
  * radius — a zoom interpolation cannot be nested inside another one.
  */
+/** A sign's colour from its `kind` (status for a real sign, 'requested' for an unfilled request). */
+function signColour(): ExpressionSpecification {
+  const pairs: string[] = [];
+  for (const [k, c] of Object.entries(SIGN_COLOURS)) pairs.push(k, c);
+  return ['match', ['get', 'kind'], ...pairs, SIGN_FALLBACK] as unknown as ExpressionSpecification;
+}
+
 function turfMarkRadius(): ExpressionSpecification {
   return [
     'interpolate',

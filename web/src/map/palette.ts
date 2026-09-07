@@ -83,6 +83,23 @@ export const TURF_OUTLINE_ON_IMAGERY = '#ffffff';
 export const TURF_CONTRAST = '#ffffff';
 export const TURF_CONTRAST_ON_IMAGERY = 'rgba(8, 14, 20, 0.75)';
 
+/**
+ * Lawn signs on the map. These are campaign property, not electors, so they get saturated hues that
+ * deliberately do not appear in any household colour mode — a sign must never be mistaken for a door.
+ *
+ * `requested` is a door that asked for a sign and has not been given one: it is a job to do, so it
+ * is the one that shouts. The three trouble states share a colour because the action is the same
+ * (go and look at it); `removed` is muted because it is finished work.
+ */
+export const SIGN_COLOURS: Record<string, string> = {
+  requested: '#e07b12',
+  placed: '#12855a',
+  missing: '#d12f2f',
+  damaged: '#d12f2f',
+  removed: '#8a94a0',
+};
+export const SIGN_FALLBACK = '#8a94a0';
+
 export type ColourMode = 'ward' | 'community' | 'doors' | 'quality' | 'nonres' | 'status';
 
 export const COLOUR_MODES: { id: ColourMode; label: string; organizerOnly?: boolean }[] = [

@@ -266,7 +266,7 @@ mc-canvass/
 │   │   │                        (nearest-first ordering), useBreakpoint.ts (the tablet stop in TS),
 │   │   │                        SyncStatus.tsx (the queue pill and its panel)
 │   │   ├── signs/               PlaceSignPanel, PhotoCapture/PhotoStrip, PickupPanel,
-│   │   │                        SignRequestsPanel, geolocation.ts, downscale.ts
+│   │   │                        SignRequestsPanel, SignsMap (lazy), geolocation.ts, downscale.ts
 │   │   ├── reports/             follow-up queue and volunteer activity panels
 │   │   └── components/          Shell (nav), Bars, shared ui primitives, changelog modal
 │   ├── public/                  manifest.webmanifest, icons/, self-hosted map glyph fonts/

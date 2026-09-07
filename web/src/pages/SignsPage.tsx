@@ -1,13 +1,19 @@
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { Suspense, lazy, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Spinner } from '../components/ui';
 import { PickupPanel } from '../signs/PickupPanel';
 import { PlaceSignPanel } from '../signs/PlaceSignPanel';
 import { SignRequestsPanel } from '../signs/SignRequestsPanel';
 import '../signs/signs.css';
 
+// MapLibre is ~1 MB and three of the four tabs never touch it, so the map is split out and only
+// fetched when this tab is actually opened.
+const SignsMap = lazy(() => import('../signs/SignsMap'));
+
 const TABS = [
   { id: 'place', label: 'Place a sign' },
   { id: 'requests', label: 'Sign requests' },
+  { id: 'map', label: 'Map' },
   { id: 'pickup', label: 'Pickup list' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
@@ -93,6 +99,17 @@ export function SignsPage() {
       <div className="stack" id={`signs-panel-${tab}`} role="tabpanel" aria-labelledby={`signs-tab-${tab}`} tabIndex={0}>
         {tab === 'place' && <PlaceSignPanel household={household} onClearHousehold={clearHousehold} />}
         {tab === 'requests' && <SignRequestsPanel />}
+        {tab === 'map' && (
+          <Suspense
+            fallback={
+              <p className="muted small">
+                <Spinner size={16} /> Loading the map…
+              </p>
+            }
+          >
+            <SignsMap />
+          </Suspense>
+        )}
         {tab === 'pickup' && <PickupPanel />}
       </div>
     </div>

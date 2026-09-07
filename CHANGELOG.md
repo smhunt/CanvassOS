@@ -4,6 +4,28 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-06
+
+### Added
+
+- **A map of the lawn signs**, as a fourth tab on `/signs`. Every placed sign and every outstanding
+  sign request on one canvas, because in the field they are two halves of one job: a request is a
+  door that said yes and is waiting, a placed sign is one already in the ground, and seeing them
+  together is what turns "17 requests" into a driving route. Requests are drawn hollow and placed
+  signs filled; missing and damaged share a colour because the action is the same. Each type toggles
+  on and off, and tapping a marker gives the address, status, who and when, GPS accuracy and photo
+  count, with links straight to placing a sign at that door. MapLibre is lazy-loaded, so the other
+  three tabs do not pay for it.
+
+### Fixed
+
+- **The turf highlight was unreadable on any real turf.** The per-door ring was sized against the
+  demo stack's 18 doors; the Ilderton turf is 1,330 over ~1540x1806 m, which puts neighbouring doors
+  ~9.6 px apart at village zoom — closer together than the ring was wide. Every ring merged into one
+  black shape and the map underneath was gone. The turf's own drawn boundary now carries it at
+  overview zoom (one shape, whose cost does not grow with the door count) and the per-door rings
+  fade in from z15.2, where the same doors are ~25 px apart.
+
 ## [0.4.0] - 2026-09-06
 
 Phase 3 complete: the app works with no signal, on paper, and on a tablet.
