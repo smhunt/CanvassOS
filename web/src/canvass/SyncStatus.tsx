@@ -145,14 +145,28 @@ function SyncPanel({ snapshot, onClose }: { snapshot: OutboxSnapshot; onClose: (
           </div>
         )}
 
+        {/* Enabled whenever there is a connection, including with an empty queue: with nothing to
+            send it checks in with the server and moves "Last synced" on, which is the question the
+            button is actually being pressed to answer. Disabling it offline is the one honest
+            refusal, and the reason is spelled out below rather than left to a grey button. */}
         <button
           type="button"
           className="btn btn--primary btn--block"
-          disabled={!snapshot.online || snapshot.syncing || pending.length === 0}
+          disabled={!snapshot.online || snapshot.syncing}
           onClick={() => void syncNow()}
         >
-          {snapshot.syncing ? 'Syncing…' : 'Sync now'}
+          {snapshot.syncing ? 'Syncing…' : pending.length > 0 ? `Sync ${n(pending.length)} now` : 'Check for a connection'}
         </button>
+        {snapshot.online && pending.length === 0 && (
+          <p className="muted small cv-sync__note">
+            Nothing is waiting to go up. Everything recorded on this phone has reached the server.
+          </p>
+        )}
+        {!snapshot.online && pending.length === 0 && (
+          <p className="muted small cv-sync__note">
+            No connection right now, and nothing is waiting to go up.
+          </p>
+        )}
         {!snapshot.online && pending.length > 0 && (
           <p className="muted small cv-sync__note">
             They will go up on their own as soon as there is signal — nothing here needs you to remember it.

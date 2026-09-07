@@ -1634,9 +1634,14 @@ select {
   overflow-y: auto;
   padding: 0 1rem 1rem;
 }
-/* Outside the map page nothing positions the wrap, so pin it to the viewport instead. */
+/* Outside the map page nothing positions the wrap, so pin it to the viewport instead.
+   Above everything else on the page, including .topbar (30), the nav menu (40) and the install
+   banner (60): a modal that the header paints over is a modal whose scrim is lying about what is
+   reachable. DrawPolygon portals its dialog to <body> to escape .map-toolbar's stacking context,
+   and this is the number that keeps it on top once it gets there. */
 .modal-wrap--fixed {
   position: fixed;
+  z-index: 70;
 }
 
 /* ------------------------------------------------------------------ tabs */

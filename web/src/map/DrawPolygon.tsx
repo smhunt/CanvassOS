@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useCreateTurf } from '../api/hooks';
 import type { PointsCollection } from '../api/types';
 import { ErrorBox, Spinner, n, wardLabel } from '../components/ui';
@@ -239,8 +240,14 @@ export function DrawPolygon({ map, points, wards, filtersActive, onActiveChange 
         </div>
       )}
 
-      {naming && (
-        <div className="modal-wrap modal-wrap--fixed" role="presentation">
+      {/* Portalled to <body> deliberately. DrawPolygon renders inside `.map-toolbar`, which is
+          `position: absolute; z-index: 5` — a stacking context — so this dialog's own z-index only
+          ranked it *within the toolbar*. It tied with `.map-bottomleft` (also 5) and lost on DOM
+          order, which put the viewport pill and the legend on top of the open dialog. At body level
+          there is no ancestor context to be trapped by. */}
+      {naming &&
+        createPortal(
+          <div className="modal-wrap modal-wrap--fixed" role="presentation">
           <div className="scrim" onClick={() => setNaming(false)} aria-hidden="true" />
           <div className="card modal draw-modal" role="dialog" aria-modal="true" aria-labelledby="draw-turf-h">
             <form className="draw-modal__form" onSubmit={submit}>
@@ -300,8 +307,9 @@ export function DrawPolygon({ map, points, wards, filtersActive, onActiveChange 
               </footer>
             </form>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </>
   );
 }

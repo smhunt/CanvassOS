@@ -391,7 +391,33 @@ export async function flush(): Promise<void> {
   }
 }
 
-/** The "Sync now" button: ignore backoff and try everything pending immediately. */
+/**
+ * Confirm the server is actually reachable, and stamp the clock if it is.
+ *
+ * `navigator.onLine` only says the device has a network interface, so it is not evidence of
+ * anything — and this panel exists to be trusted. /api/health is unauthenticated and tiny, which
+ * makes it the honest cheap answer to "are we in touch?".
+ */
+async function ping(): Promise<boolean> {
+  try {
+    await api.get('/health');
+    await noteSync();
+    for (const fn of syncedListeners) fn();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The "Sync now" button: ignore backoff and try everything pending immediately.
+ *
+ * The ping at the end is not redundant. With an empty queue — the normal, healthy state — flush()
+ * returns without touching the network, so nothing would stamp `lastSyncAt` and the panel would go
+ * on saying "last synced 22 h ago" next to a button that appeared to do nothing. A volunteer reads
+ * that as a broken app and starts re-knocking doors, which is the exact failure this whole module
+ * exists to prevent. So the button always ends by proving the connection for real.
+ */
 export async function syncNow(): Promise<void> {
   await start();
   const now = Date.now();
@@ -399,6 +425,7 @@ export async function syncNow(): Promise<void> {
     await persist({ ...e, last_tried_at: now - MAX_DELAY_MS });
   }
   await flush();
+  if (isOnline()) await ping();
 }
 
 /** Un-park one entry the volunteer wants tried again (a 403 after an organiser fixed the turf). */
