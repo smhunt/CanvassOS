@@ -18,10 +18,15 @@ export interface MapViewHandle {
   getZoom(): number;
 }
 
-/** One turf drawn over the municipality: the ids to keep bright, and the points to ring. */
+/**
+ * One turf drawn over the municipality: the ids to keep bright, the points to ring, and the drawn
+ * boundary. The boundary is what marks the turf at overview zoom — a per-door ring cannot, because
+ * a village turf's doors are closer together on screen than the ring is wide (see turfStrokeWidth).
+ */
 export interface TurfHighlight {
   ids: string[];
   points: FeatureCollection;
+  outline: FeatureCollection;
 }
 
 interface Props {
@@ -305,6 +310,8 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     const src = map.getSource('turf') as GeoJSONSource | undefined;
     if (!src) return;
     src.setData(turfHighlight?.points ?? EMPTY_FC);
+    const outline = map.getSource('turf-outline') as GeoJSONSource | undefined;
+    outline?.setData(turfHighlight?.outline ?? EMPTY_FC);
     applyTurfHighlight(map, turfHighlight?.ids ?? null);
   }, [turfHighlight, ready]);
 

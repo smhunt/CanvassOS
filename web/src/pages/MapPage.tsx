@@ -183,11 +183,17 @@ export function MapPage() {
         properties: { n: d.n_voters },
       });
     }
+    // A street-picked turf has no drawn boundary; the outline layers just stay empty for it.
+    const poly = data.turf.polygon;
+    const outline: TurfHighlight['outline'] = {
+      type: 'FeatureCollection',
+      features: poly ? [{ type: 'Feature', geometry: poly, properties: {} }] : [],
+    };
     return {
       name: data.turf.name,
       doors: data.doors.length,
       unmapped: data.doors.length - features.length,
-      highlight: { ids, points: { type: 'FeatureCollection', features } } satisfies TurfHighlight,
+      highlight: { ids, points: { type: 'FeatureCollection', features }, outline } satisfies TurfHighlight,
     };
   }, [turfId, turfDoors.data]);
 

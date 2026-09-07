@@ -76,6 +76,10 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
       // clustered: the ring has to mark the same doors at every zoom, including the zooms where the
       // households source has collapsed them into cluster bubbles.
       turf: { type: 'geojson', data: EMPTY_FC },
+      // The turf's own drawn boundary. One shape, so unlike the per-door ring it costs the same ink
+      // whether the turf holds 18 doors or 1,330 — which is the whole reason it exists (see the
+      // turf-ring comment). Empty for a street-picked turf that was never given a polygon.
+      'turf-outline': { type: 'geojson', data: EMPTY_FC },
       households: {
         type: 'geojson',
         data: EMPTY_FC,
@@ -102,6 +106,27 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
         type: 'line',
         source: 'boundary',
         paint: { 'line-color': BOUNDARY_COLOUR, 'line-width': 2, 'line-dasharray': [3, 2], 'line-opacity': 0.9 },
+      },
+      // The turf boundary. Drawn before the door layers so doors keep their hit area and stay on
+      // top; the fill is faint enough to read as a wash rather than as a colour mode.
+      {
+        id: 'turf-area',
+        type: 'fill',
+        source: 'turf-outline',
+        paint: { 'fill-color': TURF_OUTLINE, 'fill-opacity': 0.07 },
+      },
+      {
+        id: 'turf-area-line',
+        type: 'line',
+        source: 'turf-outline',
+        layout: { 'line-join': 'round' },
+        paint: {
+          'line-color': TURF_OUTLINE,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.4, 14, 2.4, 17, 3],
+          // Fades out as the per-door rings fade in: past z16 the doors say which are yours and the
+          // boundary is just a line across the street you are standing on.
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 15.2, 0.9, 17, 0.35],
+        },
       },
       {
         id: 'clusters',
@@ -158,16 +183,21 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
       },
       // Two rings, not a fill: the dot underneath keeps whatever colour the current mode gave it,
       // so the turf reads as a turf in every mode instead of overriding one of them.
+      //
+      // Both layers are zoom-staged (see turfMarkRadius) because a turf is 1,300 doors, not 18. A
+      // fixed-size ring is a per-door mark ~7x the area of the door it marks, so at village zoom
+      // 1,000 of them merge into one black shape and the map is gone. The stroke therefore only
+      // exists once doors are far enough apart to read as separate.
       {
         id: 'turf-ring-contrast',
         type: 'circle',
         source: 'turf',
         paint: {
-          'circle-radius': zoomScaled(['+', baseRadius(), 6]),
+          'circle-radius': turfMarkRadius(),
           'circle-color': 'rgba(0,0,0,0)',
           'circle-stroke-color': TURF_CONTRAST,
-          'circle-stroke-width': 5,
-          'circle-stroke-opacity': 0.9,
+          'circle-stroke-width': turfStrokeWidth(CONTRAST_STROKE),
+          'circle-stroke-opacity': 0.85,
         },
       },
       {
@@ -175,10 +205,15 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
         type: 'circle',
         source: 'turf',
         paint: {
-          'circle-radius': zoomScaled(['+', baseRadius(), 6]),
-          'circle-color': 'rgba(0,0,0,0)',
+          'circle-radius': turfMarkRadius(),
+          // Solid while the households source is still clustering (clusterMaxZoom 12), because
+          // there are no individual door dots to leave undimmed down there and the turf would
+          // otherwise vanish. Hollow by the time the ring appears, so the door keeps its mode
+          // colour at the zooms where anyone reads colour.
+          'circle-color': TURF_OUTLINE,
+          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0.9, 12.8, 0],
           'circle-stroke-color': TURF_OUTLINE,
-          'circle-stroke-width': 2,
+          'circle-stroke-width': turfStrokeWidth(RING_STROKE),
         },
       },
       {
@@ -206,6 +241,45 @@ function baseRadius(): ExpressionSpecification {
 
 function zoomScaled(r: ExpressionSpecification): ExpressionSpecification {
   return ['interpolate', ['linear'], ['zoom'], 12, ['*', r, 0.7], 14, r, 17, ['*', r, 1.5]];
+}
+
+/** Ring stroke widths at full zoom. The contrast pass is the wider of the two and sits underneath,
+ *  so the visible halo is the difference between them rather than its full width. */
+const RING_STROKE = 2;
+const CONTRAST_STROKE = 3.6;
+
+/**
+ * The turf mark: a compact dot while doors are clustered, growing into a ring around the door once
+ * they are separate. Deliberately a single flat zoom ramp rather than zoomScaled() wrapping a
+ * radius — a zoom interpolation cannot be nested inside another one.
+ */
+function turfMarkRadius(): ExpressionSpecification {
+  return [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    10, 2,
+    12.6, 2.6,
+    // Between here and 15.2 the mark draws nothing at all (fill faded out, stroke not yet in), so
+    // the jump in radius across that gap is free. The ring must clear the door dot, which is doing
+    // its own zoom scaling underneath (zoomScaled: x1.0 at z14 rising to x1.5 at z17) — sizing it
+    // off baseRadius alone put the ring 1px outside the dot and it read as a thick edge, not a ring.
+    15.2, ['+', ['*', baseRadius(), 1.25], 3],
+    16.2, ['+', ['*', baseRadius(), 1.4], 4],
+    17.5, ['+', ['*', baseRadius(), 1.5], 5],
+  ];
+}
+
+/**
+ * Zero until doors are far enough apart to ring individually, then the given width.
+ *
+ * The threshold is measured, not guessed. The Ilderton turf is 1,330 doors over ~1540x1806 m, so
+ * neighbours sit ~9.6 px apart at z14.5 — narrower than the plain door dot's own diameter. A ring
+ * of any width there is a solid mass, so nothing is drawn until ~z15.5, where the same doors are
+ * ~25 px apart. Below that the boundary outline is what says "this is the turf".
+ */
+function turfStrokeWidth(full: number): ExpressionSpecification {
+  return ['interpolate', ['linear'], ['zoom'], 15.2, 0, 16.2, full * 0.6, 17.5, full];
 }
 
 /** `{ w01: ['+', ['case', ['==', ['get','ward'], '01'], 1, 0]], ... }` — one count per ward. */
@@ -304,6 +378,9 @@ export function setBaseLayer(map: import('maplibre-gl').Map, base: BaseLayer): v
   const imagery = base === 'satellite';
   if (map.getLayer('turf-ring')) {
     map.setPaintProperty('turf-ring', 'circle-stroke-color', imagery ? TURF_OUTLINE_ON_IMAGERY : TURF_OUTLINE);
+    // The low-zoom dot is a fill, so it needs the same imagery swap as the stroke or the turf
+    // disappears into dark aerial photography at exactly the zoom where the dot is all there is.
+    map.setPaintProperty('turf-ring', 'circle-color', imagery ? TURF_OUTLINE_ON_IMAGERY : TURF_OUTLINE);
   }
   if (map.getLayer('turf-ring-contrast')) {
     map.setPaintProperty('turf-ring-contrast', 'circle-stroke-color', imagery ? TURF_CONTRAST_ON_IMAGERY : TURF_CONTRAST);

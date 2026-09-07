@@ -196,7 +196,9 @@ export interface Door {
 }
 
 export interface DoorsResponse {
-  turf: { id: string; name: string; ward: string | null };
+  // `polygon` is the boundary the organizer drew, and is null for a turf built by picking streets.
+  // The route has always sent it (loadTurf selects t.polygon); only this type omitted it.
+  turf: { id: string; name: string; ward: string | null; polygon?: Polygon | null };
   doors: Door[];
 }
 
