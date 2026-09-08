@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+/**
+ * An optional secret, where "present but blank" means absent.
+ *
+ * `.env` is edited by hand, and a commented-out key uncommented but not yet filled in —
+ * `ADVICE_API_KEY=` — arrives as an empty string, not as undefined. Without this, `min(1)` rejects
+ * it and the whole API refuses to boot: the operator has taken the stack down by half-adding an
+ * optional feature. Blank means off, which is what they meant.
+ */
+const optionalSecret = (min = 1) =>
+  z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().min(min).optional());
+
 // Environment contract (see API.md "Conventions").
 const schema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -7,8 +18,8 @@ const schema = z.object({
     .string()
     .min(32, 'SESSION_SECRET must be at least 32 characters (used to sign the session cookie)'),
   DOMAIN: z.string().min(1).default('localhost'),
-  ADMIN_EMAIL: z.string().email().optional(),
-  ADMIN_PASSWORD: z.string().min(10).optional(),
+  ADMIN_EMAIL: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().email().optional()),
+  ADMIN_PASSWORD: optionalSecret(10),
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default('0.0.0.0'),
   TRUST_PROXY: z.string().default('1'),
@@ -25,7 +36,7 @@ const schema = z.object({
   // that is the default on purpose: it is the only call this stack makes to a third party, and a
   // campaign is entitled to decide it would rather make none. When it is set, the key stays here —
   // it is never served to the browser (see lib/streetview.ts for the whole privacy argument).
-  STREETVIEW_API_KEY: z.string().min(1).optional(),
+  STREETVIEW_API_KEY: optionalSecret(),
   // An enum rather than a string so that adding an openly-licensed provider later is a deliberate
   // code change, not a typo in the environment that silently disables the feature.
   STREETVIEW_PROVIDER: z.enum(['google']).default('google'),
@@ -42,8 +53,8 @@ const schema = z.object({
   // The blast radius. POST /campaigns/:id/send refuses an audience larger than this unless the
   // request explicitly overrides it, so "I meant to test on my ward" cannot become 17,000 texts.
   MESSAGING_MAX_AUDIENCE: z.coerce.number().int().positive().default(5000),
-  TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
-  TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
+  TWILIO_ACCOUNT_SID: optionalSecret(),
+  TWILIO_AUTH_TOKEN: optionalSecret(),
   // Weekday sending window, America/Toronto (CRTC telemarketing/ADAD hours). Weekends are narrowed
   // to 10:00-18:00 inside these bounds — see lib/quiet-hours.ts.
   MESSAGING_QUIET_START: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:MM').default('09:00'),
@@ -55,13 +66,13 @@ const schema = z.object({
   // for every provider. Optional, but a deployment reachable from the internet should set it: an
   // unauthenticated POST to /api/messaging/inbound with Body=JOIN would otherwise mint consent for
   // a number of the caller's choosing.
-  MESSAGING_WEBHOOK_TOKEN: z.string().min(16).optional(),
+  MESSAGING_WEBHOOK_TOKEN: optionalSecret(16),
 
   // ---------------------------------------------------------------- advice (reachability report)
   // The second and last thing in this stack that talks to a third party. ABSENT = FEATURE OFF, and
   // that is the default on purpose: the report renders its own written guidance without it. Only
   // aggregate counts are ever sent — see lib/advice.ts for the whole argument and the runtime guard.
-  ADVICE_API_KEY: z.string().min(1).optional(),
+  ADVICE_API_KEY: optionalSecret(),
   // An enum so that adding a provider is a deliberate code change rather than a typo in the
   // environment that silently disables the feature.
   ADVICE_PROVIDER: z.enum(['anthropic']).default('anthropic'),
