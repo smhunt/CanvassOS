@@ -11,6 +11,7 @@ import type {
   Contact,
   ContactInput,
   DoorsResponse,
+  Reachability,
   FollowUp,
   Household,
   LegalHousehold,
@@ -734,5 +735,14 @@ export function useTurfDoorsForMap(turfId: string | null) {
     queryFn: () => api.get<DoorsResponse>(`/turfs/${turfId}/doors`),
     enabled: !!turfId,
     staleTime: 60_000,
+  });
+}
+
+/** Why part of the list cannot be reached. Aggregates only — no row of the list is in the response. */
+export function useReachability() {
+  return useQuery({
+    queryKey: ['reachability'],
+    queryFn: () => api.get<Reachability>('/stats/reachability'),
+    staleTime: 300_000,
   });
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.4.1';
+export const APP_VERSION = '0.4.2';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,14 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.4.2',
+    date: '2026-09-08',
+    changes: [
+      'New Unreachable report: why part of the list cannot be reached, and what to do about each reason.',
+      'It separates what blocks a door-knock from what only blocks the post \u2014 a PO box is not an unreachable door.',
+    ],
+  },
   {
     version: '0.4.1',
     date: '2026-09-06',

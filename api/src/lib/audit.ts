@@ -16,6 +16,9 @@ export type AuditAction =
   | 'invite'
   | 'reinvite'
   | 'update_user'
+  // Aggregate counts only — no row of the list is read — but it is still a report on the list, and
+  // the point of this log is that every look at it is on the record.
+  | 'view_reachability'
   | 'export'
   | 'import'
   // Phase 2 — canvassing

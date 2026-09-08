@@ -553,6 +553,61 @@ describe('streets', () => {
   });
 });
 
+describe('stats/reachability', () => {
+  it('is organizer-and-above', async () => {
+    const vol = await app.inject({ method: 'GET', url: '/api/stats/reachability', headers: { cookie: volunteerCookie } });
+    assert.equal(vol.statusCode, 403);
+  });
+
+  it('counts doors that cannot be knocked WITHOUT folding in PO-box mail addresses', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/stats/reachability', headers: { cookie: organizerCookie } });
+    assert.equal(res.statusCode, 200);
+    const s = res.json() as {
+      totals: { households: number; voters: number };
+      categories: { code: string; kind: string; blocks: string[]; parent: string | null; scope: string; count: number }[];
+      combined: { households_blocked: number; mail_blocked: number };
+    };
+    const cat = (code: string) => s.categories.find((c) => c.code === code)!;
+
+    assert.equal(s.totals.households, households.length);
+    assert.equal(cat('legal_description').count, nLegal);
+
+    const poBox = households.filter((h) => +h.n_voters! > 0 && +h.n_mail_po_box! >= +h.n_voters!).length;
+    assert.equal(cat('po_box_only').count, poBox);
+    assert.deepEqual(cat('po_box_only').blocks, ['mail']);
+
+    // The regression this test exists for. `households_blocked` is door-only, so a PO box — which
+    // blocks lettermail and nothing else — must not appear in it. Folding it in reported 390
+    // unknockable doors where there are 73, which is a planning error, not a cosmetic one.
+    assert.equal(s.combined.mail_blocked, poBox);
+    assert.ok(
+      s.combined.households_blocked < poBox + cat('no_map_point').count,
+      'households_blocked must not include the PO-box households',
+    );
+
+    // no_map_point is the PARENT of its two causes, so it must equal them rather than add to them.
+    assert.equal(cat('no_map_point').count, cat('legal_description').count + cat('geocode_failed').count);
+    assert.equal(cat('geocode_failed').parent, 'no_map_point');
+    assert.equal(s.combined.households_blocked, cat('no_map_point').count);
+
+    // Electors and doors are different denominators and the response must keep saying which.
+    assert.equal(cat('non_resident').scope, 'voter');
+    assert.equal(cat('non_resident').count, voters.filter((v) => v.resident_class === 'non-resident').length);
+    assert.equal(cat('legal_description').scope, 'household');
+  });
+
+  it('returns no personal information at all', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/stats/reachability', headers: { cookie: organizerCookie } });
+    const body = res.body;
+    // Aggregates only is the property that would make this safe to send to an advice provider, so
+    // it is asserted rather than assumed: no household id, and no name from the list.
+    assert.ok(!/H-[A-Z]+-\d+/.test(body), 'must not contain a household id');
+    for (const key of ['address', 'display_name', 'full_name', 'last_name', 'mailing_address', 'postal']) {
+      assert.ok(!body.includes(key), `must not contain ${key}`);
+    }
+  });
+});
+
 describe('stats/overview', () => {
   it('totals equal the CSV totals', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/stats/overview', headers: { cookie: organizerCookie } });

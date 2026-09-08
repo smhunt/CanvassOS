@@ -4,6 +4,26 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-09-08
+
+### Added
+
+- **An "Unreachable" report** (`/reports?tab=unreachable`, organiser and above) explaining why part
+  of the list cannot be reached, and what to do about each reason. Grouped by what is knowable off
+  the list before anyone leaves the house — no civic address, a non-resident owner, an institution —
+  versus what a canvasser learned at a door.
+
+  Every category says **which channel** it rules out, because "unreachable" is not one thing: a
+  PO-box mailing address (306 doors here) blocks lettermail and nothing else, and the door is
+  perfectly knockable. Folding that into one number would have reported 390 unknockable doors where
+  there are 73 — a planning error, not a cosmetic one, so there is a regression test pinning it.
+  Counts are also de-duplicated, and `no_map_point` is shown as the parent of its two causes rather
+  than a peer that adds to them.
+
+  The endpoint returns **aggregates only** — no name, address or id, asserted in the suite — which
+  is what would make it safe to hand to an advice provider later. The `advice` field and its config
+  hook are in place; no provider is wired up, so the written guidance is what renders today.
+
 ## [0.4.1] - 2026-09-06
 
 ### Added

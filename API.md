@@ -645,6 +645,32 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
   }
   ```
 
+- `GET /api/stats/reachability` → organizer/admin. Why part of the list cannot be reached.
+  Aggregates only — no name, address or id is in the response, which is what makes it safe to hand
+  to an advice provider. Audited as `view_reachability`.
+  ```
+  { totals:   { households, voters, wards: ["01","02",...] },
+    categories: [{
+      code,          // no_map_point | legal_description | geocode_failed | institution |
+                     // po_box_only | non_resident | class_unknown |
+                     // do_not_knock | inaccessible | moved | deceased | refused
+      kind,          // structural (off the list) | behavioural (recorded at a door)
+      blocks,        // ("door" | "mail" | "gatekeeper")[] — WHICH channel this rules out
+      parent,        // set when this is a cause of another row (geocode_failed -> no_map_point)
+      scope,         // "household" | "voter" — count is doors OR electors; never compare them
+      count, share,
+      by_ward: [{ ward, count, share }]
+    }],
+    combined: { households_blocked, share,      // doors that genuinely cannot be knocked
+                mail_blocked, mail_share },     // doors that cannot take addressed mail
+    advice: null                                // string once an advice provider is configured
+  }
+  ```
+  **`combined.households_blocked` is door-only and de-duplicated.** It excludes `po_box_only`
+  (which blocks lettermail, not the door) and `institution` (knockable, via the administrator).
+  Including them would report 390 blocked doors where there are 73. Categories overlap, so no field
+  here is the sum of the rows above it.
+
 ## Audit (admin)
 - `GET /api/audit?limit=200&before=<id>` → `{ entries: [...] }`
 

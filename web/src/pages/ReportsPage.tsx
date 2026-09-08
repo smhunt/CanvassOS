@@ -2,11 +2,13 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ActivityPanel, DEFAULT_DAYS, isActivityDays, type ActivityDays } from '../reports/ActivityPanel';
 import { FollowUpQueue } from '../reports/FollowUpQueue';
+import { UnreachablePanel } from '../reports/UnreachablePanel';
 import '../reports/reports.css';
 
 const TABS = [
   { id: 'follow-ups', label: 'Follow-ups' },
   { id: 'activity', label: 'Activity' },
+  { id: 'unreachable', label: 'Unreachable' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -82,7 +84,9 @@ export function ReportsPage() {
       </div>
 
       <div className="stack" id={`reports-panel-${tab}`} role="tabpanel" aria-labelledby={`reports-tab-${tab}`} tabIndex={0}>
-        {tab === 'follow-ups' ? <FollowUpQueue /> : <ActivityPanel days={days} onDays={setDays} />}
+        {tab === 'follow-ups' && <FollowUpQueue />}
+        {tab === 'activity' && <ActivityPanel days={days} onDays={setDays} />}
+        {tab === 'unreachable' && <UnreachablePanel />}
       </div>
     </div>
   );

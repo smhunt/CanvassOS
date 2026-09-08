@@ -508,3 +508,29 @@ export interface TurfPreview {
    *  so a builder can say "showing 4,000 of N" rather than under-reporting the turf. */
   truncated: boolean;
 }
+
+// ---------------------------------------------------------------- reachability (GET /api/stats/reachability)
+
+/** Which way of reaching somebody a category rules out — "unreachable" is not one thing. */
+export type ReachBlocks = ('door' | 'mail' | 'gatekeeper')[];
+
+export interface ReachCategory {
+  code: string;
+  kind: 'structural' | 'behavioural' | string;
+  blocks: ReachBlocks;
+  /** Set when this category is a cause of another (geocode_failed sits under no_map_point). */
+  parent: string | null;
+  /** Whether `count` is a number of doors or a number of electors. They must not be compared. */
+  scope: 'household' | 'voter';
+  count: number;
+  share: number;
+  by_ward: { ward: string; count: number; share: number }[];
+}
+
+export interface Reachability {
+  totals: { households: number; voters: number; wards: string[] };
+  categories: ReachCategory[];
+  combined: { households_blocked: number; share: number; mail_blocked: number; mail_share: number };
+  /** Null unless an advice provider is configured; the shape is fixed so adding one is config. */
+  advice: string | null;
+}
