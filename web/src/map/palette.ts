@@ -100,6 +100,16 @@ export const SIGN_COLOURS: Record<string, string> = {
 };
 export const SIGN_FALLBACK = '#8a94a0';
 
+/**
+ * Turf boundaries drawn over the whole municipality (`/map`, turf overlay on).
+ *
+ * Two weights, not two hues: a volunteer's own turf and somebody else's are the same KIND of thing,
+ * and giving them different colours would invent a category that competes with the colour mode
+ * painting the dots underneath. Mine is simply stronger.
+ */
+export const TURF_AREA = '#2f6fbf';
+export const TURF_AREA_MINE = '#0b4a91';
+
 export type ColourMode = 'ward' | 'community' | 'doors' | 'quality' | 'nonres' | 'status';
 
 export const COLOUR_MODES: { id: ColourMode; label: string; organizerOnly?: boolean }[] = [

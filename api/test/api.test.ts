@@ -1181,6 +1181,43 @@ describe('turf preview', () => {
   });
 });
 
+describe('turf shapes (map overlay)', () => {
+  interface Shape { id: string; name: string; polygon: unknown; mine: boolean; n_households: number }
+  const shapes = async (cookie: string) => {
+    const res = await call('GET', '/api/turfs/shapes', cookie);
+    assert.equal(res.statusCode, 200);
+    return (res.json() as { turfs: Shape[] }).turfs;
+  };
+
+  it('gives an organiser every turf, with their own marked', async () => {
+    const all = await shapes(organizerCookie);
+    assert.ok(all.length >= 1);
+    // `mine` is what makes an organiser's own work findable among everyone else's on one map.
+    assert.ok(all.every((t) => typeof t.mine === 'boolean'));
+    assert.ok(all.some((t) => t.polygon !== null), 'a drawn turf must carry its polygon');
+  });
+
+  it('gives a volunteer only the turfs assigned to them', async () => {
+    const mine = await shapes(volunteerCookie);
+    const all = await shapes(organizerCookie);
+    // The Phase 2 rule, on this endpoint too: scoped in the WHERE clause, not filtered afterwards.
+    assert.ok(mine.length < all.length, 'a volunteer must not see every turf');
+    assert.ok(mine.length > 0, 'the volunteer has an assigned turf and should see it');
+    assert.ok(mine.every((t) => t.mine === true), 'every turf a volunteer sees is their own');
+  });
+
+  it('carries no elector or door data', async () => {
+    const res = await call('GET', '/api/turfs/shapes', organizerCookie);
+    const body = res.body;
+    // A whole-municipality fetch, so it must stay a list of shapes rather than becoming a bulk
+    // read of the list by another name.
+    assert.ok(!/H-[A-Z]+-\d+/.test(body), 'must not contain a household id');
+    for (const key of ['address', 'display_name', 'last_name', 'lat', 'lon']) {
+      assert.ok(!body.includes(key), `must not contain ${key}`);
+    }
+  });
+});
+
 describe('turf scope (volunteer)', () => {
   it('403s on an unassigned turf and serves the assigned one without organizer-only fields', async () => {
     const denied = await call('GET', `/api/turfs/${ctx.polygonTurfId}/doors`, volunteerCookie);

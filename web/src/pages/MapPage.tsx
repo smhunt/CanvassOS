@@ -1,7 +1,8 @@
+import type { FeatureCollection, Polygon } from 'geojson';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { EMPTY_FILTERS, useMeta, usePoints, useTurfDoorsForMap, type PointFilters } from '../api/hooks';
+import { EMPTY_FILTERS, useMeta, usePoints, useTurfDoorsForMap, useTurfShapes, type PointFilters } from '../api/hooks';
 import type { PointProps } from '../api/types';
 import { isOrganizer } from '../auth';
 import { useUser } from '../components/Shell';
@@ -18,6 +19,7 @@ import { TurfBanner } from '../map/TurfBanner';
 
 const LS_BASE = 'mc.map.base';
 const LS_MODE = 'mc.map.mode';
+const LS_TURFS = 'mc.map.turfs';
 
 function readLS<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -164,6 +166,34 @@ export function MapPage() {
     setSearchParams(next, { replace: true });
   }, [turfParam, searchParams, setSearchParams]);
 
+  // The turf overlay. A preference, remembered, and off by default: the map's first job is the
+  // doors, and forty boundaries over them is a choice rather than a default.
+  const [turfsOn, setTurfsOn] = useState(() => readLS(LS_TURFS, ['on', 'off'] as const, 'off') === 'on');
+  const toggleTurfs = useCallback(() => {
+    setTurfsOn((on) => {
+      writeLS(LS_TURFS, on ? 'off' : 'on');
+      return !on;
+    });
+  }, []);
+  // `enabled` gates the fetch, so a volunteer who never turns it on never asks for it.
+  const turfShapesQ = useTurfShapes(turfsOn);
+  const turfShapes = useMemo<FeatureCollection | null>(() => {
+    if (!turfsOn) return null;
+    const rows = turfShapesQ.data ?? [];
+    return {
+      type: 'FeatureCollection',
+      // A street-picked turf has no drawn shape; it is counted below rather than silently missing.
+      features: rows
+        .filter((t) => t.polygon)
+        .map((t) => ({
+          type: 'Feature',
+          geometry: t.polygon as Polygon,
+          properties: { id: t.id, name: t.name, mine: t.mine },
+        })),
+    };
+  }, [turfsOn, turfShapesQ.data]);
+  const turfsWithoutShape = (turfShapesQ.data ?? []).filter((t) => !t.polygon).length;
+
   const turfDoors = useTurfDoorsForMap(turfId);
 
   // The rings come off the turf's own doors rather than off `points`, so an active filter (or a
@@ -287,6 +317,17 @@ export function MapPage() {
             </div>
           )}
         </div>
+        <button
+          type="button"
+          className={`btn btn--map${turfsOn ? ' btn--map-active' : ''}`}
+          onClick={toggleTurfs}
+          aria-pressed={turfsOn}
+          aria-label={organizer ? 'Show turf boundaries' : 'Show my turf boundaries'}
+          title={organizer ? 'Show turf boundaries' : 'Show my turf boundaries'}
+        >
+          <TurfIcon />
+          <span>Turfs</span>
+        </button>
         {organizer && map && (
           <DrawPolygon map={map} points={points.data} wards={wards} filtersActive={active > 0} onActiveChange={onDrawActive} />
         )}
@@ -301,6 +342,7 @@ export function MapPage() {
         base={base}
         selectedId={selection?.id ?? null}
         turfHighlight={turf?.highlight ?? null}
+        turfShapes={turfShapes}
         drawing={drawing}
         onSelect={onSelectPoint}
         onViewport={onViewport}
@@ -308,6 +350,15 @@ export function MapPage() {
       />
 
       <div className="map-bottomleft">
+        {/* Promised by the overlay, so it has to be said: a street-picked turf has no drawn shape
+            and cannot be outlined, and a count that quietly disagrees with the Turfs page is worse
+            than no overlay. */}
+        {turfsOn && turfsWithoutShape > 0 && (
+          <div className="pill" role="status">
+            {n(turfsWithoutShape)} {turfsWithoutShape === 1 ? 'turf was' : 'turfs were'} built from streets and{' '}
+            {turfsWithoutShape === 1 ? 'has' : 'have'} no outline to draw
+          </div>
+        )}
         <div className="pill pill--counts" aria-live="polite">
           {points.isPending ? (
             <>
@@ -400,6 +451,16 @@ function FilterIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polygon points="3 5 21 5 14 13 14 20 10 20 10 13 3 5" />
+    </svg>
+  );
+}
+
+/** A turf: a drawn boundary with doors inside it. */
+function TurfIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3z" />
+      <path d="M9 4v13M15 7v13" />
     </svg>
   );
 }

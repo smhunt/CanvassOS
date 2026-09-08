@@ -45,6 +45,8 @@ interface Props {
    * `kind` ('placed' | 'requested' | ...); clicking one calls onSelectSign instead of onSelect.
    */
   signs?: FeatureCollection | null;
+  /** Every turf this user may see, as polygons carrying `name` and `mine`. Null hides the overlay. */
+  turfShapes?: FeatureCollection | null;
   /** Id of the sign to ring, or null. */
   selectedSignId?: string | null;
   onSelectSign?: (id: string, lngLat: [number, number]) => void;
@@ -88,6 +90,7 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     turfHighlight = null,
     drawing = false,
     signs = null,
+    turfShapes = null,
     selectedSignId = null,
     onSelect,
     onSelectSign,
@@ -359,6 +362,14 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     const src = map.getSource('signs') as GeoJSONSource | undefined;
     src?.setData(signs ?? EMPTY_FC);
   }, [signs, ready]);
+
+  // ---- turf overlay
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource('turf-shapes') as GeoJSONSource | undefined;
+    src?.setData(turfShapes ?? EMPTY_FC);
+  }, [turfShapes, ready]);
 
   useEffect(() => {
     const map = mapRef.current;

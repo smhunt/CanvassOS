@@ -534,3 +534,16 @@ export interface Reachability {
   /** Null unless an advice provider is configured; the shape is fixed so adding one is config. */
   advice: string | null;
 }
+
+/** One turf boundary for the map overlay (GET /api/turfs/shapes). Volunteers get only their own. */
+export interface TurfShape {
+  id: string;
+  name: string;
+  ward: string | null;
+  /** Null for a turf built by picking streets rather than drawing a shape. */
+  polygon: Polygon | null;
+  /** Assigned to the signed-in user. Organisers see everyone's, so this is what finds their own. */
+  mine: boolean;
+  n_households: number;
+  contacted: number;
+}

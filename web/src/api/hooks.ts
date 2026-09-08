@@ -12,6 +12,7 @@ import type {
   ContactInput,
   DoorsResponse,
   Reachability,
+  TurfShape,
   FollowUp,
   Household,
   LegalHousehold,
@@ -743,6 +744,19 @@ export function useReachability() {
   return useQuery({
     queryKey: ['reachability'],
     queryFn: () => api.get<Reachability>('/stats/reachability'),
+    staleTime: 300_000,
+  });
+}
+
+/**
+ * Turf boundaries for the map overlay. Scoped server-side: a volunteer gets only the turfs assigned
+ * to them, an organiser gets all of them with `mine` set on their own.
+ */
+export function useTurfShapes(enabled: boolean) {
+  return useQuery({
+    queryKey: ['turf-shapes'],
+    queryFn: () => api.get<{ turfs: TurfShape[] }>('/turfs/shapes').then((r) => r.turfs),
+    enabled,
     staleTime: 300_000,
   });
 }

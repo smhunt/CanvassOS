@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.4.2';
+export const APP_VERSION = '0.4.3';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,13 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.4.3',
+    date: '2026-09-08',
+    changes: [
+      'Turf boundaries on the map: yours if you are a volunteer, everyone\u2019s (with yours highlighted) if you run the campaign.',
+    ],
+  },
   {
     version: '0.4.2',
     date: '2026-09-08',

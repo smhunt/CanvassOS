@@ -125,6 +125,16 @@ interface TurfRow {
   polygon?: Polygon | null;
 }
 
+interface TurfShapeRow {
+  id: string;
+  name: string;
+  ward: string | null;
+  polygon: Polygon | null;
+  mine: boolean;
+  n_households: number;
+  contacted: number;
+}
+
 interface AssigneeRow {
   id: string;
   turf_id: string;
@@ -355,6 +365,56 @@ export const turfRoutes: FastifyPluginAsync = async (app) => {
     const [byTurf, streets] = await Promise.all([assigneesByTurf(app.db, ids), streetsByTurf(app.db, ids)]);
     return {
       turfs: turfs.map((t) => ({ ...t, streets: streets.get(t.id) ?? [], assignees: byTurf.get(t.id) ?? [] })),
+    };
+  });
+
+  /**
+   * GET /api/turfs/shapes — the turf boundaries to draw on the main map.
+   *
+   * Scoped the same way as everything else in Phase 2, and for the same reason: a volunteer may
+   * read the turfs assigned to them and nothing else, so the scope is a WHERE clause here rather
+   * than a filter applied after the rows are loaded. An organiser or admin gets every active turf,
+   * with `mine` marking the ones assigned to them so their own work is findable on a map showing
+   * forty shapes.
+   *
+   * Registered before `/:id` for readability; Fastify would prefer the static route regardless.
+   *
+   * Deliberately narrow: a name, a shape, and two counts. No door list and no elector, so this can
+   * be fetched for the whole municipality without becoming a bulk read of the list. A turf built by
+   * picking streets has no drawn polygon and comes back with `polygon: null` — the client says how
+   * many rather than silently showing fewer shapes than the turf count.
+   */
+  app.get('/shapes', { preHandler: requireAuth }, async (req) => {
+    const me = currentSession(req).user;
+    const params: unknown[] = [me.id];
+    const mineOnly = isOrganizer(me.role)
+      ? ''
+      : 'AND EXISTS (SELECT 1 FROM assignment a2 WHERE a2.turf_id = t.id AND a2.user_id = $1)';
+
+    const rows = await q<TurfShapeRow>(
+      app.db,
+      `SELECT t.id, t.name, t.ward, t.polygon,
+              c.n_households, c.contacted,
+              EXISTS (SELECT 1 FROM assignment a WHERE a.turf_id = t.id AND a.user_id = $1) AS mine
+       FROM turf t
+       ${TURF_COUNTS}
+       WHERE NOT t.archived ${mineOnly}
+       ORDER BY t.name`,
+      params,
+    );
+
+    // Picked explicitly rather than spread: an added column on `turf` must not reach a volunteer
+    // by accident, which is the rule serialize.ts exists to enforce everywhere else.
+    return {
+      turfs: rows.map((t) => ({
+        id: t.id,
+        name: t.name,
+        ward: t.ward,
+        polygon: t.polygon ?? null,
+        mine: t.mine,
+        n_households: t.n_households,
+        contacted: t.contacted,
+      })),
     };
   });
 

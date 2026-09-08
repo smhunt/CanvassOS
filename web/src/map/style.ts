@@ -11,6 +11,8 @@ import {
   QUALITY_COLOURS,
   SELECTED_COLOUR,
   SIGN_COLOURS,
+  TURF_AREA,
+  TURF_AREA_MINE,
   SIGN_FALLBACK,
   TURF_CONTRAST,
   TURF_CONTRAST_ON_IMAGERY,
@@ -85,6 +87,10 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
       // Lawn signs and outstanding sign requests. Never clustered: there are tens of these, not
       // thousands, and each one is an individual job somebody has to drive to.
       signs: { type: 'geojson', data: EMPTY_FC },
+      // Every turf the user is allowed to see, drawn as boundaries on the main map. Separate from
+      // the single-turf `turf-outline` source, which answers a different question ("show me THIS
+      // one") and must keep working while the overlay is on.
+      'turf-shapes': { type: 'geojson', data: EMPTY_FC },
       households: {
         type: 'geojson',
         data: EMPTY_FC,
@@ -111,6 +117,50 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
         type: 'line',
         source: 'boundary',
         paint: { 'line-color': BOUNDARY_COLOUR, 'line-width': 2, 'line-dasharray': [3, 2], 'line-opacity': 0.9 },
+      },
+      // The turf overlay: all the turfs this user may see. Under the doors for the same reason as
+      // the single-turf boundary below — these are ground, not content. Mine is the same hue at a
+      // heavier weight rather than a second colour, so it never competes with the colour mode.
+      {
+        id: 'turf-shapes-fill',
+        type: 'fill',
+        source: 'turf-shapes',
+        paint: {
+          'fill-color': ['case', ['get', 'mine'], TURF_AREA_MINE, TURF_AREA],
+          'fill-opacity': ['case', ['get', 'mine'], 0.1, 0.04],
+        },
+      },
+      {
+        id: 'turf-shapes-line',
+        type: 'line',
+        source: 'turf-shapes',
+        layout: { 'line-join': 'round' },
+        paint: {
+          'line-color': ['case', ['get', 'mine'], TURF_AREA_MINE, TURF_AREA],
+          'line-width': ['case', ['get', 'mine'], 2.5, 1.2],
+          'line-opacity': ['case', ['get', 'mine'], 0.95, 0.55],
+          // Somebody else's turf is dashed, so the two are still distinguishable printed in mono
+          // or by a reader who cannot separate the two blues.
+          'line-dasharray': ['case', ['get', 'mine'], ['literal', [1]], ['literal', [3, 2]]],
+        },
+      },
+      {
+        id: 'turf-shapes-label',
+        type: 'symbol',
+        source: 'turf-shapes',
+        // Only once the shape is big enough on screen for a name to mean anything.
+        minzoom: 11,
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Sans Bold'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 11, 11, 15, 14],
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': ['case', ['get', 'mine'], TURF_AREA_MINE, TURF_AREA],
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.6,
+        },
       },
       // The turf boundary. Drawn before the door layers so doors keep their hit area and stay on
       // top; the fill is faint enough to read as a wash rather than as a colour mode.

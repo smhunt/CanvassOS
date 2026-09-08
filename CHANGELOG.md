@@ -4,6 +4,19 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-09-08
+
+### Added
+
+- **Turf boundaries on the main map**, behind a "Turfs" toggle that is remembered and off by
+  default. A volunteer sees the turfs assigned to them; an organiser or admin sees every active
+  turf with their own drawn heavier and solid, everyone else's lighter and dashed — the same hue at
+  two weights rather than two colours, so the overlay never competes with the colour mode painting
+  the doors underneath, and the two stay distinguishable printed in mono. Names label each shape
+  from z11. Scoped server-side by `GET /api/turfs/shapes`, which carries a name, a shape and two
+  counts and no door data at all. Turfs built by picking streets have no outline to draw, and the
+  map says how many rather than quietly showing fewer shapes than you have turfs.
+
 ## [0.4.2] - 2026-09-08
 
 ### Added
