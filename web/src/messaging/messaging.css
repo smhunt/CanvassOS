@@ -143,7 +143,6 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
-  font: inherit;
   line-height: 1.45;
   resize: vertical;
 }

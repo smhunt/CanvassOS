@@ -179,7 +179,7 @@ export function SpokeForm({ householdId, voters, pending, onSubmit, onCancel }: 
       <label className="field">
         <span className="field__label">Note</span>
         <textarea
-          className="cv-note"
+          className="cv-spoke__note"
           rows={3}
           maxLength={NOTE_MAX}
           value={d.note}

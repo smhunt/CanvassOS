@@ -656,7 +656,9 @@
   min-height: 48px;
   font-size: 1.05rem;
 }
-.cv-note {
+/* Not .cv-note — that name is also the door list's status banner further down, whose `display: flex`
+   and 0.9rem silently won here and put this field under the 16px iOS zoom threshold. */
+.cv-spoke__note {
   width: 100%;
   min-height: 84px;
   padding: 0.5rem 0.75rem;
@@ -664,7 +666,6 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
-  font: inherit;
   resize: vertical;
 }
 .cv-spoke__actions {
@@ -809,7 +810,6 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
-  font: inherit;
 }
 .cv-input[aria-invalid='true'] {
   border-color: var(--danger);

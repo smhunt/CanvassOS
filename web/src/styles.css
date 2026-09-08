@@ -151,7 +151,8 @@ a {
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -165,6 +166,13 @@ select {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+/* A `display: table` box floors its width at min-content, so `width: 1px` above does nothing and
+   `overflow: hidden` has nothing to clip — the hidden data table behind every bar chart would size
+   the document instead, and a phone would scroll sideways to reach nothing. Fixed layout makes the
+   declared width the used one. */
+table.visually-hidden {
+  table-layout: fixed;
 }
 .muted {
   color: var(--muted);
@@ -696,6 +704,25 @@ select {
     5px 5px,
     5px 5px;
   background-repeat: no-repeat;
+}
+/*
+ * iOS Safari zooms the layout viewport in whenever a control smaller than 16px takes focus, and it
+ * never zooms back out. The body is 15px, so every field on every page did it — which is also what
+ * put the map toolbar and MapLibre's own zoom controls off the right edge of an iPhone: once zoomed,
+ * the visual viewport is narrower than the layout the toolbar is pinned to. 16px is the browser's
+ * threshold, not a preference, and nothing here changes a tap target.
+ *
+ * A class that declares its own font-size on a control must clear 16px here too, or it outranks
+ * this rule and reintroduces the zoom. `.select-role` is the one that does, hence the extra
+ * specificity; the four field classes in canvass/messaging/signs carry no size of their own.
+ */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea,
+  select.select-role {
+    font-size: 16px;
+  }
 }
 .form-row {
   display: flex;
