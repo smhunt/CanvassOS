@@ -20,9 +20,15 @@ All notable changes to MC Canvass are recorded here. The format follows
   Counts are also de-duplicated, and `no_map_point` is shown as the parent of its two causes rather
   than a peer that adds to them.
 
-  The endpoint returns **aggregates only** — no name, address or id, asserted in the suite — which
-  is what would make it safe to hand to an advice provider later. The `advice` field and its config
-  hook are in place; no provider is wired up, so the written guidance is what renders today.
+  The endpoint returns **aggregates only** — no name, address or id, asserted in the suite.
+
+- **AI advice on that report**, written by Claude from those aggregate counts (`ADVICE_API_KEY`,
+  Anthropic, `claude-sonnet-5` by default). Off unless a key is set, and the report's own written
+  guidance renders without it. Only category codes and integers are sent: `AdviceInput` has no
+  field that can carry a row, a runtime guard re-checks the payload before it leaves, and the test
+  suite asserts the outgoing body against real elector names and addresses from the database. The
+  answer is cached on a hash of the numbers, so opening the report repeatedly bills once, and every
+  failure path returns null rather than breaking the report.
 
 ## [0.4.1] - 2026-09-06
 

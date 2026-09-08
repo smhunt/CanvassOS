@@ -34,6 +34,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { hashPassword } from '../src/auth/password.js';
 import { loadConfig } from '../src/config.js';
+import { _clearAdviceCache, assertNoPersonalData } from '../src/lib/advice.js';
 import { createPool, type Db } from '../src/db.js';
 import { clearStreetViewCache, type FetchLike } from '../src/lib/streetview.js';
 import { LogProvider } from '../src/messaging/provider.js';
@@ -550,6 +551,99 @@ describe('streets', () => {
     assert.equal(adelaide.label, 'Adelaide St N');
     const expect = households.filter((h) => h.ward === '02' && h.community === 'ARVA' && `${h.street} ${h.type} ${h.dir}`.trim() === 'ADELAIDE ST N').length;
     assert.equal(adelaide.n_households, expect);
+  });
+});
+
+describe('reachability advice (third-party)', () => {
+  /** Everything the stub was asked to send — the evidence for "nothing but counts left the building". */
+  let sent: { url: string; headers: Record<string, string>; body: string }[] = [];
+
+  const stub: FetchLike = async (input, init) => {
+    const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    sent.push({
+      url: href,
+      headers: (init?.headers ?? {}) as Record<string, string>,
+      body: String(init?.body ?? ''),
+    });
+    return new Response(JSON.stringify({ content: [{ type: 'text', text: 'Knock the 306 PO-box doors.' }] }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  let adviceApp: FastifyInstance;
+
+  before(async () => {
+    const config = loadConfig({
+      DATABASE_URL,
+      SESSION_SECRET: 'test-secret-test-secret-test-secret-0123456789',
+      DOMAIN: 'canvass.test',
+      COOKIE_SECURE: 'false',
+      BOUNDARY_PATH: resolve(DATA_DIR, 'mc_boundary.json'),
+      SIGN_PHOTO_DIR: photoDir,
+      ADVICE_API_KEY: 'test-advice-key',
+    });
+    adviceApp = await buildApp({ config, db, fetchImpl: stub });
+    await adviceApp.ready();
+  });
+
+  after(async () => {
+    await adviceApp?.close();
+  });
+
+  it('is off, and makes no call at all, when no key is configured', async () => {
+    sent = [];
+    const res = await app.inject({ method: 'GET', url: '/api/stats/reachability', headers: { cookie: organizerCookie } });
+    assert.equal(res.statusCode, 200);
+    assert.equal((res.json() as { advice: string | null }).advice, null);
+    assert.equal(sent.length, 0, 'a stack with no key must not call a provider');
+  });
+
+  it('sends counts only — never a row of the list — and never the key to the browser', async () => {
+    _clearAdviceCache();
+    sent = [];
+    const res = await adviceApp.inject({
+      method: 'GET',
+      url: '/api/stats/reachability',
+      headers: { cookie: organizerCookie },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal((res.json() as { advice: string | null }).advice, 'Knock the 306 PO-box doors.');
+
+    assert.equal(sent.length, 1);
+    const call = sent[0]!;
+    assert.match(call.url, /^https:\/\/api\.anthropic\.com\//);
+    assert.equal(call.headers['x-api-key'], 'test-advice-key');
+
+    // The whole point of the file. s. 23(8) of the Municipal Elections Act says a recipient of the
+    // list "shall not provide it to any other person"; posting a row to a model provider would be
+    // exactly that. Assert on the bytes actually sent, not on the type that produced them.
+    assert.ok(!/H-[A-Z]+-\d+/.test(call.body), 'no household id may be sent');
+    assert.ok(!/\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b/.test(call.body), 'no postal code may be sent');
+    for (const name of voters.slice(0, 40).map((v) => v.last_name).filter(Boolean)) {
+      assert.ok(!call.body.includes(name as string), `no elector name may be sent (${name})`);
+    }
+    for (const h of households.slice(0, 40).map((h) => h.address).filter(Boolean)) {
+      assert.ok(!call.body.includes(h as string), 'no address may be sent');
+    }
+
+    // And the key must never come back out to the client.
+    assert.ok(!res.body.includes('test-advice-key'));
+  });
+
+  it('caches on the numbers, so opening the report twice bills once', async () => {
+    _clearAdviceCache();
+    sent = [];
+    for (let i = 0; i < 3; i += 1) {
+      await adviceApp.inject({ method: 'GET', url: '/api/stats/reachability', headers: { cookie: organizerCookie } });
+    }
+    assert.equal(sent.length, 1, 'identical facts must not be re-sent');
+  });
+
+  it('refuses to send a payload carrying personal data, rather than sending it', () => {
+    assert.throws(() => assertNoPersonalData('doors: 12, id H-KOMOKA-00123'), /household id/);
+    assert.throws(() => assertNoPersonalData('someone@example.com'), /email/);
+    assert.throws(() => assertNoPersonalData('lives at N0M 2A0'), /postal code/);
+    assert.doesNotThrow(() => assertNoPersonalData('no_map_point (structural, blocks door): 73 doors, 1.0%'));
   });
 });
 

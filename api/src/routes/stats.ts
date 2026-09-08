@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { currentSession, requireRole } from '../auth/guard.js';
 import { one, q } from '../db.js';
+import { adviseOnReachability } from '../lib/advice.js';
 import { audit } from '../lib/audit.js';
 
 interface TotalsRow {
@@ -280,10 +281,33 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
     const blocked = rows.filter(noDoor).length;
     const mailOnlyBlocked = rows.filter((r) => r.po_box_only).length;
 
+    // Aggregates only, and the shape of what is sent is fixed here rather than by the advice layer:
+    // it gets counts, never the rows they came from. Null when no key is configured, and null on
+    // any failure — the numbers are the product and must render either way.
+    const advice = await adviseOnReachability(
+      {
+        households,
+        voters,
+        blocked,
+        mail_blocked: mailOnlyBlocked,
+        facts: categories.map((c) => ({
+          code: c.code,
+          kind: c.kind,
+          blocks: c.blocks,
+          scope: c.scope,
+          count: c.count,
+          share: c.share,
+        })),
+      },
+      app.config,
+      req.log,
+      app.httpFetch,
+    );
+
     await audit(app.db, req.log, {
       userId: currentSession(req).user.id,
       action: 'view_reachability',
-      detail: { households, blocked },
+      detail: { households, blocked, advice: advice !== null },
       ip: req.ip,
     });
 
@@ -296,9 +320,7 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
         mail_blocked: mailOnlyBlocked,
         mail_share: households ? mailOnlyBlocked / households : 0,
       },
-      // Null until an advice provider is configured. The shape is here so adding one is a config
-      // change rather than a change to what the client renders.
-      advice: null as string | null,
+      advice,
     };
   });
 };

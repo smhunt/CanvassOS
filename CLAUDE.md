@@ -137,8 +137,10 @@ importer (one-shot python) ─────────────────�
 ```
 
 Basemap tiles (OSM/CARTO/Esri) are fetched by the browser and never touch the stack; map glyphs are
-self-hosted. Street View is the only outbound call the *server* makes, and it is off unless a key is
-configured.
+self-hosted. The server makes exactly **two** outbound calls, both off unless a key is configured:
+Street View (`api/src/lib/streetview.ts`, two coordinates out, nothing stored) and the reachability
+advice (`api/src/lib/advice.ts`, aggregate counts out, to Anthropic). Both go through
+`app.httpFetch` so tests stub them and no test ever makes a billed call.
 
 Five compose services in `docker-compose.yml`: `db`, `api`, `web`, `caddy`, `importer` (profile
 `import`). Volumes: `pgdata`, `webroot`, `signphotos`, `caddy_data`, `caddy_config`.
@@ -251,6 +253,17 @@ first** so a road with no imagery costs nothing and yields a truthful 404. Scope
 `assertHouseholdAccess` as the door, rate-limited **per user** (40/min — a canvassing team shares one
 LTE NAT), `w`/`h` capped at 640 because every pixel size is a separate charge, and audited on both
 outcomes. `app.httpFetch` is the injection point; no test ever makes a billed call.
+
+**The advice layer may only ever be sent counts.** `api/src/lib/advice.ts` posts the reachability
+report to Anthropic so it comes back as prose. The *Municipal Elections Act* s. 23(8) rule that
+shapes `streetview.ts` applies here with more force — a row in a prompt is the list "provided to
+another person". So: `AdviceInput` has no field that can carry a row; `assertNoPersonalData()`
+re-checks the serialised payload before it leaves, because "the type says it is safe" stops being
+true the day someone widens the type; the cache is keyed on a hash of the exact facts sent, so
+identical numbers are never re-billed; `ADVICE_API_KEY` absent = the whole thing off and the report
+renders its own written guidance; and every failure path returns null, because the numbers are the
+product and the prose is a garnish. The suite asserts the outgoing body against real elector names
+and addresses from the loaded database — keep that test.
 
 **The print stylesheet stays loaded, so its rules are scoped behind a body class.**
 `web/src/print/print.css` is imported by the `/turfs/:turfId/sheet` chunk, and a lazily-loaded

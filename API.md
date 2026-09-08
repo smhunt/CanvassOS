@@ -663,8 +663,8 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
     }],
     combined: { households_blocked, share,      // doors that genuinely cannot be knocked
                 mail_blocked, mail_share },     // doors that cannot take addressed mail
-    advice: null                                // string once an advice provider is configured
-  }
+    advice                                      // string, or null when ADVICE_API_KEY is unset
+  }                                             // or the provider call failed
   ```
   **`combined.households_blocked` is door-only and de-duplicated.** It excludes `po_box_only`
   (which blocks lettermail, not the door) and `institution` (knockable, via the administrator).

@@ -57,6 +57,16 @@ const schema = z.object({
   // a number of the caller's choosing.
   MESSAGING_WEBHOOK_TOKEN: z.string().min(16).optional(),
 
+  // ---------------------------------------------------------------- advice (reachability report)
+  // The second and last thing in this stack that talks to a third party. ABSENT = FEATURE OFF, and
+  // that is the default on purpose: the report renders its own written guidance without it. Only
+  // aggregate counts are ever sent — see lib/advice.ts for the whole argument and the runtime guard.
+  ADVICE_API_KEY: z.string().min(1).optional(),
+  // An enum so that adding a provider is a deliberate code change rather than a typo in the
+  // environment that silently disables the feature.
+  ADVICE_PROVIDER: z.enum(['anthropic']).default('anthropic'),
+  ADVICE_MODEL: z.string().min(1).default('claude-sonnet-5'),
+
   LOG_LEVEL: z.string().default('info'),
 });
 
