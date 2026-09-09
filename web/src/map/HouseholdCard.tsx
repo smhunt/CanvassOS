@@ -112,38 +112,6 @@ function OrganizerView({ hh, onFly }: { hh: Household; onFly: (lon: number, lat:
   const differing = hh.voters.filter((v) => v.mail_differs_real).length;
   return (
     <div className="stack">
-      <div className="kv">
-        <div>
-          <span className="kv__k">Voters</span>
-          <span className="kv__v">{n(hh.n_voters)}</span>
-        </div>
-        <div>
-          <span className="kv__k">Non-resident</span>
-          <span className={`kv__v${nonres ? ' kv__v--accent' : ''}`}>{n(nonres)}</span>
-        </div>
-        <div>
-          <span className="kv__k">PO box</span>
-          <span className="kv__v">{n(hh.n_po_box ?? 0)}</span>
-        </div>
-      </div>
-
-      <div className="tags">
-        <span className={`tag tag--q-${hh.record_quality}`}>{QUALITY_LABELS[hh.record_quality] ?? hh.record_quality}</span>
-        {hh.is_institution && <span className="tag tag--neutral">Institution / multi-unit</span>}
-        {hh.is_legal && <span className="tag tag--neutral">Unmapped parcel</span>}
-        {hh.addr_match && hh.addr_match !== 'exact' && !hh.is_legal && <span className="tag tag--neutral">match: {hh.addr_match}</span>}
-      </div>
-      {hh.property_address_raw && hh.property_address_raw !== hh.address && (
-        <p className="muted small">
-          Listed as: <span className="mono">{hh.property_address_raw}</span>
-        </p>
-      )}
-      {hh.lat !== null && hh.lon !== null && (
-        <button type="button" className="btn btn--small" onClick={() => onFly(hh.lon as number, hh.lat as number)}>
-          Centre on map
-        </button>
-      )}
-
       <section aria-labelledby="voters-h">
         <h3 id="voters-h" className="sheet__h3">
           Voters <span className="muted">({hh.voters.length})</span>
@@ -156,6 +124,46 @@ function OrganizerView({ hh, onFly }: { hh: Household; onFly: (lon: number, lat:
               <VoterRow key={v.id} v={v} />
             ))}
           </ul>
+        )}
+      </section>
+
+      {/* Who is at the door is the reason this card is open, so it comes first. Everything below is
+          about the RECORD — counts, how well the address matched, where the map is — which is
+          reference material a canvasser scrolls to, not what they came for. */}
+      <section aria-labelledby="record-h">
+        <h3 id="record-h" className="sheet__h3">
+          This record
+        </h3>
+        <div className="kv">
+          <div>
+            <span className="kv__k">Voters</span>
+            <span className="kv__v">{n(hh.n_voters)}</span>
+          </div>
+          <div>
+            <span className="kv__k">Non-resident</span>
+            <span className={`kv__v${nonres ? ' kv__v--accent' : ''}`}>{n(nonres)}</span>
+          </div>
+          <div>
+            <span className="kv__k">PO box</span>
+            <span className="kv__v">{n(hh.n_po_box ?? 0)}</span>
+          </div>
+        </div>
+
+        <div className="tags">
+          <span className={`tag tag--q-${hh.record_quality}`}>{QUALITY_LABELS[hh.record_quality] ?? hh.record_quality}</span>
+          {hh.is_institution && <span className="tag tag--neutral">Institution / multi-unit</span>}
+          {hh.is_legal && <span className="tag tag--neutral">Unmapped parcel</span>}
+          {hh.addr_match && hh.addr_match !== 'exact' && !hh.is_legal && <span className="tag tag--neutral">match: {hh.addr_match}</span>}
+        </div>
+        {hh.property_address_raw && hh.property_address_raw !== hh.address && (
+          <p className="muted small">
+            Listed as: <span className="mono">{hh.property_address_raw}</span>
+          </p>
+        )}
+        {hh.lat !== null && hh.lon !== null && (
+          <button type="button" className="btn btn--small" onClick={() => onFly(hh.lon as number, hh.lat as number)}>
+            Centre on map
+          </button>
         )}
       </section>
 

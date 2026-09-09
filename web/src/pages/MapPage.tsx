@@ -65,6 +65,10 @@ export function MapPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
+  // On a phone the search field is a whole row of a screen whose job is the map, and it is used
+  // occasionally rather than constantly — so it collapses to an icon and expands over the toolbar.
+  // At tablet width and up there is room for both and this state is ignored (see styles.css).
+  const [searchOpen, setSearchOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 720px)').matches : true));
   const [selection, setSelection] = useState<Selection | null>(null);
 
@@ -124,8 +128,30 @@ export function MapPage() {
     if (a) setSelection(null);
   }, []);
 
+  /**
+   * Centre a door, in the part of the map that is actually visible.
+   *
+   * The door sheet covers the bottom ~60% of a phone screen (and the right edge on a desktop), so
+   * centring on the whole canvas put the door under the very panel that asked for it. The sheet is
+   * measured at call time rather than derived from a breakpoint, because it is the same element at
+   * a different edge depending on width and its height depends on its content.
+   */
   const flyTo = useCallback((lon: number, lat: number) => {
-    mapRef.current?.flyTo(lon, lat, 16.5);
+    const canvas = mapRef.current ? document.querySelector('.map-canvas') : null;
+    const sheet = document.querySelector('.sheet');
+    let padding: { top?: number; bottom?: number; left?: number; right?: number } | undefined;
+    if (canvas && sheet) {
+      const c = canvas.getBoundingClientRect();
+      const s = sheet.getBoundingClientRect();
+      // Whichever edge it is anchored to. A 24px breathing gap keeps the pin off the sheet's edge,
+      // and the cap stops a tall sheet on a short screen asking for more padding than there is map.
+      const cap = (v: number, axis: number) => Math.max(0, Math.min(v, axis * 0.6));
+      padding =
+        s.top - c.top > c.height * 0.25
+          ? { bottom: cap(c.bottom - s.top + 24, c.height) }
+          : { right: cap(c.right - s.left + 24, c.width) };
+    }
+    mapRef.current?.flyTo(lon, lat, 16.5, padding);
   }, []);
 
   const onSearchPick = useCallback(
@@ -275,7 +301,33 @@ export function MapPage() {
           <span>Filters</span>
           {active > 0 && <span className="badge">{active}</span>}
         </button>
-        {organizer && <SearchBox onPick={onSearchPick} />}
+        {organizer && (
+          <>
+            <button
+              type="button"
+              className="btn btn--map map-searchbtn"
+              onClick={() => setSearchOpen((o) => !o)}
+              aria-expanded={searchOpen}
+              aria-label="Search voters and addresses"
+            >
+              <SearchIcon />
+            </button>
+            <div className={`search-slot${searchOpen ? ' search-slot--open' : ''}`}>
+              <SearchBox onPick={onSearchPick} />
+              <button
+                type="button"
+                className="btn btn--icon search-slot__close"
+                onClick={() => setSearchOpen(false)}
+                aria-label="Close search"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="5" y1="5" x2="19" y2="19" />
+                  <line x1="19" y1="5" x2="5" y2="19" />
+                </svg>
+              </button>
+            </div>
+          </>
+        )}
         <label className="select-pill">
           <span className="visually-hidden">Colour by</span>
           <select value={mode} onChange={(e) => setMode(e.target.value as ColourMode)} aria-label="Colour households by">
@@ -459,6 +511,15 @@ function FilterIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polygon points="3 5 21 5 14 13 14 20 10 20 10 13 3 5" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <line x1="16.5" y1="16.5" x2="21" y2="21" />
     </svg>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.4.3';
+export const APP_VERSION = '0.4.4';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,15 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.4.4',
+    date: '2026-09-08',
+    changes: [
+      'More map on a phone: search collapses to an icon and the toolbar no longer wraps onto a second row.',
+      'The door card leads with the voters; the counts and \u201cCentre on map\u201d moved below them.',
+      'Fixed: \u201cCentre on map\u201d used to put the door underneath the panel that asked for it.',
+    ],
+  },
   {
     version: '0.4.3',
     date: '2026-09-08',

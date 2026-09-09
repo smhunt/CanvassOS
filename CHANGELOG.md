@@ -4,6 +4,25 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-09-08
+
+### Changed
+
+- **More map on a phone.** The search field took a whole row and pushed the toolbar onto a second
+  one, which together ate roughly a third of the screen the page exists to show. Search is now an
+  icon that expands over the toolbar, the toolbar never wraps (it scrolls if it must), and the
+  controls are translucent so the map reads through them.
+- **The door card leads with the people.** Voter names come first; the counts, the address-match
+  chip and "Centre on map" moved into a "This record" section below them — reference material a
+  canvasser scrolls to rather than what they opened the card for.
+
+### Fixed
+
+- **"Centre on map" put the door underneath the sheet that asked for it.** The map was centring on
+  the whole canvas while the door sheet covered the bottom ~60% of a phone screen. It now measures
+  the sheet at call time and centres within the map you can actually see — the bottom edge on a
+  phone, the right edge on a desktop, since it is the same element at a different edge.
+
 ## [0.4.3] - 2026-09-08
 
 ### Added

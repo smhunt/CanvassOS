@@ -13,7 +13,12 @@ export interface ViewportStats {
 }
 
 export interface MapViewHandle {
-  flyTo(lon: number, lat: number, zoom?: number): void;
+  /**
+   * `padding` is the chrome covering the canvas — the door sheet, mostly. MapLibre centres within
+   * the padded box, so passing it is what stops "Centre on map" putting the door underneath the
+   * sheet that asked for it.
+   */
+  flyTo(lon: number, lat: number, zoom?: number, padding?: { top?: number; bottom?: number; left?: number; right?: number }): void;
   fitBounds(bounds: [number, number, number, number], padding?: number): void;
   getZoom(): number;
 }
@@ -119,10 +124,18 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
   onSelectSignRef.current = onSelectSign;
 
   useImperativeHandle(ref, () => ({
-    flyTo(lon, lat, zoom) {
+    flyTo(lon, lat, zoom, padding) {
       const map = mapRef.current;
       if (!map) return;
-      map.flyTo({ center: [lon, lat], zoom: zoom ?? Math.max(map.getZoom(), 16), speed: 1.4, essential: true });
+      map.flyTo({
+        center: [lon, lat],
+        zoom: zoom ?? Math.max(map.getZoom(), 16),
+        speed: 1.4,
+        essential: true,
+        // MapLibre's PaddingOptions wants all four sides, so the partial is filled in here rather
+        // than at every call site.
+        ...(padding ? { padding: { top: 0, bottom: 0, left: 0, right: 0, ...padding } } : {}),
+      });
     },
     fitBounds(bounds, padding = 48) {
       const map = mapRef.current;

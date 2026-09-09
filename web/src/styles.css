@@ -1266,6 +1266,16 @@ select {
   border-color: transparent;
   white-space: nowrap;
 }
+/* The controls float ON the map, so they let a little of it through rather than punching opaque
+   holes in it. Plain colour first for anything without color-mix; the blur keeps the label legible
+   over a busy basemap, and degrades to flat translucency where it is unsupported. */
+.btn--map,
+.select-pill,
+.search input.search__input {
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  backdrop-filter: blur(10px);
+}
 .btn--map-active {
   border-color: var(--brand);
 }
@@ -1288,6 +1298,41 @@ select {
   right: 0;
   min-width: 170px;
 }
+/* Phone: the field collapses to an icon in the toolbar and expands over it. Tablet and up have
+   room for both, so the slot is just an inline flex child and the icon button is hidden. */
+.map-searchbtn {
+  display: none;
+}
+.search-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.search-slot__close {
+  display: none;
+}
+@media (max-width: 719.98px) {
+  .map-searchbtn {
+    display: inline-flex;
+  }
+  .search-slot {
+    display: none;
+  }
+  .search-slot--open {
+    display: flex;
+    /* Over the toolbar rather than beside it: the row it would otherwise add is the whole point. */
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 7;
+  }
+  .search-slot--open .search-slot__close {
+    display: inline-flex;
+    flex: none;
+  }
+}
+
 .search {
   position: relative;
   flex: 1 1 200px;
@@ -1807,15 +1852,22 @@ select {
    because that is where the hand already is. */
 @media (max-width: 719.98px) {
   .map-toolbar {
-    flex-wrap: wrap;
+    /* Never a second row. The search field used to take one and the toolbar wrapped onto another,
+       which together ate roughly a third of the map on a phone — the one thing this screen is for.
+       Search is an icon here (see .map-searchbtn) and the row scrolls if it must. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
     top: 8px;
     left: 8px;
     right: 8px;
     gap: 6px;
   }
+  .map-toolbar::-webkit-scrollbar {
+    display: none;
+  }
   .search {
-    order: 5;
-    flex: 1 1 100%;
+    flex: 1 1 auto;
     max-width: none;
   }
   .btn--map span:not(.badge) {
