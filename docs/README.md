@@ -552,12 +552,12 @@ queries join `household`, and a widened join must not become a widened response 
 **When you add a personal-data field**, add it to the right role branch in `serialize.ts`, update
 `API.md`, and extend the restricted-key assertions in `api/test/api.test.ts`.
 
-### Street-level imagery: the one third-party call
+### Street-level imagery: the first of two third-party calls
 
 `GET /api/households/:id/streetview` returns a photo of the door so a canvasser can recognise the
 house — is it the one behind the hedge, are there steps, is there a gate. It is **off unless
-`STREETVIEW_API_KEY` is set**, which is the default: this is the only call the stack makes to anyone
-else, and a campaign is entitled to make none. The design in `api/src/lib/streetview.ts` follows
+`STREETVIEW_API_KEY` is set**, which is the default: the stack makes exactly two outbound calls and
+both are off unless configured, so a campaign that wants to make none simply sets no keys. The design in `api/src/lib/streetview.ts` follows
 from s. 23(8) of the *Municipal Elections Act* ("shall not provide it to any other person"):
 
 - **Only coordinates leave the building.** Never a name, an address string, or a household id. A
@@ -584,6 +584,26 @@ configured) and 404 (no imagery) both render as *nothing at all*, because both m
 to a canvasser. It renders the required Google attribution, and offers no download, share, or
 open-in-new-tab: this is a photograph of an elector's house.
 
+### The advice layer: the second third-party call
+
+`api/src/lib/advice.ts` posts the reachability report to Anthropic so the numbers come back as
+prose, on `/reports?tab=unreachable`. **Off unless `ADVICE_API_KEY` is set**, and the report renders
+its own written guidance without it — which is why the feature is useful with the key absent.
+
+The s. 23(8) argument that shapes `streetview.ts` applies here with more force, because a row in a
+prompt is the list "provided to another person" as plainly as anything could be:
+
+- **Only counts leave.** `AdviceInput` has no field that can carry a row — it is category codes and
+  integers. `assertNoPersonalData()` re-checks the serialised payload before it is sent, because
+  "the type says it is safe" stops being true the day someone widens the type. The suite asserts the
+  outgoing body against real elector names and addresses from the loaded database.
+- **The key is server-side only** and never reaches the browser.
+- **Cached on a hash of the exact facts sent**, so opening the report three times while planning
+  bills once, and the advice changes when — and only when — the numbers do.
+- **Every failure path returns null.** The numbers are the product and the prose is a garnish; a
+  provider outage must not take the report down.
+- It goes through `app.httpFetch` like Street View, so no test ever makes a billed call.
+
 ### Endpoint groups
 
 Summary only — [`../API.md`](../API.md) is the contract.
@@ -603,6 +623,8 @@ Summary only — [`../API.md`](../API.md) is the contract.
 | Lawn signs | `/api/signs*` | any, except `DELETE /:id` and `DELETE /photo/:photoId`: organizer | `POST` is idempotent and rejects out-of-area coordinates; `pickup` is the retrieval worklist; `requests` is the one voter-data endpoint here and is turf-scoped + audited |
 | Voter contacts | `/api/voter-contacts*` | any (**turf-scoped**), except `gotv` and `DELETE`: organizer | per-purpose consent; PATCH records withdrawal; `gotv` is the send list and is audited on every call |
 | Stats | `/api/stats/overview` | organizer | totals, per-ward, per-community, quality, household size, and live canvass numbers |
+| Reachability | `/api/stats/reachability` | organizer | why part of the list cannot be reached. **Aggregates only** — no name, address or id, asserted in the suite — which is what makes it safe to hand to the advice layer. Every category declares which channel it blocks (`door` / `mail` / `gatekeeper`), because "unreachable" is not one thing: `po_box_only` is 306 doors that are all perfectly knockable. `combined.households_blocked` is door-only and de-duplicated; nothing in the response is the sum of the rows above it. Audited as `view_reachability` |
+| Turf shapes | `/api/turfs/shapes` | any (**scoped**) | the turf overlay on the main map. A volunteer gets only their assigned turfs; an organiser gets all of them with `mine` set on their own — a WHERE clause, not a filter after loading. A name, a shape and two counts, no door list, so fetching the whole municipality is not a bulk read. `approx: true` means the shape was derived from the turf's doors (a padded convex hull) rather than drawn, which can cover doors that are *not* in the turf — the map draws those dotted and says so |
 | Audit | `/api/audit` | admin | reverse-chronological, keyset-paged on `before=<id>`, filterable by `user_id` / `action` |
 
 ### Client-side caching and the service worker

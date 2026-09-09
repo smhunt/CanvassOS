@@ -233,6 +233,45 @@ export const ROADMAP: RoadmapGroup[] = [
     ],
   },
   {
+    category: 'Shipped — at the door, beyond the result buttons',
+    icon: '✅',
+    items: [
+      { label: 'Tag more than one person at a door in a single visit', priority: 'high', done: true },
+      { label: 'Collect a phone number or email at the door, with consent recorded per purpose', priority: 'high', done: true },
+      { label: 'A withdrawal is stamped and kept, never deleted — that record is the proof', priority: 'high', done: true },
+    ],
+  },
+  {
+    category: 'Shipped — Phase 5: messaging',
+    icon: '✅',
+    items: [
+      { label: 'SMS and email to electors who opted in — SMS first, email as the fallback', priority: 'high', done: true },
+      { label: 'Nobody is messaged without an explicit yes; STOP is honoured before the next send', priority: 'high', done: true },
+      { label: 'Sending window and weekend hours enforced in code (CRTC), not left to whoever clicks', priority: 'high', done: true },
+      { label: 'Send it to yourself first, then approve by typing a word — two gates before anything goes out', priority: 'high', done: true },
+      { label: 'A drip across the day, because a Canadian long code is throttled and the excess fails silently', priority: 'high', done: true },
+    ],
+  },
+  {
+    category: 'Shipped — maps everywhere they help',
+    icon: '✅',
+    items: [
+      { label: 'Every lawn sign and every outstanding request on one map', priority: 'high', done: true },
+      { label: 'Turf boundaries on the main map — yours, or everyone\u2019s with yours highlighted', priority: 'high', done: true },
+      { label: 'Open the turf you were last in, and switch turfs from a drawer', priority: 'medium', done: true },
+      { label: 'A turf built from streets gets an approximate outline drawn round its doors', priority: 'low', done: true },
+    ],
+  },
+  {
+    category: 'Shipped — why part of the list cannot be reached',
+    icon: '✅',
+    items: [
+      { label: 'A report separating what blocks a door-knock from what only blocks the post', priority: 'high', done: true },
+      { label: 'Written guidance for each reason, and which ward to look at first', priority: 'high', done: true },
+      { label: 'Optional AI advice written from the counts alone — no name or address ever leaves', priority: 'medium', done: true },
+    ],
+  },
+  {
     category: 'Next — telling people things',
     icon: '🔔',
     items: [
@@ -246,8 +285,12 @@ export const ROADMAP: RoadmapGroup[] = [
     category: 'Planned — Phase 4: reporting and admin',
     icon: '📈',
     items: [
+      {
+        label:
+          'Diff-based re-import of a newer list — new, removed and moved voters, keeping contacts. The biggest remaining gap: today a re-import deletes every contact, sign and consent record.',
+        priority: 'high',
+      },
       { label: 'Coverage and support reports by ward, community, turf and day', priority: 'high' },
-      { label: 'Diff-based re-import of a newer list — new, removed and moved voters, keeping contacts', priority: 'high' },
       { label: 'CSV export with an audit entry for every download', priority: 'medium' },
       { label: 'Aerial imagery layer from the county GIS — current, free, and covers the rural roads', priority: 'low' },
     ],

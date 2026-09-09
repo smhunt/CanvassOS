@@ -7,14 +7,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Self-hosted voter map + canvassing tool for the Sean Hunt mayoral campaign (Middlesex Centre, Ontario;
 election day 2026-10-26). `prompt_plan.md` holds the 4-phase build plan and a dated status section.
 
-**Shipped today:** Phase 1 (import, auth/roles, map/search/stats), Phase 2 (turfs from streets or a
-drawn polygon, assignments, the door screen, contact history, follow-up queue, activity, turf
-reassignment) and Phase 3 (offline write queue + separate sign-photo queue + turf cache in
+**Shipped:** Phase 1 (import, auth/roles, map/search/stats), Phase 2 (turfs from streets or a drawn
+polygon, assignments, the door screen, contact history, follow-up queue, activity, turf
+reassignment), Phase 3 (offline write queue + separate sign-photo queue + turf cache in
 `web/src/offline/`, nearest-first door ordering, the printable turf sheet, add-to-home-screen, a real
-tablet layout), plus three things that were never in the plan — **lawn signs** (GPS, accuracy,
-photos, pickup and delivery lists), **doorstep phone/email with per-purpose consent**, and
-**optional street-level imagery of a door** (off unless `STREETVIEW_API_KEY` is set). Phase 4
-(coverage reports, CSV export with audit, diff re-import) is not started.
+tablet layout) and Phase 5 (opt-in SMS with email fallback, per-purpose consent, STOP, CRTC hours, a
+test-send and typed-word approval, a drip scheduler; `MESSAGING_PROVIDER=log` by default).
+
+Also shipped, none of it in the original plan: **lawn signs** (GPS, accuracy, photos, pickup and
+delivery lists, and a map of placed + requested), **doorstep phone/email with per-purpose consent**,
+**optional street-level imagery of a door** (off unless `STREETVIEW_API_KEY` is set), **turf
+boundaries on the main map** (`GET /api/turfs/shapes`, scoped; street-picked turfs get an
+approximate hull drawn dotted), **the reachability report** (`GET /api/stats/reachability` +
+`/reports?tab=unreachable`) and **optional Claude-written advice** on it (off unless
+`ADVICE_API_KEY` is set).
+
+**Phase 4 is the remaining gap** — coverage/support reports by ward/community/turf/day, CSV export
+with audit, and above all the **diff-based re-import**: today `make import-force` deletes every
+contact, sign and consent record.
+
+**Deployed** at `https://canvass.webarchitecture.ca` behind the pre-existing Cloudflare Tunnel — not
+`sean-hunt.com`, because a tunnel hostname must be on Cloudflare DNS and that zone is on OpenSRS
+carrying the campaign's Google Workspace MX. See README "DNS — what is actually deployed".
 
 Data as loaded: **7,140 households, 16,892 electors**, 7,067 mapped, 70 legal descriptions, 3 that
 would not geocode at all, 11 institutions.
@@ -386,3 +400,12 @@ indicative; confirm at the door.
   pass a loose string.
 - A new media query uses one of the four stops in `web/src/styles.css` — a fifth number is a bug, and
   so is a `max-width` that shares an edge with a `min-width`.
+- **There is no Prettier or ESLint config in this repo. Do not run them.** `npx prettier --write`
+  finds no config, falls back to its defaults, and reformats the file to double quotes — one run
+  turned a 10-line change into a 328-line diff. Match the surrounding style by hand: single quotes,
+  and the existing line width.
+- **Before adding a CSS rule, grep for the selector.** Two bugs this week came from not doing it: a
+  second `.map-toolbar` declaration that lost to the canonical phone block on source order, and
+  `.cv-note` declared twice in `canvass.css` (a textarea and, further down, a status banner) where
+  the later one silently won and made the textarea a 14.4px flex container. Edit the rule that
+  exists rather than layering another on top of it.

@@ -5,7 +5,7 @@ Users: Sean (admin), a small core team (organizers), volunteers on phones at the
 
 ---
 
-## Status — 2026-09-05
+## Status — 2026-09-09
 
 Everything below this section is the **original plan, unedited**: a record of what was intended, not of
 what happened. This section is the difference between the two. `CHANGELOG.md` has the release-by-release
@@ -16,7 +16,8 @@ detail; `docs/README.md` describes what the code actually does now.
 | 1. Foundation + read-only viewer | **shipped** | Compose stack, `db/schema.sql`, the Python importer, login/roles/invites, full-municipality map with filters and search, household card, stats dashboard. 7,140 households / 16,892 voters loaded; 7,067 mapped, 70 legal descriptions, 11 institutions. |
 | 2. Canvassing core | **shipped** | Turfs from picked streets *or* a drawn polygon, `turf_household.walk_order`, assignments, the door screen with results/support/notes/flags, latest-status colouring on the map, follow-up queue, per-user activity. |
 | 3. Field hardening | **shipped** | PWA install and the app-shell service worker shipped back in Phase 1; walking order along the street shipped with turfs. Now added: the offline turf cache and write queue (`web/src/offline/` — IndexedDB, backoff, parked entries surfaced to the volunteer), nearest-first ordering from device GPS (`web/src/canvass/nearMe.ts`, with walk order still the default), the printable turf sheet at `/turfs/:turfId/sheet`, the add-to-home-screen path, a held queue for sign photos taken offline, and a four-stop breakpoint scale that gives iPads a master-detail door screen instead of desktop density under a finger. |
-| 4. Reporting + admin | **partly** | Encrypted backup/restore and `make purge` shipped in Phase 1; the audit log and admin user management with it. **Not landed:** coverage/support reports beyond `/api/stats/overview` and `/reports`, CSV export with audit entries, and the diff-based list re-import (today `make import-force` deletes canvass data instead — see CLAUDE.md). |
+| 4. Reporting + admin | **partly** | Encrypted backup/restore and `make purge` shipped in Phase 1; the audit log and admin user management with it. Since added: the **reachability report** (`/reports?tab=unreachable`, `GET /api/stats/reachability`) with optional Claude-written advice from aggregate counts only. **Not landed:** coverage/support reports by ward/community/turf/day, CSV export with audit entries, and the diff-based list re-import — still the biggest gap, because today `make import-force` deletes every contact, sign and consent record instead (see CLAUDE.md). |
+| 5. Messaging | **shipped** | Opt-in SMS with email fallback: per-purpose consent, STOP honoured before the next queued send, CRTC sending window and weekend hours enforced in code, a test-send-to-yourself gate and a typed-word approval before anything leaves, and a drip scheduler because a Canadian long code is throttled to ~100-250/day and the excess fails silently. `MESSAGING_PROVIDER=log` by default: a real send needs both a live provider and its credentials, and the API refuses to boot with one without the other. |
 
 ### Phase 5 planned — 2026-09-06
 
@@ -37,6 +38,35 @@ The two facts that shape it, both from `docs/data-sources-research.md` §2.2:
 Half of it already exists: `voter_contact` carries per-purpose consent (`consent_gotv` separate from
 `consent_updates`), a withdrawal that is stamped rather than deleted, and `GET /api/voter-contacts/gotv`
 already returns the send list.
+
+### Shipped since — 2026-09-07 to 09
+
+Everything here came from the field rather than the plan, which is the point of running the tool
+during the campaign it is for.
+
+- **Deployed and public.** `https://canvass.webarchitecture.ca`, behind the pre-existing Cloudflare
+  Tunnel. Not `sean-hunt.com`: a tunnel hostname must be on Cloudflare DNS, that zone is on OpenSRS
+  and carries the campaign's Google Workspace MX, and moving it weeks before an election to gain a
+  hostname on an internal tool is the wrong trade. README has the full reasoning.
+- **A map of the lawn signs** — placed and requested together, because they are two halves of one
+  driving route.
+- **Turf boundaries on the main map**, scoped: a volunteer sees their own, an organiser sees all of
+  them with their own drawn heavier. A turf built from streets has no boundary, so one is
+  approximated from its doors and drawn dotted — a hull covers ground it cannot vouch for, and the
+  map says so rather than implying coverage.
+- **Open the turf you were last in**, and a drawer to switch turfs without losing your place.
+- **The unreachable report**, which separates what blocks a door-knock from what only blocks the
+  post. `po_box_only` is 306 doors and all of them knockable; counting it as unreachable reported
+  390 blocked doors where there are 73.
+- **Optional Claude-written advice** on that report (`ADVICE_API_KEY`, off by default). The second
+  and last outbound call in the stack; only category codes and integers leave, with a runtime guard
+  and a test asserting the payload against real elector names.
+- **Field fixes.** The turf highlight was unreadable at 1,330 doors (rings merged into one black
+  shape). iOS zoomed in on every form field and never zoomed back — every control computed to 15px,
+  under Safari's 16px threshold — which was also what pushed the map controls off the right edge.
+  "Centre on map" put the door under the sheet that asked for it. "Sync now" was a disabled no-op
+  whenever the queue was empty, which reads as a broken app. A blank optional secret in `.env`
+  stopped the API booting.
 
 ### Requested, not yet built — 2026-09-06
 

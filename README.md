@@ -260,31 +260,44 @@ make tunnel-status  # is the origin answering?
 proxying to the API. Without it every `audit_log` row would record the tunnel's own address, which
 would defeat the point of the log under the Municipal Elections Act.
 
-**DNS: delegate only the subdomain.** `sean-hunt.com` is on OpenSRS nameservers
-(`ns1/2/3.systemdns.com`) and carries the campaign's **Google Workspace MX records**. Do **not**
-move the whole zone to Cloudflare just for this app — a mistake there takes down campaign email.
-Instead delegate the single subdomain:
+**DNS — what is actually deployed.** The stack is live at **`https://canvass.webarchitecture.ca`**,
+not on `sean-hunt.com`. That was a deliberate choice, and the reasoning matters if you change it:
 
-1. Cloudflare dashboard → **Add a site** → enter `canvass.sean-hunt.com` (a subdomain zone, not the
-   apex). Cloudflare assigns two nameservers. If your plan will not accept a subdomain zone, see the
-   fallbacks below.
-2. At OpenSRS, add **NS** records on the parent zone delegating `canvass` to those two nameservers.
-   The apex, `www` and MX are untouched.
-3. Authorise this machine and create the tunnel:
-   ```bash
-   cloudflared tunnel login                      # browser OAuth, writes ~/.cloudflared/cert.pem
-   cloudflared tunnel create canvass             # prints the tunnel UUID + writes <UUID>.json
-   cp deploy/cloudflared-canvass.yml ~/.cloudflared/canvass.yml
-   $EDITOR ~/.cloudflared/canvass.yml            # paste the UUID in both places
-   cloudflared tunnel route dns canvass canvass.sean-hunt.com
-   cloudflared tunnel --config ~/.cloudflared/canvass.yml run
-   ```
-4. To keep it up across reboots:
-   `sudo cloudflared --config ~/.cloudflared/canvass.yml service install`.
+- A Cloudflare Tunnel hostname **must** be served by Cloudflare DNS. `cloudflared tunnel route dns`
+  creates a CNAME to `<UUID>.cfargotunnel.com`, and that target only resolves inside Cloudflare's
+  network — creating it at another registrar looks right in the panel and silently fails.
+- `sean-hunt.com` is on OpenSRS nameservers (`ns1/2/3.systemdns.com`) and carries the campaign's
+  **Google Workspace MX records**. Moving the zone to Cloudflare to get a tunnel hostname puts
+  campaign email in the blast radius, weeks out from an election.
+- `webarchitecture.ca` is already on Cloudflare, so the app got a hostname there in minutes with no
+  DNS risk at all. This is an internal tool for volunteers, not a public campaign page, so the
+  hostname carries no brand weight.
 
-**Fallbacks if a subdomain zone is not available:** point `canvass.sean-hunt.com` at the home IP
-with an A record at OpenSRS and forward ports 80/443 on the router (then use plain `make up`, and
-Caddy gets a Let's Encrypt cert itself) — or move the stack to a small VPS, which is shape A.
+The live setup:
+
+```bash
+cloudflared tunnel login                    # browser OAuth, writes ~/.cloudflared/cert.pem
+# ingress in ~/.cloudflared/config.yml, above the http_status:404 catch-all:
+#   - hostname: canvass.webarchitecture.ca
+#     service: http://localhost:3031
+cloudflared tunnel route dns <UUID> canvass.webarchitecture.ca
+```
+
+`DOMAIN` in `.env` must match the hostname — invite and password-reset links are built from it
+(`api/src/routes/users.ts`). Changing the hostname invalidates every invite link already sent.
+
+**Keeping it up across reboots.** Homebrew's `cloudflared` service is a trap: its plist runs the
+binary with **no arguments**, so `brew services start cloudflared` prints help and exits without
+ever running a tunnel. Use a LaunchAgent with the real command —
+`~/Library/LaunchAgents/ca.webarchitecture.canvass-tunnel.plist`, `RunAtLoad` + `KeepAlive`, running
+`cloudflared --config ~/.cloudflared/config.yml tunnel run`. It is a *user* agent, so it starts at
+login; a machine that reboots to a login screen and sits there stays down until someone logs in.
+`sudo cloudflared service install` is the root-level alternative.
+
+**To move it to `canvass.sean-hunt.com` later**, either delegate just the subdomain to Cloudflare
+(add the `canvass` NS records at OpenSRS, leaving the apex, `www` and MX untouched), or point an A
+record at the host's IP, forward ports 80/443, and use plain `make up` so Caddy gets its own Let's
+Encrypt cert.
 
 **Operational caveats of hosting on the Mac:** the app is unreachable whenever the machine sleeps or
 leaves the network, and the voters list lives on that disk — so keep FileVault on, keep `make backup`
@@ -306,7 +319,7 @@ back. It refuses to run twice on identical files (sha256 recorded in `import_run
 
 ### First login and inviting people
 
-Browse to `https://canvass.sean-hunt.com` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. The
+Browse to `https://canvass.webarchitecture.ca` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. The
 admin account is created **only on first boot when no users exist**; after that the two variables are
 ignored and can be removed from `.env`. **Change the password immediately** (account menu → change
 password). Changing it also logs out every other session.
