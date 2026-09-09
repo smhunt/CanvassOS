@@ -127,7 +127,16 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
         source: 'turf-shapes',
         paint: {
           'fill-color': ['case', ['get', 'mine'], TURF_AREA_MINE, TURF_AREA],
-          'fill-opacity': ['case', ['get', 'mine'], 0.1, 0.04],
+          // An approximation gets less fill than a drawn boundary at the same ownership: it covers
+          // ground it cannot vouch for.
+          'fill-opacity': [
+            'case',
+            ['get', 'approx'],
+            0.03,
+            ['get', 'mine'],
+            0.1,
+            0.04,
+          ],
         },
       },
       {
@@ -139,9 +148,18 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
           'line-color': ['case', ['get', 'mine'], TURF_AREA_MINE, TURF_AREA],
           'line-width': ['case', ['get', 'mine'], 2.5, 1.2],
           'line-opacity': ['case', ['get', 'mine'], 0.95, 0.55],
-          // Somebody else's turf is dashed, so the two are still distinguishable printed in mono
-          // or by a reader who cannot separate the two blues.
-          'line-dasharray': ['case', ['get', 'mine'], ['literal', [1]], ['literal', [3, 2]]],
+          // Three states, three dashes, all readable in mono or by a reader who cannot separate the
+          // two blues: mine solid, somebody else's dashed, and an APPROXIMATED outline dotted —
+          // that one is a hull round the doors, not a boundary anyone drew, and it must not be
+          // mistaken for one.
+          'line-dasharray': [
+            'case',
+            ['get', 'approx'],
+            ['literal', [1, 1.5]],
+            ['get', 'mine'],
+            ['literal', [1]],
+            ['literal', [3, 2]],
+          ],
         },
       },
       {

@@ -1182,7 +1182,7 @@ describe('turf preview', () => {
 });
 
 describe('turf shapes (map overlay)', () => {
-  interface Shape { id: string; name: string; polygon: unknown; mine: boolean; n_households: number }
+  interface Shape { id: string; name: string; polygon: unknown; approx: boolean; mine: boolean; n_households: number }
   const shapes = async (cookie: string) => {
     const res = await call('GET', '/api/turfs/shapes', cookie);
     assert.equal(res.statusCode, 200);
@@ -1195,6 +1195,12 @@ describe('turf shapes (map overlay)', () => {
     // `mine` is what makes an organiser's own work findable among everyone else's on one map.
     assert.ok(all.every((t) => typeof t.mine === 'boolean'));
     assert.ok(all.some((t) => t.polygon !== null), 'a drawn turf must carry its polygon');
+    // A turf built by picking streets has no drawn shape, so one is approximated from its doors.
+    // Every turf with mapped doors gets an outline; `approx` is what says which kind it is.
+    assert.ok(all.every((t) => typeof t.approx === 'boolean'));
+    assert.ok(all.every((t) => !(t.approx && t.polygon === null)), 'approx implies a shape');
+    const streetPicked = all.filter((t) => t.approx);
+    for (const t of streetPicked) assert.ok(t.polygon, `${t.name} should have an approximated outline`);
   });
 
   it('gives a volunteer only the turfs assigned to them', async () => {

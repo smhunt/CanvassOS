@@ -540,8 +540,17 @@ export interface TurfShape {
   id: string;
   name: string;
   ward: string | null;
-  /** Null for a turf built by picking streets rather than drawing a shape. */
+  /**
+   * The shape to draw. Null only when the turf has no mapped doors at all (every one a legal
+   * description) and nothing was drawn either.
+   */
   polygon: Polygon | null;
+  /**
+   * The shape was derived from the turf's doors, not drawn by an organiser. A hull spans the gaps
+   * between its streets, so it can cover doors that are NOT in the turf — it says roughly where the
+   * turf is, never which doors are in it, and the map draws it dotted to say so.
+   */
+  approx: boolean;
   /** Assigned to the signed-in user. Organisers see everyone's, so this is what finds their own. */
   mine: boolean;
   n_households: number;

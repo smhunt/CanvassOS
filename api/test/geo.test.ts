@@ -1,7 +1,7 @@
 /** Unit tests for the turf point-in-polygon helper (no database). */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { pointInPolygon, pointInRing, polygonBBox, type Polygon, type Ring } from '../src/lib/geo.js';
+import { approximateOutline, pointInPolygon, pointInRing, polygonBBox, type Polygon, type Position, type Ring } from '../src/lib/geo.js';
 
 const square: Ring = [
   [0, 0],
@@ -89,5 +89,62 @@ describe('geo.pointInPolygon', () => {
 
   it('returns false for a degenerate ring', () => {
     assert.equal(pointInPolygon(1, 1, { type: 'Polygon', coordinates: [[[0, 0], [1, 1]]] }), false);
+  });
+});
+
+describe('approximateOutline', () => {
+  const area = (p: NonNullable<ReturnType<typeof approximateOutline>>) => {
+    const r = p.coordinates[0]!;
+    let a = 0;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += r[j]![0] * r[i]![1] - r[i]![0] * r[j]![1];
+    return Math.abs(a / 2);
+  };
+
+  it('wraps a block of doors and contains them all', () => {
+    const doors: Position[] = [
+      [-81.38, 43.08],
+      [-81.37, 43.08],
+      [-81.37, 43.09],
+      [-81.38, 43.09],
+      [-81.375, 43.085],
+    ];
+    const out = approximateOutline(doors)!;
+    assert.ok(out, 'a block of doors has an outline');
+    // Padding pushes the ring outwards, so every door it was built from must fall inside it.
+    for (const [lon, lat] of doors) {
+      assert.ok(pointInPolygon(lon, lat, out), `door ${lon},${lat} must be inside its own outline`);
+    }
+  });
+
+  it('gives a single street real width instead of a zero-area sliver', () => {
+    // Collinear doors: the hull itself has no area, which is the case that would draw nothing.
+    const street: Position[] = [
+      [-81.38, 43.08],
+      [-81.379, 43.08],
+      [-81.378, 43.08],
+      [-81.377, 43.08],
+    ];
+    const out = approximateOutline(street)!;
+    assert.ok(out);
+    assert.ok(area(out) > 0, 'a straight street must still enclose an area');
+    for (const [lon, lat] of street) assert.ok(pointInPolygon(lon, lat, out));
+  });
+
+  it('still produces something for one door, and nothing for none', () => {
+    const one = approximateOutline([[-81.38, 43.08]])!;
+    assert.ok(one);
+    assert.ok(pointInPolygon(-81.38, 43.08, one));
+    assert.equal(approximateOutline([]), null);
+  });
+
+  it('pads in metres, not degrees, so the shape is not stretched east-west', () => {
+    const out = approximateOutline([[-81.38, 43.08]])!;
+    const r = out.coordinates[0]!;
+    const wLon = Math.max(...r.map((p) => p[0])) - Math.min(...r.map((p) => p[0]));
+    const hLat = Math.max(...r.map((p) => p[1])) - Math.min(...r.map((p) => p[1]));
+    // At 43 degrees N a degree of longitude is ~cos(43) = 0.73 of a degree of latitude, so an
+    // equal-metres box must be WIDER in degrees by roughly that factor.
+    const ratio = wLon / hLat;
+    assert.ok(ratio > 1.2 && ratio < 1.5, `expected ~1.37, got ${ratio}`);
   });
 });

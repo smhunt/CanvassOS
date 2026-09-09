@@ -5,7 +5,7 @@ import { currentSession, requireAuth, requireRole } from '../auth/guard.js';
 import { one, q, withTx, type Queryable } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { forbidden, notFound } from '../lib/errors.js';
-import { pointInPolygon, polygonBBox, polygonSchema, type Polygon } from '../lib/geo.js';
+import { approximateOutline, pointInPolygon, polygonBBox, polygonSchema, type Polygon, type Position } from '../lib/geo.js';
 import { assertTurfAccess } from '../lib/scope.js';
 import { isOrganizer, serializeDoor, type DoorRow, type VoterRow } from '../lib/serialize.js';
 
@@ -380,9 +380,14 @@ export const turfRoutes: FastifyPluginAsync = async (app) => {
    * Registered before `/:id` for readability; Fastify would prefer the static route regardless.
    *
    * Deliberately narrow: a name, a shape, and two counts. No door list and no elector, so this can
-   * be fetched for the whole municipality without becoming a bulk read of the list. A turf built by
-   * picking streets has no drawn polygon and comes back with `polygon: null` — the client says how
-   * many rather than silently showing fewer shapes than the turf count.
+   * be fetched for the whole municipality without becoming a bulk read of the list.
+   *
+   * A turf built by picking streets has no drawn shape, so one is APPROXIMATED from its doors — a
+   * padded convex hull, returned with `approx: true` and drawn dotted. The distinction is not
+   * cosmetic: a hull spans the gaps between its streets, so it can cover doors that are not in the
+   * turf. It answers "roughly where is this turf", never "which doors are in it", and the flag is
+   * what stops the map implying otherwise. The coordinates are aggregated into one shape here and
+   * the door list itself never leaves.
    */
   app.get('/shapes', { preHandler: requireAuth }, async (req) => {
     const me = currentSession(req).user;
@@ -403,18 +408,45 @@ export const turfRoutes: FastifyPluginAsync = async (app) => {
       params,
     );
 
+    // One query for every street-picked turf's doors, rather than one per turf.
+    const needShape = rows.filter((t) => !t.polygon).map((t) => t.id);
+    const hulls = new Map<string, Polygon | null>();
+    if (needShape.length > 0) {
+      const pts = await q<{ turf_id: string; lon: number; lat: number }>(
+        app.db,
+        `SELECT x.turf_id, h.lon, h.lat
+         FROM turf_household x JOIN household h ON h.id = x.household_id
+         WHERE x.turf_id = ANY($1::uuid[]) AND h.lat IS NOT NULL AND h.lon IS NOT NULL`,
+        [needShape],
+      );
+      const byTurf = new Map<string, Position[]>();
+      for (const p of pts) {
+        const list = byTurf.get(p.turf_id) ?? [];
+        list.push([p.lon, p.lat]);
+        byTurf.set(p.turf_id, list);
+      }
+      for (const id of needShape) hulls.set(id, approximateOutline(byTurf.get(id) ?? []));
+    }
+
     // Picked explicitly rather than spread: an added column on `turf` must not reach a volunteer
     // by accident, which is the rule serialize.ts exists to enforce everywhere else.
     return {
-      turfs: rows.map((t) => ({
-        id: t.id,
-        name: t.name,
-        ward: t.ward,
-        polygon: t.polygon ?? null,
-        mine: t.mine,
-        n_households: t.n_households,
-        contacted: t.contacted,
-      })),
+      turfs: rows.map((t) => {
+        const drawn = t.polygon ?? null;
+        const shape = drawn ?? hulls.get(t.id) ?? null;
+        return {
+          id: t.id,
+          name: t.name,
+          ward: t.ward,
+          polygon: shape,
+          // True when the shape was derived from the doors rather than drawn by an organiser. A
+          // turf whose every door is a legal description has no coordinates at all and stays null.
+          approx: shape !== null && drawn === null,
+          mine: t.mine,
+          n_households: t.n_households,
+          contacted: t.contacted,
+        };
+      }),
     };
   });
 

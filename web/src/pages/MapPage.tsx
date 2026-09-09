@@ -188,10 +188,11 @@ export function MapPage() {
         .map((t) => ({
           type: 'Feature',
           geometry: t.polygon as Polygon,
-          properties: { id: t.id, name: t.name, mine: t.mine },
+          properties: { id: t.id, name: t.name, mine: t.mine, approx: t.approx },
         })),
     };
   }, [turfsOn, turfShapesQ.data]);
+  const turfsApprox = (turfShapesQ.data ?? []).filter((t) => t.approx).length;
   const turfsWithoutShape = (turfShapesQ.data ?? []).filter((t) => !t.polygon).length;
 
   const turfDoors = useTurfDoorsForMap(turfId);
@@ -350,13 +351,20 @@ export function MapPage() {
       />
 
       <div className="map-bottomleft">
-        {/* Promised by the overlay, so it has to be said: a street-picked turf has no drawn shape
-            and cannot be outlined, and a count that quietly disagrees with the Turfs page is worse
-            than no overlay. */}
+        {/* A dotted shape is a hull round the doors, not a boundary anyone drew, and it can cover
+            doors that are not in the turf. The map says so in words as well as in the dash — this
+            is the difference between "roughly here" and "these doors". */}
+        {turfsOn && turfsApprox > 0 && (
+          <div className="pill" role="status">
+            {n(turfsApprox)} dotted {turfsApprox === 1 ? 'outline is' : 'outlines are'} approximate — drawn around the
+            doors of a turf built from streets, so {turfsApprox === 1 ? 'it' : 'they'} may cover doors that are not in
+            it
+          </div>
+        )}
         {turfsOn && turfsWithoutShape > 0 && (
           <div className="pill" role="status">
-            {n(turfsWithoutShape)} {turfsWithoutShape === 1 ? 'turf was' : 'turfs were'} built from streets and{' '}
-            {turfsWithoutShape === 1 ? 'has' : 'have'} no outline to draw
+            {n(turfsWithoutShape)} {turfsWithoutShape === 1 ? 'turf has' : 'turfs have'} no mapped doors, so{' '}
+            {turfsWithoutShape === 1 ? 'it cannot' : 'they cannot'} be outlined at all
           </div>
         )}
         <div className="pill pill--counts" aria-live="polite">

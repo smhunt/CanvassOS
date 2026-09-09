@@ -647,12 +647,18 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
 
 - `GET /api/turfs/shapes` → **any signed-in role**, scoped. The turf boundaries for the map overlay.
   ```
-  { turfs: [{ id, name, ward, polygon, mine, n_households, contacted }] }
+  { turfs: [{ id, name, ward, polygon, approx, mine, n_households, contacted }] }
   ```
   A volunteer gets only the turfs assigned to them; an organiser or admin gets every active turf
-  with `mine` set on their own. The scope is a WHERE clause, not a filter after loading. `polygon`
-  is null for a turf built by picking streets. Deliberately narrow — a name, a shape and two counts,
-  no door list — so it can be fetched for the whole municipality without being a bulk read.
+  with `mine` set on their own. The scope is a WHERE clause, not a filter after loading.
+  Deliberately narrow — a name, a shape and two counts, no door list — so it can be fetched for the
+  whole municipality without being a bulk read.
+
+  **`approx: true` means the shape was derived, not drawn.** A turf built by picking streets has no
+  boundary of its own, so a padded convex hull of its doors is returned instead. A hull spans the
+  gaps between its streets and can therefore cover doors that are *not* in the turf: it answers
+  "roughly where is this turf", never "which doors are in it". The map draws those dotted and says
+  so in words. `polygon` is null only when a turf has no mapped doors at all.
 
 - `GET /api/stats/reachability` → organizer/admin. Why part of the list cannot be reached.
   Aggregates only — no name, address or id is in the response, which is what makes it safe to hand

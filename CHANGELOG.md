@@ -14,8 +14,12 @@ All notable changes to MC Canvass are recorded here. The format follows
   two weights rather than two colours, so the overlay never competes with the colour mode painting
   the doors underneath, and the two stay distinguishable printed in mono. Names label each shape
   from z11. Scoped server-side by `GET /api/turfs/shapes`, which carries a name, a shape and two
-  counts and no door data at all. Turfs built by picking streets have no outline to draw, and the
-  map says how many rather than quietly showing fewer shapes than you have turfs.
+  counts and no door data at all.
+
+  A turf built by picking streets has no boundary of its own, so one is approximated from its doors
+  — a padded convex hull — and drawn dotted. That distinction is not cosmetic: a hull spans the gaps
+  between its streets and can cover doors that are not in the turf, so it says roughly where the
+  turf is and never which doors are in it. The map says so in words as well as in the dash.
 
 ## [0.4.2] - 2026-09-08
 
