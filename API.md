@@ -51,8 +51,13 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
     lat, lon, addr_match, record_quality, is_legal, is_institution, n_voters,
     voters: [{ id, display_name, full_name, first_name, middle_names, last_name, suffix, resident_class, mail_kind,
                mail_differs_real, mailing_address, mail_city, mail_postal, last_support, last_result, last_contact_at }],
+    turfs: [{ id, name }],
     status: { last_result, last_contact_at, last_user_name } }
   ```
+  `turfs` is the **active** turfs this door is in, so the card can offer a way into the door screen
+  instead of being read-only. Scoped like everything else: a volunteer is told only about turfs
+  assigned to them, so this cannot become a way to enumerate the campaign's turf structure. An empty
+  array is the ordinary case — most doors are in no turf — and is not an error.
   Audit `view_household`.
 - `GET /api/households/legal?ward=` → `{ households: [...] }` the concession/lot rows (organizer/admin) so they are listable even though unmapped.
 

@@ -4,6 +4,23 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-09-10
+
+### Added
+
+- **Actions on a door you tap on the map.** The card told you who lived there and then offered
+  nothing, so recording a visit meant remembering the address, finding the turf and walking in from
+  the door screen. It now leads with **Open in the door screen** (when the door is in a turf you can
+  walk), **Place a lawn sign**, and **Directions** in the phone's own map app.
+
+  The actions are there whether or not the door is in a turf — a door outside every turf is the one
+  *most* likely to need a sign or directions, not the least — and when there is no turf the card
+  says so plainly rather than hiding the button with no explanation.
+
+  `GET /api/households/:id` now returns `turfs: [{ id, name }]` to make this possible, scoped the
+  same way as everything else: a volunteer is told only about turfs assigned to them, so it cannot
+  become a way to enumerate the campaign's turf structure.
+
 ## [0.4.5] - 2026-09-10
 
 ### Fixed

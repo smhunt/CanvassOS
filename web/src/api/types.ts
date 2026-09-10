@@ -82,6 +82,12 @@ export interface HouseholdBase {
   n_voters: number;
   n_nonresident?: number;
   n_po_box?: number;
+  /**
+   * The active turfs this door is in, so the card can offer a way into the door screen. Scoped: a
+   * volunteer is only told about turfs assigned to them, an organiser sees all of them. Empty means
+   * the door is in no turf — a real and common state, not an error.
+   */
+  turfs: { id: string; name: string }[];
 }
 
 export interface Household extends HouseholdBase {

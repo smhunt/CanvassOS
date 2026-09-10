@@ -228,7 +228,7 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
     const hh = await one<HouseholdRow>(app.db, `SELECT ${HOUSEHOLD_COLS} FROM household h WHERE h.id = $1`, [id]);
     if (!hh) throw notFound('household not found');
 
-    const [voters, status] = await Promise.all([
+    const [voters, status, turfs] = await Promise.all([
       q<VoterRow>(
         app.db,
         `SELECT ${VOTER_COLS}
@@ -246,6 +246,18 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
          WHERE c.household_id = $1 ORDER BY c.at DESC LIMIT 1`,
         [id],
       ),
+      // Which turf this door is in, so the card can offer a way into the door screen instead of
+      // being a dead end. Scoped like everything else: a volunteer is only told about turfs
+      // assigned to them, so this cannot become a way to enumerate the campaign's turf structure.
+      q<{ id: string; name: string }>(
+        app.db,
+        `SELECT t.id, t.name
+         FROM turf_household x JOIN turf t ON t.id = x.turf_id
+         WHERE x.household_id = $1 AND NOT t.archived
+           ${isOrganizer(role) ? '' : 'AND EXISTS (SELECT 1 FROM assignment a WHERE a.turf_id = t.id AND a.user_id = $2)'}
+         ORDER BY t.name`,
+        isOrganizer(role) ? [id] : [id, sess.user.id],
+      ),
     ]);
 
     await audit(app.db, req.log, { userId: sess.user.id, action: 'view_household', target: id, ip: req.ip });
@@ -253,6 +265,8 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
     return {
       ...serializeHousehold(hh, role),
       voters: voters.map((v) => serializeVoter(v, role)),
+      // Picked explicitly, like every other row that leaves this API.
+      turfs: turfs.map((t) => ({ id: t.id, name: t.name })),
       status: status ?? { last_result: null, last_contact_at: null, last_user_name: null },
     };
   });

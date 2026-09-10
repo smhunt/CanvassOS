@@ -1181,6 +1181,51 @@ describe('turf preview', () => {
   });
 });
 
+describe('household -> turf (door card actions)', () => {
+  it('tells an organiser which turf a door is in', async () => {
+    // Any door that is in a turf; the turf suite above has already created one.
+    const list = await call('GET', '/api/turfs', organizerCookie);
+    const turf = (list.json() as { turfs: { id: string; name: string }[] }).turfs[0]!;
+    const doors = await call('GET', `/api/turfs/${turf.id}/doors`, organizerCookie);
+    const door = (doors.json() as { doors: { household_id: string }[] }).doors[0]!;
+
+    const res = await call('GET', `/api/households/${door.household_id}`, organizerCookie);
+    assert.equal(res.statusCode, 200);
+    const hh = res.json() as { turfs: { id: string; name: string }[] };
+    assert.ok(Array.isArray(hh.turfs));
+    assert.ok(hh.turfs.some((t) => t.id === turf.id), 'the door reports the turf it is in');
+    // Name and id only — this must not become a second way to read turf internals.
+    for (const t of hh.turfs) assert.deepEqual(Object.keys(t).sort(), ['id', 'name']);
+  });
+
+  it('never tells a volunteer about a turf that is not theirs', async () => {
+    // The volunteer can only fetch doors inside their own turf, so that is the door to ask about:
+    // if scoping leaked, THIS is where a turf they are not assigned to would show up.
+    const mine = await call('GET', '/api/assignments/mine', volunteerCookie);
+    const assigned = (mine.json() as { assignments: { turf: { id: string } }[] }).assignments[0]!;
+    const doors = await call('GET', `/api/turfs/${assigned.turf.id}/doors`, volunteerCookie);
+    const door = (doors.json() as { doors: { household_id: string }[] }).doors[0]!;
+
+    const res = await call('GET', `/api/households/${door.household_id}`, volunteerCookie);
+    assert.equal(res.statusCode, 200);
+    const hh = res.json() as { turfs: { id: string }[] };
+    for (const t of hh.turfs) {
+      assert.equal(t.id, assigned.turf.id, 'a volunteer is only told about turfs assigned to them');
+    }
+  });
+
+  it('reports an empty list for a door in no turf, rather than failing', async () => {
+    // A door outside every turf is an ordinary state — it is most of the municipality — and the
+    // card has to render actions for it.
+    const search = await call('GET', '/api/households/legal?limit=1', organizerCookie);
+    const rows = (search.json() as { households: { id: string }[] }).households;
+    if (rows.length === 0) return; // no legal-description rows in this dataset
+    const res = await call('GET', `/api/households/${rows[0]!.id}`, organizerCookie);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual((res.json() as { turfs: unknown[] }).turfs, []);
+  });
+});
+
 describe('turf shapes (map overlay)', () => {
   interface Shape { id: string; name: string; polygon: unknown; approx: boolean; mine: boolean; n_households: number }
   const shapes = async (cookie: string) => {

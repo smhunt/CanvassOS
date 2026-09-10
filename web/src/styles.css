@@ -1956,3 +1956,17 @@ select {
   height: 2rem;
   max-width: 16rem;
 }
+
+/* Actions on the door card (map/HouseholdCard.tsx). Sits directly under the address so the card
+   answers "what can I do here" before "who lives here" — the read-only version of this card was a
+   dead end you had to leave to act on. */
+.hc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.hc-actions__note {
+  flex: 1 1 100%;
+  margin: 0.1rem 0 0;
+}

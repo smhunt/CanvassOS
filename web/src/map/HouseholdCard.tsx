@@ -1,9 +1,11 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
+import { Link } from 'react-router-dom';
 import { isApiError } from '../api/client';
 import { useHousehold } from '../api/hooks';
 import type { Household, PointProps, User, Voter } from '../api/types';
 import { isOrganizer } from '../auth';
 import { ErrorBox, LoadingRows, n, titleCase, wardLabel } from '../components/ui';
+import { coordsOf, mapsUrl } from '../canvass/directions';
 import { QUALITY_LABELS, wardColour } from './palette';
 
 export interface Selection {
@@ -106,12 +108,60 @@ function VolunteerView({ props }: { props: PointProps | undefined }) {
   );
 }
 
+/**
+ * What you can actually DO from a door you tapped on the map.
+ *
+ * Without this the card was a read-only dead end: it told you who lived there and then offered
+ * nothing, so recording a visit meant remembering the address, finding the turf, and walking in
+ * from the door screen. The actions are the same whether or not the door is in a turf — a door
+ * outside every turf is the *most* likely one to need a sign or a set of directions, not the least.
+ */
+function DoorActions({ hh }: { hh: Household }) {
+  const coords = coordsOf(hh);
+  const turf = hh.turfs[0];
+  return (
+    <div className="hc-actions">
+      {turf ? (
+        <Link className="btn btn--primary btn--small" to={`/canvass/${turf.id}`}>
+          Open in the door screen
+        </Link>
+      ) : null}
+      <Link
+        className="btn btn--small"
+        to={`/signs?tab=place&household=${encodeURIComponent(hh.id)}&address=${encodeURIComponent(hh.address)}`}
+      >
+        Place a lawn sign
+      </Link>
+      {coords && (
+        // The phone's own map app, because the last hundred metres of a rural lane is not something
+        // this app is going to do better than Apple or Google.
+        <a className="btn btn--small" href={mapsUrl(coords.lat, coords.lon)} target="_blank" rel="noreferrer noopener">
+          Directions
+        </a>
+      )}
+      {hh.turfs.length > 1 && (
+        <p className="muted small hc-actions__note">
+          Also in {hh.turfs.slice(1).map((t) => t.name).join(', ')}.
+        </p>
+      )}
+      {!turf && (
+        <p className="muted small hc-actions__note">
+          This door is not in any turf you can walk, so there is no door screen for it. It can still
+          take a sign.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function OrganizerView({ hh, onFly }: { hh: Household; onFly: (lon: number, lat: number) => void }) {
   const nonres = hh.n_nonresident ?? 0;
   const mailingVoters = hh.voters.filter((v) => v.mailing_address);
   const differing = hh.voters.filter((v) => v.mail_differs_real).length;
   return (
     <div className="stack">
+      <DoorActions hh={hh} />
+
       <section aria-labelledby="voters-h">
         <h3 id="voters-h" className="sheet__h3">
           Voters <span className="muted">({hh.voters.length})</span>
