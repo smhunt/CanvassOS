@@ -379,7 +379,9 @@ export function MapPage() {
           title={organizer ? 'Show turf boundaries' : 'Show my turf boundaries'}
         >
           <TurfIcon />
-          <span>Turfs</span>
+          {/* "Boundaries", not "Turfs": the nav already has a Turfs page, and a button that meant
+              something else was the reason the map felt like a dead end. */}
+          <span>Boundaries</span>
         </button>
         {organizer && map && (
           <DrawPolygon map={map} points={points.data} wards={wards} filtersActive={active > 0} onActiveChange={onDrawActive} />
@@ -396,6 +398,7 @@ export function MapPage() {
         selectedId={selection?.id ?? null}
         turfHighlight={turf?.highlight ?? null}
         turfShapes={turfShapes}
+        onSelectTurfShape={(id) => setTurfId(id)}
         drawing={drawing}
         onSelect={onSelectPoint}
         onViewport={onViewport}

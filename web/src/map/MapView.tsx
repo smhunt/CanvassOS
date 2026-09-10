@@ -55,6 +55,8 @@ interface Props {
   /** Id of the sign to ring, or null. */
   selectedSignId?: string | null;
   onSelectSign?: (id: string, lngLat: [number, number]) => void;
+  /** Clicking a turf boundary where no door or sign was hit. The way into a turf from the map. */
+  onSelectTurfShape?: (id: string) => void;
   onSelect: (props: PointProps, lngLat: [number, number]) => void;
   onViewport: (stats: ViewportStats) => void;
   /** Handed the live map once its style is parsed, and null when the map is torn down. */
@@ -99,6 +101,7 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     selectedSignId = null,
     onSelect,
     onSelectSign,
+    onSelectTurfShape,
     onViewport,
     onMapReady,
   },
@@ -116,12 +119,14 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
   const drawingRef = useRef(drawing);
   const onMapReadyRef = useRef(onMapReady);
   const onSelectSignRef = useRef(onSelectSign);
+  const onSelectTurfShapeRef = useRef(onSelectTurfShape);
   pointsRef.current = points;
   onSelectRef.current = onSelect;
   onViewportRef.current = onViewport;
   drawingRef.current = drawing;
   onMapReadyRef.current = onMapReady;
   onSelectSignRef.current = onSelectSign;
+  onSelectTurfShapeRef.current = onSelectTurfShape;
 
   useImperativeHandle(ref, () => ({
     flyTo(lon, lat, zoom, padding) {
@@ -228,13 +233,15 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
         // 'sign-dots' first: a sign is drawn over the doors, so when both are under the finger the
         // sign is what the user aimed at. queryRenderedFeatures returns top-most first per layer,
         // but the order of `layers` is not a priority, so the pick below breaks the tie explicitly.
-        { layers: ['sign-dots', 'points', 'clusters'] },
+        { layers: ['sign-dots', 'points', 'clusters', 'turf-shapes-fill'] },
       );
       if (!feats.length) return null;
       let best: MapGeoJSONFeature | null = null;
       let bestD = Infinity;
       let bestIsSign = false;
       for (const f of feats) {
+        // A turf boundary is a fallback, never a competitor: it covers whole neighbourhoods, so it
+        // may only win when the tap hit no door and no sign at all.
         if (f.geometry.type !== 'Point') continue;
         const isSign = f.layer.id === 'sign-dots';
         // A sign always beats a door, however far away; between two of a kind, nearest wins.
@@ -254,7 +261,13 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
       // Drawing a turf owns the clicks; selecting a household mid-ring would be an accident.
       if (drawingRef.current) return;
       const f = hit(e);
-      if (!f || f.geometry.type !== 'Point') return;
+      if (!f || f.geometry.type !== 'Point') {
+        const shape = map
+          .queryRenderedFeatures(e.point, { layers: ['turf-shapes-fill'] })
+          .find((x) => x.properties?.id);
+        if (shape) onSelectTurfShapeRef.current?.(String(shape.properties!.id));
+        return;
+      }
       const coords = f.geometry.coordinates as [number, number];
       const props = f.properties as Record<string, unknown>;
       if (f.layer.id === 'sign-dots') {

@@ -1524,3 +1524,10 @@
   cursor: pointer;
   flex: none;
 }
+
+/* The paper fallback, reachable from the drawer a volunteer already has open. */
+.cv-turf__sheet {
+  display: inline-block;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}

@@ -1942,3 +1942,17 @@ select {
     justify-content: flex-start;
   }
 }
+
+/* A list-shaped loading state (components/ui.tsx LoadingList). A spinner says "something is
+   happening"; this says "a list is coming and roughly how long it is", which is what stops a
+   volunteer on a weak rural connection reloading a 1,330-door fetch. */
+.skeleton-page {
+  padding: 1rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.skeleton--head {
+  height: 2rem;
+  max-width: 16rem;
+}

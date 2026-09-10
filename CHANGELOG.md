@@ -4,6 +4,31 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-09-10
+
+### Fixed
+
+- **The print button did nothing on an installed iPhone.** iOS silently ignores `window.print()` in
+  a web app added to the home screen — no dialog, no error — so the button looked broken. On an
+  iPhone it now says "Open in Safari to print" and does that, where Share → Print works. Android's
+  standalone mode prints fine and is unchanged.
+
+### Added
+
+- **The paper sheet is reachable from the turf drawer**, so a volunteer can get to it. It was only
+  linked from the organiser-only Turfs page.
+- **Tap a turf boundary on the map to open that turf.** The map was a dead end: the only way to
+  turfs was the nav menu. The overlay toggle is now labelled "Boundaries" so "Turfs" means one
+  thing again.
+- **List-shaped loading skeletons** on the door screen and the turf sheet, replacing a bare
+  spinner. A spinner says something is happening; a skeleton says a list is coming and roughly how
+  long — which is what stops someone on a weak rural connection reloading a 1,330-door fetch.
+
+### Changed
+
+- `web/tools/e2e.py` takes `E2E_BASE` / `E2E_EMAIL` / `E2E_PASSWORD`. The admin password was
+  hard-coded and went stale the day it was changed, which quietly made the whole suite unrunnable.
+
 ## [0.4.4] - 2026-09-08
 
 ### Changed

@@ -14,10 +14,18 @@ from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-BASE = "https://dev.ecoworks.ca:4173"
+import os
+
+# Overridable so this can be pointed at the demo stack (fabricated residents) instead of the real
+# database. The admin password was hard-coded here and went stale the day it was changed, which made
+# the whole suite unrunnable without anyone noticing.
+BASE = os.environ.get("E2E_BASE", "https://dev.ecoworks.ca:4173")
 OUT = Path(__file__).resolve().parent.parent / "screenshots"
 OUT.mkdir(exist_ok=True)
-ADMIN = ("sean@ecoworks.ca", "changeme-changeme")
+ADMIN = (
+    os.environ.get("E2E_EMAIL", "sean@ecoworks.ca"),
+    os.environ.get("E2E_PASSWORD", ""),
+)
 KOMOKA = (-81.4208, 42.9576)
 KOMOKA_DENSE = (-81.4154, 42.9536)  # Winlow Way
 
@@ -417,13 +425,85 @@ def run_dark(browser) -> None:
     ctx.close()
 
 
+def run_recent_features(browser) -> None:
+    """The UI added 7-10 September: turf overlay, map -> turf, the paper sheet's iOS path,
+    the door card's order, and the list skeletons."""
+    print("\n== recent features ==")
+    ctx = browser.new_context(viewport={"width": 414, "height": 860}, is_mobile=True, has_touch=True,
+                              ignore_https_errors=True)
+    page = ctx.new_page()
+    wire(page, "recent")
+    login(page, *ADMIN)
+
+    # --- map chrome must not cost a second row on a phone
+    page.goto(f"{BASE}/map")
+    wait_points_loaded(page)
+    settle(page)
+    tb = page.locator(".map-toolbar")
+    box = tb.bounding_box() or {"height": 999}
+    check(box["height"] < 70, f"map toolbar is one row on a phone ({box['height']:.0f}px)")
+    check(page.locator(".map-searchbtn").is_visible(), "search is collapsed to an icon on a phone")
+    check(not page.locator(".search-slot").is_visible(), "the search field is not taking a row")
+
+    # --- the turf overlay, and clicking a boundary as the way into a turf
+    page.get_by_role("button", name=re.compile("turf boundaries", re.I)).click()
+    settle(page)
+    shapes = rendered(page, "turf-shapes-fill")
+    check(shapes > 0, f"turf boundaries render ({shapes} shapes)")
+
+    # --- the paper sheet: on an installed iPhone the button must not claim to print
+    ios = browser.new_context(viewport={"width": 414, "height": 860}, is_mobile=True, has_touch=True,
+                              ignore_https_errors=True)
+    ios.add_init_script("Object.defineProperty(navigator, 'standalone', { get: () => true });")
+    ipage = ios.new_page()
+    wire(ipage, "ios-sheet")
+    login(ipage, *ADMIN)
+    ipage.goto(f"{BASE}/turfs")
+    settle(ipage)
+    sheet_link = ipage.locator("a[href$='/sheet']").first
+    if sheet_link.count():
+        sheet_link.click()
+        ipage.wait_for_url(re.compile(r"/sheet$"))
+        settle(ipage)
+        check(ipage.get_by_role("button", name=re.compile("Open in Safari", re.I)).is_visible(),
+              "installed iPhone offers Safari instead of a print button that does nothing")
+        check(not ipage.get_by_role("button", name="Print this sheet").is_visible(),
+              "the dead print button is not shown on an installed iPhone")
+    else:
+        check(False, "no turf to print a sheet for")
+    ios.close()
+
+    # --- desktop still gets a real print button
+    desk = browser.new_context(viewport={"width": 1280, "height": 900}, ignore_https_errors=True)
+    dpage = desk.new_page()
+    wire(dpage, "desk-sheet")
+    login(dpage, *ADMIN)
+    dpage.goto(f"{BASE}/turfs")
+    settle(dpage)
+    link = dpage.locator("a[href$='/sheet']").first
+    if link.count():
+        link.click()
+        dpage.wait_for_url(re.compile(r"/sheet$"))
+        settle(dpage)
+        check(dpage.get_by_role("button", name="Print this sheet").is_visible(),
+              "desktop keeps the real print button")
+    desk.close()
+    ctx.close()
+
+
 def main() -> int:
+    if not ADMIN[1]:
+        print("E2E_PASSWORD is not set. This suite signs in as an admin and drives whatever database")
+        print("the API is pointed at, so it will not guess. Point it at the demo stack:")
+        print("  E2E_BASE=https://dev.ecoworks.ca:3032 E2E_EMAIL=... E2E_PASSWORD=... python3 tools/e2e.py")
+        return 2
     with sync_playwright() as p:
         browser = p.chromium.launch()
         invite_url = run_admin_desktop(browser)
         run_admin_mobile(browser)
         run_volunteer(browser, invite_url)
         run_dark(browser)
+        run_recent_features(browser)
         browser.close()
     print("\n== console errors:", len(console_errors))
     for e in console_errors:

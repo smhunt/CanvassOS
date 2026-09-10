@@ -4,7 +4,8 @@ import { useDoors, useMyAssignments, useTurfs } from '../api/hooks';
 import { RESULT_LABELS, type Door } from '../api/types';
 import { isOrganizer } from '../auth';
 import { useUser } from '../components/Shell';
-import { EmptyState, ErrorBox, FullPageSpinner, fmtDate } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingList, fmtDate } from '../components/ui';
+import { isIosInstalled } from '../pwa';
 import '../print/print.css';
 
 /**
@@ -47,7 +48,7 @@ function VolunteerSheet({ turfId, name }: { turfId: string | undefined; name: st
 function Sheet({ turfId, assignedTo, dueDate }: { turfId: string | undefined; assignedTo: string[]; dueDate: string | null }) {
   const doors = useDoors(turfId);
 
-  if (doors.isPending) return <FullPageSpinner label="Building the sheet…" />;
+  if (doors.isPending) return <LoadingList rows={10} label="Building the sheet…" />;
   if (doors.isError) {
     return (
       <div className="page page--narrow">
@@ -60,6 +61,7 @@ function Sheet({ turfId, assignedTo, dueDate }: { turfId: string | undefined; as
   }
 
   const { turf, doors: rows } = doors.data;
+  const iosInstalled = isIosInstalled();
   const voters = rows.reduce((sum, d) => sum + d.n_voters, 0);
   const printedOn = new Date().toLocaleDateString('en-CA', { dateStyle: 'long' });
 
@@ -71,10 +73,30 @@ function Sheet({ turfId, assignedTo, dueDate }: { turfId: string | undefined; as
           <Link to={`/canvass/${turf.id}`}>← Door screen</Link>
           <Link to="/turfs">All turfs</Link>
         </div>
-        <button type="button" className="btn btn--primary" onClick={() => window.print()}>
-          Print this sheet
-        </button>
+        {/* iOS ignores window.print() in an installed web app — silently, which is worse than an
+            error: the button looks broken. window.open() from a standalone PWA hands the URL to
+            Safari, where Share > Print works, so on an iPhone that is what the button does and
+            says. Android's standalone mode prints fine, hence the iOS-only check. */}
+        {iosInstalled ? (
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => window.open(window.location.href, '_blank', 'noopener')}
+          >
+            Open in Safari to print
+          </button>
+        ) : (
+          <button type="button" className="btn btn--primary" onClick={() => window.print()}>
+            Print this sheet
+          </button>
+        )}
         <p className="muted small ts-toolbar__note">
+          {iosInstalled && (
+            <>
+              <strong>iPhone can’t print from an installed app.</strong> That button opens this sheet in Safari — then
+              use Share → Print.{' '}
+            </>
+          )}
           {rows.length} doors on {estimatePages(rows.length)} page{estimatePages(rows.length) === 1 ? '' : 's'}. Print
           one-sided, portrait, A4 or Letter. Take the paper out only for this canvass — bring it back and enter the
           results, then it gets shredded.

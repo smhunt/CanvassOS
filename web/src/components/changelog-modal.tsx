@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.4.4';
+export const APP_VERSION = '0.4.5';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,16 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.4.5',
+    date: '2026-09-10',
+    changes: [
+      'Fixed: the print button did nothing in the installed app \u2014 iPhone cannot print from one, so it now opens the sheet in Safari.',
+      'Print the paper sheet straight from the turf drawer.',
+      'Tap a turf boundary on the map to open that turf.',
+      'Loading skeletons instead of a spinner on the door list and the sheet.',
+    ],
+  },
   {
     version: '0.4.4',
     date: '2026-09-08',
@@ -260,6 +270,8 @@ export const ROADMAP: RoadmapGroup[] = [
       { label: 'Turf boundaries on the main map — yours, or everyone\u2019s with yours highlighted', priority: 'high', done: true },
       { label: 'Open the turf you were last in, and switch turfs from a drawer', priority: 'medium', done: true },
       { label: 'A turf built from streets gets an approximate outline drawn round its doors', priority: 'low', done: true },
+      { label: 'Tap a boundary on the map to open that turf', priority: 'medium', done: true },
+      { label: 'Print the paper sheet straight from the turf drawer', priority: 'medium', done: true },
     ],
   },
   {
@@ -269,6 +281,14 @@ export const ROADMAP: RoadmapGroup[] = [
       { label: 'A report separating what blocks a door-knock from what only blocks the post', priority: 'high', done: true },
       { label: 'Written guidance for each reason, and which ward to look at first', priority: 'high', done: true },
       { label: 'Optional AI advice written from the counts alone — no name or address ever leaves', priority: 'medium', done: true },
+    ],
+  },
+  {
+    category: 'Next — reaching people who are not at the door',
+    icon: '📣',
+    items: [
+      { label: 'Geographically targeted ads for the rural communities — Meta, Instagram and whichever others accept political advertising in Canada', priority: 'high' },
+      { label: 'Census data by neighbourhood (not by person) to decide which streets to walk first', priority: 'medium' },
     ],
   },
   {

@@ -15,7 +15,7 @@ import { TurfDrawer } from '../canvass/TurfDrawer';
 import { writeLastTurf } from '../canvass/lastTurf';
 import { useIsTablet } from '../canvass/useBreakpoint';
 import { useOutbox, useQueuedResults } from '../offline/useOutbox';
-import { EmptyState, ErrorBox, FullPageSpinner, Spinner, n, wardLabel } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingList, Spinner, n, wardLabel } from '../components/ui';
 
 // MapLibre is ~1 MB and volunteers are on rural data, so the overview is fetched only when the
 // volunteer actually asks for a map — never as a side effect of opening the door list.
@@ -128,7 +128,7 @@ export function DoorScreen() {
     setOpenId(wrapped?.household_id ?? null);
   }
 
-  if (doorsQ.isPending) return <FullPageSpinner label="Loading the doors…" />;
+  if (doorsQ.isPending) return <LoadingList rows={8} label="Loading the doors…" />;
 
   if (doorsQ.isError) {
     const forbidden = isApiError(doorsQ.error, 403) || isApiError(doorsQ.error, 404);

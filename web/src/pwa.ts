@@ -54,10 +54,21 @@ function rememberDismissed(): void {
   }
 }
 
+/**
+ * Running as an app added to an iPhone's home screen.
+ *
+ * `navigator.standalone` is iOS-only, which is exactly the discrimination needed: iOS silently
+ * ignores `window.print()` in an installed web app — no dialog, no error, nothing — while Android's
+ * standalone mode prints perfectly well. So this is not "is it installed", it is "is printing
+ * impossible here", and only the turf sheet cares.
+ */
+export function isIosInstalled(): boolean {
+  return (navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
 /** Already launched from the home screen — there is nothing to offer. */
 function installed(): boolean {
-  const iosStandalone = (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  return iosStandalone || window.matchMedia('(display-mode: standalone)').matches;
+  return isIosInstalled() || window.matchMedia('(display-mode: standalone)').matches;
 }
 
 /**

@@ -92,3 +92,21 @@ export function titleCase(s: string | null | undefined): string {
   if (!s) return '';
   return s.toLowerCase().replace(/(^|[\s'-])([a-z])/g, (m) => m.toUpperCase());
 }
+
+/**
+ * A page-shaped skeleton for a screen whose content is a list.
+ *
+ * A centred spinner says "something is happening"; a skeleton says "a list of things is coming, and
+ * here is roughly how many". On a rural connection that difference is the difference between
+ * waiting and reloading — and reloading a turf of 1,330 doors costs the volunteer the whole fetch
+ * again. `aria-busy` on the region is what a screen reader gets; the bars themselves are decorative.
+ */
+export function LoadingList({ rows = 6, label = 'Loading…' }: { rows?: number; label?: string }) {
+  return (
+    <div className="skeleton-page" role="status" aria-busy="true" aria-live="polite">
+      <span className="visually-hidden">{label}</span>
+      <div className="skeleton skeleton--head" aria-hidden="true" />
+      <LoadingRows rows={rows} />
+    </div>
+  );
+}

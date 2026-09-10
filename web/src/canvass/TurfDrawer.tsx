@@ -104,6 +104,11 @@ export function TurfDrawer({ open, onClose, assignments, currentTurfId, loading 
                     </div>
                     <Progress done={a.contacted} total={a.n_households} />
                   </div>
+                  {/* The paper fallback was only reachable from the Turfs page, which volunteers
+                      cannot see. This is where they already are when they want it. */}
+                  <Link className="cv-turf__sheet" to={`/turfs/${a.turf.id}/sheet`} onClick={onClose}>
+                    Print sheet
+                  </Link>
                 </li>
               );
             })}
