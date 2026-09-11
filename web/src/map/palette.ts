@@ -123,8 +123,10 @@ export const COLOUR_MODES: { id: ColourMode; label: string; organizerOnly?: bool
 
 export type BaseLayer = 'light' | 'streets' | 'satellite';
 export const BASE_LAYERS: { id: BaseLayer; label: string }[] = [
-  // CARTO watermarks anonymous tiles with "API KEY REQUIRED"; kept for anyone who adds a
-  // key, but 'streets' is the default because OSM and Esri need none.
+  // CARTO watermarks anonymous tiles with "API KEY REQUIRED"; kept for anyone who adds a key.
+  // 'streets' is the default and is Esri, which needs no key — it was OSM's own tile servers until
+  // they blocked us for using them as an application basemap, which their usage policy forbids.
+  // See the comment on the `esri-streets` source in style.ts before changing this back.
   { id: 'light', label: 'Light (needs a CARTO key)' },
   { id: 'streets', label: 'Streets' },
   { id: 'satellite', label: 'Satellite' },

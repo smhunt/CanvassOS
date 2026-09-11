@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.5.0';
+export const APP_VERSION = '0.5.1';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,13 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.5.1',
+    date: '2026-09-11',
+    changes: [
+      'Fixed the map showing \u201cAccess blocked\u201d tiles \u2014 OpenStreetMap had blocked us for using their volunteer servers as the basemap. Streets now comes from Esri.',
+    ],
+  },
   {
     version: '0.5.0',
     date: '2026-09-11',

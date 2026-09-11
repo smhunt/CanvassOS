@@ -150,7 +150,7 @@ browser (PWA) --https--> caddy ──/api/*──> api (Fastify/TS) ──> post
 importer (one-shot python) ──────────────────────────────────> postgres
 ```
 
-Basemap tiles (OSM/CARTO/Esri) are fetched by the browser and never touch the stack; map glyphs are
+Basemap tiles (Esri, and CARTO with a key) are fetched by the browser and never touch the stack; map glyphs are
 self-hosted. The server makes exactly **two** outbound calls, both off unless a key is configured:
 Street View (`api/src/lib/streetview.ts`, two coordinates out, nothing stored) and the reachability
 advice (`api/src/lib/advice.ts`, aggregate counts out, to Anthropic). Both go through
@@ -267,6 +267,13 @@ first** so a road with no imagery costs nothing and yields a truthful 404. Scope
 `assertHouseholdAccess` as the door, rate-limited **per user** (40/min — a canvassing team shares one
 LTE NAT), `w`/`h` capped at 640 because every pixel size is a separate charge, and audited on both
 outcomes. `app.httpFetch` is the injection point; no test ever makes a billed call.
+
+**Never point a basemap at `tile.openstreetmap.org`.** Those servers are volunteer-run and donated,
+and OSM's Tile Usage Policy does not permit an application using them as its basemap. This app did,
+as the default, and OSM blocked it — every tile came back as a 403 image reading "App is not
+following the tile usage policy", which is what a canvasser saw instead of a map. `streets` is Esri
+now (no key, same endpoint as the satellite layer). OSM *data* attribution stays wherever CARTO is
+used, because that is a different obligation.
 
 **The advice layer may only ever be sent counts.** `api/src/lib/advice.ts` posts the reachability
 report to Anthropic so it comes back as prose. The *Municipal Elections Act* s. 23(8) rule that

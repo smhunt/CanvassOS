@@ -4,6 +4,20 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-11
+
+### Fixed
+
+- **The map was showing "Access blocked — App is not following the tile usage policy" instead of
+  streets.** Those were not map tiles: OpenStreetMap serves that image as a 403 when it blocks an
+  app. The default "Streets" basemap pointed at `tile.openstreetmap.org`, whose servers are
+  volunteer-run and donated and whose usage policy does not permit an application using them as its
+  basemap — which is exactly what a pannable map of 7,000 doors was doing.
+
+  "Streets" is now Esri's World Street Map: no key, and the same endpoint already serving the
+  satellite layer. Nothing in the app requests an OSM tile any more. OSM *data* attribution stays
+  where CARTO is used, because that is a separate obligation and still owed.
+
 ## [0.5.0] - 2026-09-11
 
 ### Added

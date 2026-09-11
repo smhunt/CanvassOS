@@ -36,7 +36,7 @@ const esri = (service: string) => `https://server.arcgisonline.com/ArcGIS/rest/s
 /** Which raster layers make up each base layer. */
 export const BASE_LAYER_IDS: Record<BaseLayer, string[]> = {
   light: ['base-carto-light'],
-  streets: ['base-osm'],
+  streets: ['base-esri-streets'],
   satellite: ['base-esri-imagery', 'base-esri-transport', 'base-esri-places'],
 };
 const ALL_BASE_LAYER_IDS = Object.values(BASE_LAYER_IDS).flat();
@@ -65,12 +65,20 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
         maxzoom: 20,
         attribution: CARTO_ATTR,
       },
-      osm: {
+      // Esri's street map, NOT tile.openstreetmap.org.
+      //
+      // OSM's tile servers are volunteer-run and donated, and their Tile Usage Policy does not
+      // permit an application using them as its basemap. We were, as the default, for a map of
+      // 7,000 doors that pans and zooms — and OSM blocked us: every tile came back as a 403 image
+      // reading "App is not following the tile usage policy". The fix is to stop asking them, not
+      // to find a way around the block. Esri is already the satellite provider here, needs no key,
+      // and is the same endpoint. Do not point this back at OSM.
+      'esri-streets': {
         type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tiles: [esri('World_Street_Map')],
         tileSize: 256,
         maxzoom: 19,
-        attribution: OSM_ATTR,
+        attribution: ESRI_ATTR,
       },
       'esri-imagery': { type: 'raster', tiles: [esri('World_Imagery')], tileSize: 256, maxzoom: 19, attribution: ESRI_ATTR },
       'esri-transport': { type: 'raster', tiles: [esri('Reference/World_Transportation')], tileSize: 256, maxzoom: 19 },
@@ -108,7 +116,7 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#e9edf2' } },
       raster('base-carto-light', 'carto-light'),
-      raster('base-osm', 'osm'),
+      raster('base-esri-streets', 'esri-streets'),
       raster('base-esri-imagery', 'esri-imagery'),
       raster('base-esri-transport', 'esri-transport'),
       raster('base-esri-places', 'esri-places'),
