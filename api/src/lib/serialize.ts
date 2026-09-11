@@ -587,6 +587,8 @@ export interface SignRequestRow {
   community: string | null;
   lat: number | null;
   lon: number | null;
+  /** Where the resident asked for the sign, when it is not the door. Null = never captured. */
+  sign_address: string | null;
   contact_id: string;
   last_contact_at: Date | string;
   last_result: string;
@@ -605,6 +607,7 @@ export function serializeSignRequest(row: SignRequestRow): SignRequestRow {
     community: row.community,
     lat: row.lat,
     lon: row.lon,
+    sign_address: row.sign_address,
     contact_id: row.contact_id,
     last_contact_at: row.last_contact_at,
     last_result: row.last_result,

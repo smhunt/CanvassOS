@@ -238,6 +238,8 @@ export interface ContactInput {
   support?: number | null;
   issues?: string[];
   wants_sign?: boolean;
+  /** Where a requested sign should go. Only valid with `wants_sign` — the API rejects it alone. */
+  sign_address?: string;
   wants_volunteer?: boolean;
   needs_ride?: boolean;
   follow_up?: boolean;
@@ -362,6 +364,8 @@ export interface SignRequest {
   community: string | null;
   lat: number | null;
   lon: number | null;
+  /** Where they asked for the sign, when it is not the door. Null = never captured. */
+  sign_address: string | null;
   contact_id: string;
   /** When the door asked — this is the contact's timestamp, there is no separate requested_at. */
   last_contact_at: string;

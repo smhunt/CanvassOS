@@ -293,6 +293,9 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
     const rows = await q<SignRequestRow>(
       app.db,
       `SELECT h.id AS household_id, h.address, h.ward, h.community, h.lat, h.lon,
+              -- Where they asked for it, when that is not the door: a corner lot, a farm gate, the
+              -- shop. Null means nobody captured one, not that the door is the answer.
+              c.sign_address,
               c.id AS contact_id, c.at AS last_contact_at, c.result::text AS last_result, c.note,
               c.user_id, u.name AS user_name, c.voter_id, v.display_name AS voter_name
        FROM (SELECT DISTINCT household_id FROM contact WHERE wants_sign) d
@@ -301,7 +304,10 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
        JOIN app_user u ON u.id = c.user_id
        LEFT JOIN voter v ON v.id = c.voter_id
        WHERE c.wants_sign
-         AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id)
+         -- Only a sign that exists in some OTHER form excludes the door. A row still marked
+         -- 'requested' is this same request, written by POST /api/contacts, and must not hide the
+         -- door from the list of doors still waiting for one.
+         AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id AND s.status <> 'requested')
          ${scope}
        ORDER BY c.at DESC
        LIMIT $1`,

@@ -1970,3 +1970,22 @@ select {
   flex: 1 1 100%;
   margin: 0.1rem 0 0;
 }
+
+/* Recording a visit from the map's door card (canvass/RecordVisit.tsx). Same one-thumb result
+   buttons as the door screen; this is the shell around them for a door reached without a turf. */
+.rv__results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.4rem;
+}
+.rv__result {
+  min-height: var(--tap);
+  border-left: 4px solid var(--result, var(--border));
+  justify-content: flex-start;
+}
+.rv__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}

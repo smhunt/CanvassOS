@@ -42,12 +42,21 @@ const createBody = z.object({
   supports: z.record(z.string().uuid(), z.coerce.number().int().min(1).max(5)).nullish(),
   issues: z.array(z.string().trim().min(1).max(40)).max(20).nullish(),
   wants_sign: z.boolean().nullish(),
+  // Where the sign was asked for, when it is not simply the door — a corner lot, a farm gate, the
+  // shop. Only meaningful alongside wants_sign, which the refine below enforces rather than storing
+  // an address nobody asked for.
+  sign_address: z.string().trim().min(1).max(200).nullish(),
   wants_volunteer: z.boolean().nullish(),
   needs_ride: z.boolean().nullish(),
   follow_up: z.boolean().nullish(),
   note: z.string().trim().max(2000).nullish(),
   // idempotency key minted by the offline queue (Phase 3); replays return the stored row
   client_id: z.string().trim().min(6).max(100).nullish(),
+});
+
+const createBodyChecked = createBody.refine((b) => !b.sign_address || b.wants_sign === true, {
+  message: 'sign_address is only meaningful with wants_sign',
+  path: ['sign_address'],
 });
 
 const listQuery = z.object({
@@ -80,7 +89,7 @@ export const contactRoutes: FastifyPluginAsync = async (app) => {
    * exactly as before.
    */
   app.post('/contacts', { preHandler: requireAuth }, async (req, reply) => {
-    const body = createBody.parse(req.body);
+    const body = createBodyChecked.parse(req.body);
     const me = currentSession(req).user;
 
     const hh = await one<{ id: string }>(app.db, `SELECT id FROM household WHERE id = $1`, [body.household_id]);
@@ -148,9 +157,9 @@ export const contactRoutes: FastifyPluginAsync = async (app) => {
         tx,
         `WITH ins AS (
            INSERT INTO contact (household_id, voter_id, user_id, turf_id, client_id, result, support, issues,
-                                wants_sign, wants_volunteer, needs_ride, follow_up, note)
+                                wants_sign, wants_volunteer, needs_ride, follow_up, note, sign_address)
            SELECT $1, t.voter_id, $2, $3, t.client_id, $4::contact_result, t.support, $5::text[],
-                  $6, $7, $8, $9, $10
+                  $6, $7, $8, $9, $10, $14
            FROM unnest($11::uuid[], $12::smallint[], $13::text[]) AS t(voter_id, support, client_id)
            ON CONFLICT (client_id) DO NOTHING
            RETURNING *
@@ -170,6 +179,7 @@ export const contactRoutes: FastifyPluginAsync = async (app) => {
           targets.map((t) => t.voter_id),
           targets.map((t) => t.support),
           keys,
+          body.sign_address ?? null,
         ],
       );
 
@@ -186,6 +196,34 @@ export const contactRoutes: FastifyPluginAsync = async (app) => {
       if (stored.length !== targets.length) throw new Error('contact insert returned no row');
       return { contacts: stored, created: inserted };
     });
+
+    // A sign asked for at the door becomes a real row in `sign` with status 'requested', not just a
+    // boolean somebody has to go looking for. In the same request as the contact, so a door cannot
+    // end up having asked for a sign that the sign table has never heard of.
+    //
+    // Idempotent on a DERIVED key, the same trick the contact rows use: `sign.client_id` is UNIQUE,
+    // so a replay of the same submission conflicts and does nothing rather than raising a second
+    // request. Skipped entirely when the household already has a sign of any kind — it has either
+    // been asked for already or actually planted, and neither wants a duplicate.
+    // `sign.requested_from` references contact(id) — the visit that raised the request, not the
+    // person who recorded it. The door-level row is the one to point at.
+    const raisedBy = contacts[0]?.id ?? null;
+    if (body.wants_sign && body.client_id && raisedBy) {
+      await app.db
+        .query(
+          `INSERT INTO sign (household_id, status, lat, lon, label, requested_at, requested_from, client_id)
+           SELECT h.id, 'requested', h.lat, h.lon, $2, now(), $3, $4
+           FROM household h
+           WHERE h.id = $1 AND h.lat IS NOT NULL AND h.lon IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id)
+           ON CONFLICT (client_id) DO NOTHING`,
+          [body.household_id, body.sign_address ?? null, raisedBy, `${body.client_id}:signreq`],
+        )
+        // A failed sign request must not fail the contact: the visit is the record that matters and
+        // the door has already been knocked. It is logged and the delivery list still derives the
+        // door from `wants_sign`, so nothing is actually lost.
+        .catch((err: unknown) => req.log.warn({ err, household_id: body.household_id }, 'sign request insert failed'));
+    }
 
     // Answer in the order the door screen named them, not in whatever order postgres returned.
     const order = new Map(targets.map((t, i) => [t.voter_id ?? '', i]));

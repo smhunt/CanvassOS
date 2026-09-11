@@ -241,6 +241,14 @@ after(async () => {
   }
   if (ids.length > 0) {
     await db.query(`DELETE FROM sign WHERE placed_by = ANY($1::uuid[]) OR removed_by = ANY($1::uuid[])`, [ids]);
+    // A contact with wants_sign now RAISES a sign row (status 'requested', client_id
+    // `<contact key>:signreq`). Those have no placed_by, so the clause above never caught them and
+    // they leaked into later suites as a sign attached to a household the next test picked. Deleted
+    // via the contact that raised them, before those contacts go.
+    await db.query(
+      `DELETE FROM sign WHERE requested_from IN (SELECT id FROM contact WHERE user_id = ANY($1::uuid[]))`,
+      [ids],
+    );
     // voter_contact.collected_by references app_user without ON DELETE, and its rows must also go
     // before the contacts they cite; they are the doorstep phone/email numbers this run collected.
     await db.query(`DELETE FROM voter_contact WHERE collected_by = ANY($1::uuid[])`, [ids]);
@@ -1178,6 +1186,93 @@ describe('turf preview', () => {
     // The builder's picker sends "no ward" as an explicit null; that must not be a 400.
     const nullWard = await call('POST', '/api/turfs/preview', organizerCookie, { ward: null, streets: ctx.streets });
     assert.equal(nullWard.statusCode, 200, nullWard.body);
+  });
+});
+
+describe('sign requests from a contact', () => {
+  it('records a visit with no turf at all, and raises a sign request row', async () => {
+    // A door tapped on the map may be in no turf. `contact.turf_id` is nullable precisely so this
+    // works; nothing could record one until the card got a form.
+    const pts = await call('GET', '/api/households/points?limit=1', organizerCookie);
+    const hhId = (pts.json() as { features: { properties: { id: string } }[] }).features[0]!.properties.id;
+    const key = `test-signreq-${RUN}`;
+
+    const res = await call('POST', '/api/contacts', organizerCookie, {
+      household_id: hhId,
+      result: 'spoke',
+      wants_sign: true,
+      sign_address: 'At the farm gate on the concession',
+      client_id: key,
+    });
+    assert.equal(res.statusCode, 201);
+
+    const stored = await db.query<{ wants_sign: boolean; sign_address: string; turf_id: string | null }>(
+      `SELECT wants_sign, sign_address, turf_id FROM contact WHERE client_id LIKE $1`,
+      [`${key}%`],
+    );
+    assert.ok(stored.rows.length > 0);
+    assert.equal(stored.rows[0]!.wants_sign, true);
+    assert.equal(stored.rows[0]!.sign_address, 'At the farm gate on the concession');
+    assert.equal(stored.rows[0]!.turf_id, null, 'a door outside every turf still records a visit');
+
+    // The request is a row in `sign`, not just a boolean somebody has to go looking for.
+    const sign = await db.query<{ status: string; label: string | null }>(
+      `SELECT status::text, label FROM sign WHERE client_id = $1`,
+      [`${key}:signreq`],
+    );
+    assert.equal(sign.rows.length, 1, 'wants_sign raises a sign row');
+    assert.equal(sign.rows[0]!.status, 'requested');
+    assert.equal(sign.rows[0]!.label, 'At the farm gate on the concession');
+
+    // Replaying the same submission must not raise a second request.
+    const again = await call('POST', '/api/contacts', organizerCookie, {
+      household_id: hhId,
+      result: 'spoke',
+      wants_sign: true,
+      sign_address: 'At the farm gate on the concession',
+      client_id: key,
+    });
+    assert.equal(again.statusCode, 200, 'a replay creates nothing');
+    const dupes = await db.query(`SELECT 1 FROM sign WHERE client_id = $1`, [`${key}:signreq`]);
+    assert.equal(dupes.rowCount, 1, 'a replay must not raise a second sign request');
+
+    // And the door stays on the delivery list: a row still marked 'requested' IS this request and
+    // must not hide the door from the crew who have to deliver it.
+    //
+    // `/signs/requests` is audited on every call, and the lawn-signs suite asserts an exact count of
+    // those rows — so the high-water mark is taken first and this read is removed below.
+    const beforeRead = await db.query<{ max: string | null }>(`SELECT max(id)::text FROM audit_log`);
+    const auditMark = beforeRead.rows[0]?.max ?? '0';
+    const reqs = await call('GET', '/api/signs/requests', organizerCookie);
+    const list = (reqs.json() as { requests: { household_id: string; sign_address: string | null }[] }).requests;
+    const row = list.find((r) => r.household_id === hhId);
+    assert.ok(row, 'a door that asked is still on the delivery list after the sign row exists');
+    assert.equal(row!.sign_address, 'At the farm gate on the concession');
+
+    // Everything this test created, in dependency order. The audit rows matter as much as the data:
+    // the contacts suite asserts an exact count of `contact` audit rows for this same organizer, so
+    // leaving two behind fails a test three suites later with a number nobody can trace back here.
+    await db.query(`DELETE FROM audit_log WHERE action = 'view_sign_requests' AND id > $1::bigint`, [auditMark]);
+    const mine = await db.query<{ id: string }>(`SELECT id FROM contact WHERE client_id LIKE $1`, [`${key}%`]);
+    const contactIds = mine.rows.map((r) => r.id);
+    await db.query(`DELETE FROM sign WHERE client_id = $1`, [`${key}:signreq`]);
+    if (contactIds.length > 0) {
+      await db.query(`DELETE FROM audit_log WHERE action = 'contact' AND target = ANY($1::text[])`, [contactIds]);
+    }
+    await db.query(`DELETE FROM contact WHERE client_id LIKE $1`, [`${key}%`]);
+  });
+
+  it('refuses an address for a sign nobody asked for', async () => {
+    const pts = await call('GET', '/api/households/points?limit=1', organizerCookie);
+    const hhId = (pts.json() as { features: { properties: { id: string } }[] }).features[0]!.properties.id;
+    // An address without the request would be a delivery somebody actually drives to.
+    const res = await call('POST', '/api/contacts', organizerCookie, {
+      household_id: hhId,
+      result: 'spoke',
+      sign_address: '12 Nowhere Lane',
+      client_id: `test-signreq-bad-${RUN}`,
+    });
+    assert.equal(res.statusCode, 400);
   });
 });
 

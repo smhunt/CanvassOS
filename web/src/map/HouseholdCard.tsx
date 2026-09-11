@@ -1,11 +1,13 @@
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { isApiError } from '../api/client';
 import { useHousehold } from '../api/hooks';
-import type { Household, PointProps, User, Voter } from '../api/types';
+import { RESULT_LABELS, type ContactResult, type Household, type PointProps, type User, type Voter } from '../api/types';
 import { isOrganizer } from '../auth';
 import { ErrorBox, LoadingRows, n, titleCase, wardLabel } from '../components/ui';
 import { coordsOf, mapsUrl } from '../canvass/directions';
+import { RecordVisit } from '../canvass/RecordVisit';
 import { QUALITY_LABELS, wardColour } from './palette';
 
 export interface Selection {
@@ -119,10 +121,43 @@ function VolunteerView({ props }: { props: PointProps | undefined }) {
 function DoorActions({ hh }: { hh: Household }) {
   const coords = coordsOf(hh);
   const turf = hh.turfs[0];
+  const [recording, setRecording] = useState(false);
+  const [recorded, setRecorded] = useState<ContactResult | null>(null);
+  const qc = useQueryClient();
+
+  if (recording) {
+    return (
+      <RecordVisit
+        householdId={hh.id}
+        address={hh.address}
+        voters={hh.voters}
+        turfId={turf?.id ?? null}
+        onRecorded={(r) => {
+          setRecording(false);
+          setRecorded(r);
+          // The card's own status line and the map's colouring both read this door.
+          void qc.invalidateQueries({ queryKey: ['household', hh.id] });
+          void qc.invalidateQueries({ queryKey: ['points'] });
+        }}
+        onCancel={() => setRecording(false)}
+      />
+    );
+  }
+
   return (
     <div className="hc-actions">
+      {recorded && (
+        <p className="hc-actions__note" role="status">
+          Recorded: <strong>{RESULT_LABELS[recorded]}</strong>.
+        </p>
+      )}
+      {/* The whole point of the card being actionable. Works with or without a turf — `turf_id` is
+          nullable on `contact`, so a door in no turf is still a door somebody knocked. */}
+      <button type="button" className="btn btn--primary btn--small" onClick={() => setRecording(true)}>
+        Record a visit
+      </button>
       {turf ? (
-        <Link className="btn btn--primary btn--small" to={`/canvass/${turf.id}`}>
+        <Link className="btn btn--small" to={`/canvass/${turf.id}`}>
           Open in the door screen
         </Link>
       ) : null}
@@ -146,8 +181,8 @@ function DoorActions({ hh }: { hh: Household }) {
       )}
       {!turf && (
         <p className="muted small hc-actions__note">
-          This door is not in any turf you can walk, so there is no door screen for it. It can still
-          take a sign.
+          Not in any turf you can walk, so there is no door screen for it — the visit is still
+          recorded against the door.
         </p>
       )}
     </div>

@@ -11,6 +11,12 @@ export interface SpokeDetail {
   /** Per-person support, keyed by voter id. Only meaningful with two or more people tagged. */
   supports: Record<string, number>;
   wants_sign: boolean;
+  /**
+   * Where the sign goes, when it is not the door. Prefilled with the door's own address so the
+   * common case is one tap and no typing — a corner lot, a farm gate or a shop is the exception
+   * that needs editing, and the driver crew was otherwise rediscovering it at every stop.
+   */
+  sign_address: string;
   wants_volunteer: boolean;
   needs_ride: boolean;
   follow_up: boolean;
@@ -32,6 +38,8 @@ const FLAGS: { key: keyof Pick<SpokeDetail, 'wants_sign' | 'wants_volunteer' | '
 
 interface Props {
   householdId: string;
+  /** The door's own address, used to prefill where a requested sign should go. */
+  defaultSignAddress?: string;
   voters: Voter[];
   pending: boolean;
   onSubmit: (detail: SpokeDetail) => void;
@@ -42,12 +50,13 @@ interface Props {
  * Detail for a conversation. Contacts are append-only with no edit endpoint, so support, flags and
  * note have to ride along with the same POST — hence a Save rather than recording on the first tap.
  */
-export function SpokeForm({ householdId, voters, pending, onSubmit, onCancel }: Props) {
+export function SpokeForm({ householdId, defaultSignAddress = '', voters, pending, onSubmit, onCancel }: Props) {
   const [d, setD] = useState<SpokeDetail>({
     voter_ids: [],
     support: null,
     supports: {},
     wants_sign: false,
+    sign_address: '',
     wants_volunteer: false,
     needs_ride: false,
     follow_up: false,
@@ -168,11 +177,36 @@ export function SpokeForm({ householdId, voters, pending, onSubmit, onCancel }: 
         <legend>Asks</legend>
         {FLAGS.map((f) => (
           <label key={f.key} className="check">
-            <input type="checkbox" checked={d[f.key]} onChange={(e) => set(f.key, e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={d[f.key]}
+              onChange={(e) => {
+                set(f.key, e.target.checked);
+                // Ticking the box prefills the door's own address; unticking clears it, so an
+                // address can never be sent for a sign nobody asked for (the API rejects that).
+                if (f.key === 'wants_sign') set('sign_address', e.target.checked ? defaultSignAddress : '');
+              }}
+            />
             <span className="check__label">{f.label}</span>
           </label>
         ))}
       </fieldset>
+
+      {d.wants_sign && (
+        <label className="field">
+          <span className="field__label">Put the sign at</span>
+          <input
+            type="text"
+            value={d.sign_address}
+            maxLength={200}
+            onChange={(e) => set('sign_address', e.target.value)}
+            placeholder={defaultSignAddress || 'Where the sign should go'}
+          />
+          <span className="field__hint">
+            Prefilled with this door. Change it for a corner lot, a farm gate, or a shop.
+          </span>
+        </label>
+      )}
 
       <ContactDetails householdId={householdId} voters={voters} />
 

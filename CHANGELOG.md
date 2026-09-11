@@ -4,6 +4,31 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-11
+
+### Added
+
+- **Record a visit from the map.** Tapping a door and recording what happened no longer requires
+  finding the turf first — the card has the same one-thumb result buttons as the door screen. It
+  works for a door in **no turf at all**, which `contact.turf_id` has always allowed and nothing
+  could do.
+
+- **A lawn sign asked for at the door becomes a real request.** Ticking "wants a lawn sign" reveals
+  an address field prefilled with the door's own address, and the contact now writes a row into
+  `sign` with status `requested` rather than leaving a boolean for somebody to go looking for. The
+  address matters: a corner lot wants the sign on the side street, a farm wants it at the gate
+  rather than the house 400 m up the lane, and the delivery crew was rediscovering that at every
+  stop. Idempotent on a derived key, so a replayed submission cannot raise a second request.
+
+  `db/migrations/005_sign_request_address.sql` adds `contact.sign_address`, nullable — contacts
+  already recorded keep their boolean and say honestly that no address was captured, rather than
+  being backfilled with a confirmation nobody gave.
+
+### Fixed
+
+- The delivery list dropped a door the moment its request was recorded, because it excluded any
+  household with a sign row. It now excludes only signs that are *not* still `requested`.
+
 ## [0.4.6] - 2026-09-10
 
 ### Added

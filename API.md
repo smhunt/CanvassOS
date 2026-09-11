@@ -240,7 +240,7 @@ unencumbered option and the map layer worth building next.
 - `POST /api/contacts` → `201 { contacts, contact }`
   ```
   { household_id, voter_id?, voter_ids?, turf_id?, result, support?, supports?, issues?, wants_sign?,
-    wants_volunteer?, needs_ride?, follow_up?, note?, client_id? }
+    sign_address?, wants_volunteer?, needs_ride?, follow_up?, note?, client_id? }
   ```
   `result` ∈ `not_home` | `spoke` | `refused` | `moved` | `deceased` | `do_not_knock` | `inaccessible` |
   `left_literature`. `support` 1–5 (only when given). `issues` ≤ 20 tags of ≤ 40 chars. `note` ≤ 2000 chars.
@@ -280,6 +280,18 @@ unencumbered option and the map layer worth building next.
   `contact = contacts[0]` is **also** returned — the pre-multi-voter shape, kept populated so the existing web
   client does not break the moment this deploys. It is transitional: new clients should read `contacts`, and
   `contact` will be dropped once the web app has moved over.
+  **`turf_id` is optional and nullable.** A door tapped on the map may belong to no turf; that is a
+  real visit and is stored with `turf_id` null.
+
+  **`wants_sign: true` raises a real sign request.** A row is inserted into `sign` with status
+  `requested`, the household's coordinates, and `label` = `sign_address`. Idempotent on a derived
+  key (`<client_id>:signreq`), so a replay cannot raise a second request, and skipped entirely when
+  the household already has a sign of any kind. A failure there is logged and does not fail the
+  contact — the visit is the record that matters and the door has already been knocked.
+
+  **`sign_address` requires `wants_sign`** — `400` otherwise. An address for a sign nobody asked for
+  is a delivery somebody actually drives to.
+
   Each row is `{ id, household_id, voter_id, turf_id, at, client_id, result, support, issues, wants_sign,
   wants_volunteer, needs_ride, follow_up, note, user_id, user_name }`.
 - `GET /api/contacts?household_id=<id>&limit=50` (1–200, default 50) →
@@ -288,7 +300,9 @@ unencumbered option and the map layer worth building next.
 - `GET /api/follow-ups?limit=200` (organizer/admin) → `{ follow_ups: [...] }` — doors whose **most recent** contact has
   `follow_up = true`, newest first:
   `{ household_id, address, ward, community, lat, lon, contact_id, last_contact_at, last_result, last_support,
-  issues, wants_sign, wants_volunteer, needs_ride, note, user_id, user_name, voter_id, voter_name }`.
+  issues, wants_sign, wants_volunteer, needs_ride, note, user_id, user_name, voter_id, voter_name,
+  sign_address }`. `sign_address` is where the resident asked for the sign when it is not the door;
+  null means nobody captured one, not that the door is the answer.
   Audit `view_follow_ups`.
 - `GET /api/activity?days=14` (organizer/admin, 1–365) →
   `{ by_user: [{ user_id, name, contacts, doors, last_at }], by_day: [{ day, contacts }] }`.

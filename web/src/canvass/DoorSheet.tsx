@@ -4,6 +4,7 @@ import type { ContactInput, ContactResult, Door } from '../api/types';
 import { CONTACT_RESULTS, RESULT_LABELS } from '../api/types';
 import { ErrorBox, Spinner, n, titleCase } from '../components/ui';
 import { ContactHistory } from './ContactHistory';
+import { spokeBody } from './contactBody';
 import { coordsOf, mapsUrl, walkHint, type Coords } from './directions';
 import { SpokeForm, type SpokeDetail } from './SpokeForm';
 import { resultColour } from './status';
@@ -78,34 +79,10 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
     record.mutate(body, { onSuccess: () => onRecorded(body.result) });
   }
 
+  // Shared with the map's door card so the two cannot drift — the rules in there are subtle and
+  // each one was a bug once. See canvass/contactBody.ts.
   function submitSpoke(d: SpokeDetail) {
-    const note = d.note.trim();
-    // Per-person support is what the extra rows are for, but only once two people are named: with
-    // one person (or nobody) the door-level `support` is the same answer and one fewer moving part.
-    const perPerson = d.voter_ids.length > 1;
-    // A key naming somebody no longer tagged is `400 support_voter_not_named`; the form prunes as
-    // people are unticked, and this filter keeps that true no matter how the state got there.
-    const supports = Object.fromEntries(Object.entries(d.supports).filter(([id]) => d.voter_ids.includes(id)));
-    // The API takes voter_ids / support / note as optional, not nullable, so anything the volunteer
-    // left blank is omitted rather than sent as null.
-    send({
-      household_id: door.household_id,
-      turf_id: turfId,
-      result: 'spoke',
-      ...(d.voter_ids.length > 0 ? { voter_ids: d.voter_ids } : {}),
-      ...(perPerson
-        ? Object.keys(supports).length > 0
-          ? { supports }
-          : {}
-        : d.support !== null
-          ? { support: d.support }
-          : {}),
-      ...(note ? { note } : {}),
-      wants_sign: d.wants_sign,
-      wants_volunteer: d.wants_volunteer,
-      needs_ride: d.needs_ride,
-      follow_up: d.follow_up,
-    });
+    send(spokeBody(d, door.household_id, turfId));
   }
 
   const pending = record.isPending;
@@ -186,6 +163,7 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
         {spoke ? (
           <SpokeForm
             householdId={door.household_id}
+            defaultSignAddress={door.address}
             voters={door.voters}
             pending={pending}
             onSubmit={submitSpoke}
