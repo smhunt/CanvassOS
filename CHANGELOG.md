@@ -4,6 +4,25 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-09-11
+
+### Added
+
+- **A public endpoint for the campaign website's sign-up form** (`POST /api/public/requests`), so a
+  lawn-sign request typed on sean-hunt.pages.dev reaches the campaign's own system instead of an
+  inbox. Organisers read them at `GET /api/public/requests` and mark them handled, recording the
+  door the address turned out to be.
+
+  It is the second unauthenticated write endpoint on a stack that holds the voters list, so it is
+  built to the same rules as the SMS opt-in route: an identical response for every outcome (a form
+  that answers differently is an oracle over the campaign's list), its own table that is never
+  merged into `voter` or `household`, a 10/hour per-IP limit, a honeypot instead of a CAPTCHA, and
+  an explicit origin allowlist rather than `*`. It sends nothing — a reply would be a message to an
+  address nobody has confirmed.
+
+  `db/migrations/006_public_requests.sql` adds `public_request`. The address is free text on
+  purpose: a public form has no household id, and resolving one to a door is a human job.
+
 ## [0.5.1] - 2026-09-11
 
 ### Fixed

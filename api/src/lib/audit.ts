@@ -19,6 +19,11 @@ export type AuditAction =
   // Aggregate counts only — no row of the list is read — but it is still a report on the list, and
   // the point of this log is that every look at it is on the record.
   | 'view_reachability'
+  // The public campaign website's form. `public_request` has no user id — nobody was signed in —
+  // so the row id is the target and the trail leads to what was actually submitted.
+  | 'public_request'
+  | 'view_public_requests'
+  | 'handle_public_request'
   | 'export'
   | 'import'
   // Phase 2 — canvassing

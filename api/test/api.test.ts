@@ -1189,6 +1189,109 @@ describe('turf preview', () => {
   });
 });
 
+describe('public sign-up form (unauthenticated)', () => {
+  const CONSENT =
+    'By signing up you consent to receive campaign emails and, if you check the reminders box, a few text messages during the voting window.';
+  const post = (payload: unknown, headers: Record<string, string> = {}) =>
+    app.inject({ method: 'POST', url: '/api/public/requests', payload, headers });
+
+  const cleanup: string[] = [];
+  after(async () => {
+    if (cleanup.length > 0) {
+      await db.query(`DELETE FROM audit_log WHERE action = 'public_request' AND target = ANY($1::text[])`, [cleanup]);
+      await db.query(`DELETE FROM public_request WHERE id = ANY($1::uuid[])`, [cleanup]);
+    }
+  });
+
+  it('takes a sign request with no session and stores it away from the voters list', async () => {
+    const res = await post({
+      name: 'A Neighbour',
+      email: `neighbour+${RUN}@example.test`,
+      address: '12 Concession Road, at the gate',
+      wants: ['sign', 'volunteer'],
+      consent_text: CONSENT,
+    });
+    assert.equal(res.statusCode, 202);
+
+    const row = await db.query<{ id: string; wants: string[]; consent_text: string; address: string }>(
+      `SELECT id, wants, consent_text, address FROM public_request WHERE email = $1`,
+      [`neighbour+${RUN}@example.test`],
+    );
+    assert.equal(row.rowCount, 1);
+    cleanup.push(row.rows[0]!.id);
+    assert.deepEqual(row.rows[0]!.wants, ['sign', 'volunteer']);
+    // The wording shown beside the tick box is stored verbatim: a consent record that cannot say
+    // what was agreed to is not a consent record.
+    assert.equal(row.rows[0]!.consent_text, CONSENT);
+    assert.equal(row.rows[0]!.address, '12 Concession Road, at the gate');
+
+    // The point of the separate table: a public form must never grow the voters list.
+    const leaked = await db.query(`SELECT 1 FROM voter WHERE full_name = 'A Neighbour'`);
+    assert.equal(leaked.rowCount, 0, 'a public submission must not reach the voters list');
+  });
+
+  it('says the same thing whether or not we already know them', async () => {
+    // Otherwise the form is an oracle: submit an address, read the answer, learn whether that
+    // household is on the campaign's list.
+    const one = await post({ name: 'X', email: `dup+${RUN}@example.test`, wants: ['sign'], consent_text: CONSENT });
+    const two = await post({ name: 'X', email: `dup+${RUN}@example.test`, wants: ['sign'], consent_text: CONSENT });
+    assert.equal(one.statusCode, two.statusCode);
+    assert.equal(one.body, two.body);
+    const rows = await db.query<{ id: string }>(`SELECT id FROM public_request WHERE email = $1`, [
+      `dup+${RUN}@example.test`,
+    ]);
+    for (const r of rows.rows) cleanup.push(r.id);
+  });
+
+  it('swallows a honeypot hit without storing it, and answers normally', async () => {
+    const before = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM public_request`);
+    const res = await post({
+      name: 'Bot',
+      email: `bot+${RUN}@example.test`,
+      wants: ['sign'],
+      consent_text: CONSENT,
+      website: 'http://spam.example',
+    });
+    // Telling a scraper it was detected only teaches it to try again.
+    assert.equal(res.statusCode, 202);
+    const after2 = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM public_request`);
+    assert.equal(after2.rows[0]!.n, before.rows[0]!.n, 'a honeypot hit stores nothing');
+  });
+
+  it('refuses a submission with no way to reply', async () => {
+    const res = await post({ name: 'No Contact', wants: ['sign'], consent_text: CONSENT });
+    assert.equal(res.statusCode, 400);
+  });
+
+  it('requires the consent wording', async () => {
+    const res = await post({ name: 'X', email: `nc+${RUN}@example.test`, wants: ['sign'] });
+    assert.equal(res.statusCode, 400);
+  });
+
+  it('only sends CORS headers to an allowlisted origin', async () => {
+    // The stack under test configures no origins, so no browser on another site may post here.
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/public/requests',
+      headers: { origin: 'https://evil.example' },
+    });
+    assert.equal(res.headers['access-control-allow-origin'], undefined, 'never echo an unknown origin');
+    assert.match(String(res.headers['vary'] ?? ''), /Origin/);
+  });
+
+  it('is organizer-only to read, and a volunteer cannot', async () => {
+    const vol = await call('GET', '/api/public/requests', volunteerCookie);
+    assert.equal(vol.statusCode, 403);
+    const org = await call('GET', '/api/public/requests', organizerCookie);
+    assert.equal(org.statusCode, 200);
+    assert.ok(Array.isArray((org.json() as { requests: unknown[] }).requests));
+    // Reading it is audited: self-submitted, but still names, addresses and phone numbers.
+    const a = await db.query(`SELECT 1 FROM audit_log WHERE action = 'view_public_requests' ORDER BY id DESC LIMIT 1`);
+    assert.equal(a.rowCount, 1);
+    await db.query(`DELETE FROM audit_log WHERE action = 'view_public_requests'`);
+  });
+});
+
 describe('sign requests from a contact', () => {
   it('records a visit with no turf at all, and raises a sign request row', async () => {
     // A door tapped on the map may be in no turf. `contact.turf_id` is nullable precisely so this

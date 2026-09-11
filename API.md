@@ -705,6 +705,35 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
   Including them would report 390 blocked doors where there are 73. Categories overlap, so no field
   here is the sum of the rows above it.
 
+## Public sign-up form (no session)
+
+- `POST /api/public/requests` → **public, unauthenticated.** How the campaign website's form reaches
+  this system. `OPTIONS` is answered for preflight.
+  ```
+  { name, email?, phone?, address?, note?, wants: ["sign"|"volunteer"|"reminders"|"donate"|"other"],
+    consent_text, website? }
+  → 202 { ok: true, message }        // identical for EVERY outcome
+  ```
+  - **The response never reveals whether we already know this person.** Duplicate, honeypot,
+    first-time — byte-identical. Otherwise the form is an oracle over the campaign's list.
+  - **Writes only to `public_request`, never to `voter` or `household`.** A public submission has a
+    different provenance and legal basis from the clerk's supply; matching one to a real door is a
+    human job, recorded in `household_id` afterwards.
+  - `email` or `phone` is required (`400 contact_required`) — a submission with no way to reply is a
+    note to nobody. `consent_text` is required and stored verbatim.
+  - `website` is a honeypot: anything in it is a bot, and the row is discarded silently.
+  - Rate limited to **10/hour per IP**. Cross-origin requires the caller's origin to be in
+    `PUBLIC_FORM_ORIGINS` — an allowlist, never `*`. Blank (the default) means no cross-origin form
+    can post at all.
+  - Sends nothing. A reply would be a message to an address nobody has confirmed; phone consent has
+    its own double opt-in at `POST /api/subscribe`.
+  - Audit `public_request` (no user id — nobody was signed in).
+
+- `GET /api/public/requests?open=true&limit=100` → organizer/admin. The submissions, newest first.
+  Audit `view_public_requests`.
+- `PATCH /api/public/requests/:id` → organizer/admin. `{ handled?, household_id?, sign_id? }` —
+  mark one dealt with and record the door it turned out to be. Audit `handle_public_request`.
+
 ## Audit (admin)
 - `GET /api/audit?limit=200&before=<id>` → `{ entries: [...] }`
 

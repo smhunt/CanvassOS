@@ -24,6 +24,7 @@ import { searchRoutes } from './routes/search.js';
 import { MAX_PHOTO_BYTES, signRoutes } from './routes/signs.js';
 import { statsRoutes } from './routes/stats.js';
 import { streetRoutes } from './routes/streets.js';
+import { publicRequestRoutes } from './routes/public-requests.js';
 import { subscribeRoutes } from './routes/subscribe.js';
 import { assignmentRoutes, turfRoutes } from './routes/turfs.js';
 import { userRoutes } from './routes/users.js';
@@ -182,6 +183,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       // Public, no session: the self-serve opt-in form posts here. Sits beside /messaging rather
       // than under it because it is the one messaging route an anonymous visitor may call.
       await api.register(subscribeRoutes);
+      await api.register(publicRequestRoutes);
       await api.register(auditRoutes);
     },
     { prefix: '/api' },

@@ -78,6 +78,13 @@ const schema = z.object({
   ADVICE_PROVIDER: z.enum(['anthropic']).default('anthropic'),
   ADVICE_MODEL: z.string().min(1).default('claude-sonnet-5'),
 
+  // Origins allowed to POST the public sign-up form, comma-separated (e.g.
+  // "https://sean-hunt.pages.dev,https://sean-hunt.com"). Absent = no cross-origin form at all,
+  // which is the safe default: the endpoint still exists but only same-origin callers reach it.
+  // An allowlist rather than "*" because this is an unauthenticated write endpoint on the stack
+  // that holds the voters list.
+  PUBLIC_FORM_ORIGINS: z.string().default(''),
+
   LOG_LEVEL: z.string().default('info'),
 });
 
