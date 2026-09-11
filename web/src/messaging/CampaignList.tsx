@@ -1,5 +1,5 @@
 import { useCampaigns } from '../api/hooks';
-import { EmptyState, ErrorBox, LoadingRows, fmtDate, n } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingCards, fmtDate, n } from '../components/ui';
 import { ProgressBar } from './ProgressBar';
 import { PURPOSE_LABELS, awaitingStart, statusLabel, statusTone, totals } from './format';
 
@@ -16,7 +16,7 @@ interface Props {
 export function CampaignList({ onOpen, onNew }: Props) {
   const q = useCampaigns();
 
-  if (q.isPending) return <LoadingRows rows={3} />;
+  if (q.isPending) return <LoadingCards count={3} label="Loading campaigns…" />;
   if (q.isError) return <ErrorBox title="Campaigns could not be loaded" error={q.error} onRetry={() => void q.refetch()} />;
 
   const campaigns = q.data ?? [];

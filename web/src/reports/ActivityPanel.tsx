@@ -1,7 +1,7 @@
 import { useMemo, type CSSProperties } from 'react';
 import { useActivity } from '../api/hooks';
 import { Histogram } from '../components/Bars';
-import { EmptyState, ErrorBox, LoadingRows, fmtDate, n } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingChart, LoadingTiles, fmtDate, n } from '../components/ui';
 import { daysSince, fillDays, relativeDay } from './relative';
 
 const WINDOWS = [7, 14, 30] as const;
@@ -41,10 +41,12 @@ export function ActivityPanel({ days, onDays }: { days: ActivityDays; onDays: (d
         </div>
       </div>
 
+      {/* Four tiles over a per-day chart, which is the shape of the answer. */}
       {activity.isPending && (
-        <div className="card">
-          <LoadingRows rows={5} />
-        </div>
+        <>
+          <LoadingTiles count={4} label="Loading activity…" />
+          <LoadingChart bars={5} label={null} />
+        </>
       )}
       {activity.isError && <ErrorBox title="Could not load activity" error={activity.error} onRetry={() => void activity.refetch()} />}
 

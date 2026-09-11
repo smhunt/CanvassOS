@@ -2,7 +2,7 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useFollowUps } from '../api/hooks';
 import { RESULT_LABELS, type FollowUp } from '../api/types';
-import { EmptyState, ErrorBox, LoadingRows, fmtDate, n, titleCase, wardLabel } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingCards, fmtDate, n, titleCase, wardLabel } from '../components/ui';
 import { RESULT_COLOURS, wardColour } from '../map/palette';
 import { relativeDay } from './relative';
 
@@ -26,11 +26,7 @@ export function FollowUpQueue() {
   }, [rows, ward]);
 
   if (followUps.isPending) {
-    return (
-      <div className="card">
-        <LoadingRows rows={5} />
-      </div>
-    );
+    return <LoadingCards count={5} label="Loading the follow-up queue…" />;
   }
   if (followUps.isError) {
     return <ErrorBox title="Could not load the follow-up queue" error={followUps.error} onRetry={() => void followUps.refetch()} />;

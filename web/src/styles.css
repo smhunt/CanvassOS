@@ -1957,6 +1957,52 @@ select {
   max-width: 16rem;
 }
 
+/* The other shapes (LoadingTiles / LoadingCards / LoadingTable / LoadingChart). Each reserves
+   roughly the height the real thing will take, so the answer lands without the page jumping under
+   a thumb that is already reaching for a row. They all animate through `.skeleton`, so the
+   reduced-motion rule beside `@keyframes shimmer` already covers them. */
+.skeleton-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+.skeleton-tiles .skeleton--tile {
+  height: 4.5rem;
+  width: 100%;
+  border-radius: var(--radius);
+}
+.skeleton-cards {
+  display: grid;
+  gap: 0.6rem;
+}
+/* Beats `.skeleton:nth-child(2n)`: a short bar reads as a wrapped line, a short card as a mistake. */
+.skeleton-cards .skeleton--card {
+  height: 4.75rem;
+  width: 100%;
+  border-radius: var(--radius);
+}
+.skeleton-table {
+  display: grid;
+  gap: 0.6rem;
+}
+.skeleton-table__row {
+  display: flex;
+  gap: 0.6rem;
+}
+.skeleton-table .skeleton--cell {
+  flex: 1;
+  width: auto;
+}
+.skeleton-table__row--head .skeleton--cell {
+  height: 0.8rem;
+  opacity: 0.65;
+}
+.skeleton-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
 /* Actions on the door card (map/HouseholdCard.tsx). Sits directly under the address so the card
    answers "what can I do here" before "who lives here" — the read-only version of this card was a
    dead end you had to leave to act on. */

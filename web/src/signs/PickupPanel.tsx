@@ -10,7 +10,7 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { useUpdateSign, usePickupList } from '../api/hooks';
 import { SIGN_STATUS_LABELS } from '../api/types';
-import { EmptyState, ErrorBox, LoadingRows, Spinner, fmtDate, n, wardLabel } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingCards, Spinner, fmtDate, n, wardLabel } from '../components/ui';
 import { wardColour } from '../map/palette';
 import { ACCURACY_WARN_M, formatAccuracy, formatCoord } from './geolocation';
 import { PhotoStrip } from './PhotoStrip';
@@ -25,11 +25,7 @@ export function PickupPanel() {
   const shown = useMemo(() => (ward ? rows.filter((s) => s.ward === ward) : rows), [rows, ward]);
 
   if (pickup.isPending) {
-    return (
-      <div className="card">
-        <LoadingRows rows={4} />
-      </div>
-    );
+    return <LoadingCards count={4} label="Loading the pickup list…" />;
   }
   if (pickup.isError) {
     return <ErrorBox title="Could not load the pickup list" error={pickup.error} onRetry={() => void pickup.refetch()} />;

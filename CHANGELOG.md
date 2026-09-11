@@ -4,6 +4,25 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-09-11
+
+### Changed
+
+- **Loading states now look like what is coming.** A spinner says something is happening; a
+  skeleton shaped like the page says a list of eight tiles, or a five-column table, is on its way —
+  which is what stops someone on a weak rural connection reloading a fetch that was already
+  working. Applied across stats, reports, turfs, canvass, signs, messaging, users, audit and
+  account, and to the route-level fallbacks so the placeholder matches the page that replaces it.
+
+  Deliberately not applied to anything where nothing is arriving: Save buttons, GPS fixes, photo
+  uploads and the map screens all keep their spinner, because bars would promise rows that never
+  come. One skeleton was *removed* for that reason — the signs map was showing a stack of list bars
+  before rendering a map.
+
+  The shapes share one accessibility contract: a labelled region is `role="status"` with
+  `aria-busy` and a visually-hidden label, the bars themselves are decorative, and a second shape on
+  an already-announcing screen stays silent rather than announcing twice.
+
 ## [0.5.2] - 2026-09-11
 
 ### Added

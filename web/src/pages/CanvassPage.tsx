@@ -9,7 +9,7 @@ import { SyncStatus } from '../canvass/SyncStatus';
 import { readLastTurf } from '../canvass/lastTurf';
 import { cachedTurfSummaries } from '../offline/turfCache';
 import { useUser } from '../components/Shell';
-import { EmptyState, ErrorBox, LoadingRows, n, wardLabel } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingCards, n, wardLabel } from '../components/ui';
 
 /** The volunteer's landing page: the turfs assigned to them, each a doorway into the door screen. */
 export function CanvassPage() {
@@ -62,11 +62,7 @@ export function CanvassPage() {
         <SyncStatus />
       </header>
 
-      {mine.isPending && (
-        <div className="card">
-          <LoadingRows rows={3} />
-        </div>
-      )}
+      {mine.isPending && <LoadingCards count={3} label="Loading your turfs…" />}
       {mine.isError && <ErrorBox title="Could not load your turfs" error={mine.error} onRetry={() => void mine.refetch()} />}
 
       {mine.isError && saved.length > 0 && (

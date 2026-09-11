@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAudience, useCampaign, useCampaignAction, useSenderNumbers } from '../api/hooks';
 import type { Campaign } from '../api/types';
-import { ErrorBox, LoadingRows, fmtDate, n } from '../components/ui';
+import { ErrorBox, LoadingList, fmtDate, n } from '../components/ui';
 import { ApproveDialog } from './ApproveDialog';
 import { AudienceReadout } from './AudienceReadout';
 import { Composer } from './Composer';
@@ -71,7 +71,7 @@ export function CampaignDetail({ id, onBack }: Props) {
   // audience, not the progress. Called unconditionally with a placeholder so hook order is stable.
   const aud = useAudience(campaign?.purpose ?? 'gotv', campaign?.audience ?? {});
 
-  if (q.isPending && !campaign) return <LoadingRows rows={4} />;
+  if (q.isPending && !campaign) return <LoadingList rows={5} label="Loading the campaign…" />;
   if (q.isError || !campaign) {
     return <ErrorBox title="Campaign could not be loaded" error={q.error} onRetry={() => void q.refetch()} />;
   }

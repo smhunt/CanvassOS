@@ -1,6 +1,6 @@
 import { useStats } from '../api/hooks';
 import { HBars, Histogram } from '../components/Bars';
-import { ErrorBox, LoadingRows, n, titleCase, wardLabel } from '../components/ui';
+import { ErrorBox, LoadingChart, LoadingTiles, n, titleCase, wardLabel } from '../components/ui';
 import { QUALITY_COLOURS, wardColour } from '../map/palette';
 
 export function StatsPage() {
@@ -13,10 +13,17 @@ export function StatsPage() {
         <p className="muted">Voters list overview for Middlesex Centre. Canvass figures fill in once door-knocking starts (Phase 2).</p>
       </header>
 
+      {/* The page is eight tiles over four charts, so that is what waits here — one announcement
+          for the whole screen, the rest of the shapes decorative. */}
       {stats.isPending && (
-        <div className="card">
-          <LoadingRows rows={6} />
-        </div>
+        <>
+          <LoadingTiles count={8} label="Loading the stats…" />
+          <div className="grid-2">
+            {[0, 1, 2, 3].map((i) => (
+              <LoadingChart key={i} bars={4} label={null} />
+            ))}
+          </div>
+        </>
       )}
       {stats.isError && <ErrorBox title="Could not load stats" error={stats.error} onRetry={() => void stats.refetch()} />}
 

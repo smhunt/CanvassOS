@@ -1,6 +1,6 @@
 import { useSenderNumbers } from '../api/hooks';
 import type { SenderNumber } from '../api/types';
-import { EmptyState, ErrorBox, LoadingRows, n } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingList, n } from '../components/ui';
 import { pct, poolCapacity } from './format';
 
 /** One number's day, as a bar. The cap is the point: past it, messages are accepted and dropped. */
@@ -56,7 +56,7 @@ export function SenderPool() {
   const q = useSenderNumbers();
   const cap = poolCapacity(q.data);
 
-  if (q.isPending) return <LoadingRows rows={3} />;
+  if (q.isPending) return <LoadingList rows={3} label="Loading the sending numbers…" />;
   if (q.isError) return <ErrorBox title="Sending numbers could not be loaded" error={q.error} onRetry={() => void q.refetch()} />;
 
   const numbers = q.data ?? [];

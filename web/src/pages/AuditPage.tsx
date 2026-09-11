@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAudit, useUsers } from '../api/hooks';
 import type { AuditEntry } from '../api/types';
-import { EmptyState, ErrorBox, LoadingRows, fmtDate } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingTable, fmtDate } from '../components/ui';
 
 const ACTIONS = [
   'login',
@@ -74,7 +74,7 @@ export function AuditPage() {
           </button>
         </div>
 
-        {audit.isPending && <LoadingRows rows={8} />}
+        {audit.isPending && <LoadingTable rows={8} cols={5} label="Loading the audit log…" />}
         {audit.isError && <ErrorBox error={audit.error} onRetry={() => void audit.refetch()} compact />}
         {audit.data && entries.length === 0 && <EmptyState title="No matching audit entries" />}
         {entries.length > 0 && (

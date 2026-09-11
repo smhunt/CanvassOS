@@ -3,7 +3,7 @@ import { errorMessage, isApiError } from '../api/client';
 import { useInviteUser, useReinviteUser, useUpdateUser, useUsers } from '../api/hooks';
 import type { Role, UserRow } from '../api/types';
 import { useUser } from '../components/Shell';
-import { EmptyState, ErrorBox, LoadingRows, RoleChip, fmtDate } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingTable, RoleChip, fmtDate } from '../components/ui';
 
 const ROLES: Role[] = ['volunteer', 'organizer', 'admin'];
 
@@ -115,7 +115,7 @@ export function UsersPage() {
         <h2 id="users-h">
           Accounts {users.data && <span className="muted">({users.data.length})</span>}
         </h2>
-        {users.isPending && <LoadingRows rows={4} />}
+        {users.isPending && <LoadingTable rows={4} cols={5} label="Loading accounts…" />}
         {users.isError && <ErrorBox error={users.error} onRetry={() => void users.refetch()} compact />}
         {users.data && users.data.length === 0 && <EmptyState title="No users yet" />}
         {users.data && users.data.length > 0 && (

@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMeta, useSignRequests, useSigns } from '../api/hooks';
 import type { Sign, SignRequest } from '../api/types';
-import { ErrorBox, LoadingRows, fmtDate, n, titleCase, wardLabel } from '../components/ui';
+import { ErrorBox, Spinner, fmtDate, n, titleCase, wardLabel } from '../components/ui';
 import { MapView } from '../map/MapView';
 import { SIGN_COLOURS } from '../map/palette';
 
@@ -179,10 +179,12 @@ export default function SignsMap() {
     });
 
   if (signs.isPending || requests.isPending) {
+    // What is coming is a map, not a list, so this keeps the spinner the tab itself uses — a stack
+    // of skeleton bars here would promise rows that never arrive.
     return (
-      <div className="card">
-        <LoadingRows rows={4} />
-      </div>
+      <p className="muted small">
+        <Spinner size={16} /> Loading the sign map…
+      </p>
     );
   }
   if (signs.isError) {

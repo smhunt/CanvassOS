@@ -11,7 +11,7 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useSignRequests } from '../api/hooks';
-import { EmptyState, ErrorBox, LoadingRows, fmtDate, n, titleCase, wardLabel } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingCards, fmtDate, n, titleCase, wardLabel } from '../components/ui';
 import { wardColour } from '../map/palette';
 import { relativeDay } from '../reports/relative';
 import { toDeliveryRequests, type DeliveryRequest } from './rows';
@@ -25,11 +25,7 @@ export function SignRequestsPanel() {
   const shown = useMemo(() => (ward ? rows.filter((r) => r.ward === ward) : rows), [rows, ward]);
 
   if (requests.isPending) {
-    return (
-      <div className="card">
-        <LoadingRows rows={4} />
-      </div>
-    );
+    return <LoadingCards count={4} label="Loading the sign requests…" />;
   }
   if (requests.isError) {
     return <ErrorBox title="Could not load the sign requests" error={requests.error} onRetry={() => void requests.refetch()} />;

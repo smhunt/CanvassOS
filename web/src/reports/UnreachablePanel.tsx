@@ -15,7 +15,7 @@
 import { useMemo } from 'react';
 import { useReachability } from '../api/hooks';
 import type { ReachCategory } from '../api/types';
-import { ErrorBox, LoadingRows, n, wardLabel } from '../components/ui';
+import { ErrorBox, LoadingCards, LoadingTiles, n, wardLabel } from '../components/ui';
 import './reachability.css';
 
 /** Written guidance per category. Domain knowledge, not generated — stable enough to be content. */
@@ -150,10 +150,12 @@ export function UnreachablePanel() {
   }, [qy.data]);
 
   if (qy.isPending) {
+    // Two headline figures, then a stack of category cards.
     return (
-      <div className="card">
-        <LoadingRows rows={5} />
-      </div>
+      <>
+        <LoadingTiles count={2} label="Working out what is unreachable…" />
+        <LoadingCards count={4} label={null} />
+      </>
     );
   }
   if (qy.isError) {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { errorMessage } from '../api/client';
 import { useTurfs, useUpdateTurf } from '../api/hooks';
 import type { TurfSummary } from '../api/types';
-import { EmptyState, ErrorBox, LoadingRows, n } from '../components/ui';
+import { EmptyState, ErrorBox, LoadingCards, LoadingTiles, n } from '../components/ui';
 import { AssignDialog, type AssignStep } from '../turfs/AssignDialog';
 import { CreateTurfDialog } from '../turfs/CreateTurfDialog';
 import { RenameDialog } from '../turfs/RenameDialog';
@@ -109,7 +109,12 @@ export function TurfsPage() {
         </div>
       )}
 
-      {turfs.isPending && <LoadingRows rows={4} />}
+      {turfs.isPending && (
+        <>
+          <LoadingTiles count={4} label="Loading turfs…" />
+          <LoadingCards count={4} label={null} />
+        </>
+      )}
       {turfs.isError && <ErrorBox error={turfs.error} onRetry={() => void turfs.refetch()} />}
       {turfs.data && live.length === 0 && (
         <EmptyState title="No turfs yet">

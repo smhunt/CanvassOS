@@ -54,13 +54,89 @@ export function RoleChip({ role }: { role: Role }) {
   return <span className={`chip chip--${role}`}>{role}</span>;
 }
 
-export function LoadingRows({ rows = 3 }: { rows?: number }) {
+/**
+ * Every loading shape below takes a `label`.
+ *
+ * Pass one when the shape *is* the screen's loading state — it is the only thing a screen reader
+ * gets, since the bars themselves are decoration. Pass `null` when another shape on the same
+ * screen has already announced it: two live regions both saying "loading" is worse than one.
+ */
+function LoadingRegion({ label, className, children }: { label: string | null; className?: string; children: ReactNode }) {
+  // Every shape marks its own bars aria-hidden, so an unannounced one needs no wrapper at all —
+  // that keeps the markup of a plain `LoadingRows` exactly what it was before labels existed.
+  if (label === null) return className ? <div className={className}>{children}</div> : <>{children}</>;
   return (
-    <div className="skeleton-list" aria-hidden="true">
-      {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="skeleton" />
+    <div className={className} role="status" aria-busy="true" aria-live="polite">
+      <span className="visually-hidden">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+export function LoadingRows({ rows = 3, label = null }: { rows?: number; label?: string | null }) {
+  return (
+    <LoadingRegion label={label}>
+      <div className="skeleton-list" aria-hidden="true">
+        {Array.from({ length: rows }, (_, i) => (
+          <div key={i} className="skeleton" />
+        ))}
+      </div>
+    </LoadingRegion>
+  );
+}
+
+/** Stat tiles (`.tiles`): a row of counts is coming, so reserve tile-sized boxes, not text lines. */
+export function LoadingTiles({ count = 4, label = 'Loading…' }: { count?: number; label?: string | null }) {
+  return (
+    <LoadingRegion label={label}>
+      <div className="skeleton-tiles" aria-hidden="true">
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="skeleton skeleton--tile" />
+        ))}
+      </div>
+    </LoadingRegion>
+  );
+}
+
+/** A list of cards (turfs, queue rows, campaigns) — card-height blocks so the page does not jump. */
+export function LoadingCards({ count = 3, label = 'Loading…' }: { count?: number; label?: string | null }) {
+  return (
+    <LoadingRegion label={label}>
+      <div className="skeleton-cards" aria-hidden="true">
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="skeleton skeleton--card" />
+        ))}
+      </div>
+    </LoadingRegion>
+  );
+}
+
+/** A table: a header band plus `rows` × `cols` cells, so the columns are where they will land. */
+export function LoadingTable({ rows = 5, cols = 4, label = 'Loading…' }: { rows?: number; cols?: number; label?: string | null }) {
+  const row = (key: string, head: boolean) => (
+    <div key={key} className={`skeleton-table__row${head ? ' skeleton-table__row--head' : ''}`}>
+      {Array.from({ length: cols }, (_, c) => (
+        <div key={c} className="skeleton skeleton--cell" />
       ))}
     </div>
+  );
+  return (
+    <LoadingRegion label={label}>
+      <div className="skeleton-table" aria-hidden="true">
+        {row('head', true)}
+        {Array.from({ length: rows }, (_, r) => row(`r${r}`, false))}
+      </div>
+    </LoadingRegion>
+  );
+}
+
+/** A chart card: a title band over bars of uneven length, which is what a bar chart looks like. */
+export function LoadingChart({ bars = 5, label = 'Loading…' }: { bars?: number; label?: string | null }) {
+  return (
+    <LoadingRegion label={label} className="card skeleton-chart">
+      <div className="skeleton skeleton--head" aria-hidden="true" />
+      <LoadingRows rows={bars} />
+    </LoadingRegion>
   );
 }
 
@@ -101,12 +177,11 @@ export function titleCase(s: string | null | undefined): string {
  * waiting and reloading — and reloading a turf of 1,330 doors costs the volunteer the whole fetch
  * again. `aria-busy` on the region is what a screen reader gets; the bars themselves are decorative.
  */
-export function LoadingList({ rows = 6, label = 'Loading…' }: { rows?: number; label?: string }) {
+export function LoadingList({ rows = 6, label = 'Loading…' }: { rows?: number; label?: string | null }) {
   return (
-    <div className="skeleton-page" role="status" aria-busy="true" aria-live="polite">
-      <span className="visually-hidden">{label}</span>
+    <LoadingRegion label={label} className="skeleton-page">
       <div className="skeleton skeleton--head" aria-hidden="true" />
       <LoadingRows rows={rows} />
-    </div>
+    </LoadingRegion>
   );
 }

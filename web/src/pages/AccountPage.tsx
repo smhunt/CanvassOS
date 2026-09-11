@@ -5,7 +5,7 @@ import { useChangePassword, useLogout, useMeta } from '../api/hooks';
 import { PasswordField } from '../components/PasswordField';
 import { APP_VERSION, ChangelogModal, REPO_URL, type AboutTab } from '../components/changelog-modal';
 import { useUser } from '../components/Shell';
-import { RoleChip, fmtDate, n } from '../components/ui';
+import { LoadingRows, RoleChip, fmtDate, n } from '../components/ui';
 
 const MIN_PASSWORD = 10;
 
@@ -126,7 +126,7 @@ export function AccountPage() {
 
       <section className="card" aria-labelledby="data-h">
         <h2 id="data-h">Data</h2>
-        {meta.isPending && <p className="muted">Loading…</p>}
+        {meta.isPending && <LoadingRows rows={4} label="Loading the import details…" />}
         {meta.isError && <p className="muted">Import details unavailable.</p>}
         {meta.data?.import ? (
           <dl className="dl">

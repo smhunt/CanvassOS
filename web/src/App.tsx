@@ -2,7 +2,7 @@ import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { RedirectIfSignedIn, RequireAuth, RequireRole } from './auth';
 import { Shell } from './components/Shell';
-import { FullPageSpinner } from './components/ui';
+import { FullPageSpinner, LoadingList } from './components/ui';
 import { AccountPage } from './pages/AccountPage';
 import { AuditPage } from './pages/AuditPage';
 import { InvitePage } from './pages/InvitePage';
@@ -59,7 +59,7 @@ export default function App() {
           <Route
             path="/canvass"
             element={
-              <Suspense fallback={<FullPageSpinner label="Loading your turfs…" />}>
+              <Suspense fallback={<LoadingList rows={4} label="Loading your turfs…" />}>
                 <CanvassPage />
               </Suspense>
             }
@@ -67,7 +67,7 @@ export default function App() {
           <Route
             path="/canvass/:turfId"
             element={
-              <Suspense fallback={<FullPageSpinner label="Loading the doors…" />}>
+              <Suspense fallback={<LoadingList rows={8} label="Loading the doors…" />}>
                 <DoorScreen />
               </Suspense>
             }
@@ -76,7 +76,7 @@ export default function App() {
             path="/turfs"
             element={
               <RequireRole min="organizer">
-                <Suspense fallback={<FullPageSpinner label="Loading turfs…" />}>
+                <Suspense fallback={<LoadingList rows={5} label="Loading turfs…" />}>
                   <TurfsPage />
                 </Suspense>
               </RequireRole>
@@ -85,7 +85,7 @@ export default function App() {
           <Route
             path="/turfs/:turfId/sheet"
             element={
-              <Suspense fallback={<FullPageSpinner label="Building the sheet…" />}>
+              <Suspense fallback={<LoadingList rows={10} label="Building the sheet…" />}>
                 <TurfSheetPage />
               </Suspense>
             }
@@ -102,7 +102,7 @@ export default function App() {
             path="/messaging"
             element={
               <RequireRole min="organizer">
-                <Suspense fallback={<FullPageSpinner label="Loading messaging…" />}>
+                <Suspense fallback={<LoadingList rows={4} label="Loading messaging…" />}>
                   <CampaignsPage />
                 </Suspense>
               </RequireRole>
@@ -112,7 +112,7 @@ export default function App() {
             path="/reports"
             element={
               <RequireRole min="organizer">
-                <Suspense fallback={<FullPageSpinner label="Loading reports…" />}>
+                <Suspense fallback={<LoadingList rows={5} label="Loading reports…" />}>
                   <ReportsPage />
                 </Suspense>
               </RequireRole>

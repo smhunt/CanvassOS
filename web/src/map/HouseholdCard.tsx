@@ -78,7 +78,7 @@ export function HouseholdCard({ selection, user, onClose, onFly }: Props) {
 
       <div className="sheet__body">
         {!organizer && <VolunteerView props={p} />}
-        {organizer && hh.isPending && <LoadingRows rows={4} />}
+        {organizer && hh.isPending && <LoadingRows rows={4} label="Loading this household…" />}
         {organizer && hh.isError && (
           <ErrorBox
             title={isApiError(hh.error, 404) ? 'Household not found' : isApiError(hh.error, 403) ? 'Not available for your role' : 'Could not load this household'}
