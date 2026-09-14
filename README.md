@@ -64,6 +64,14 @@ every sign still standing with a link that opens the phone's map app.
 
 **Admins.** Users, invite links, and the audit log.
 
+**Website sign-ups, on their own.** People who sign up on the campaign website flow into the
+Sign-ups queue automatically: a worker pulls the site's admin export every five minutes, and a
+local matcher suggests which voter each one probably is — exact email/phone hits against
+door-collected contact info link themselves; fuzzy name/address matches wait for an organiser's
+one-click confirmation. Decisions survive voters-list re-imports, every machine action is audited,
+and nothing derived from the list ever flows back out. Details:
+[`docs/phase-8-subscriber-link-plan.md`](docs/phase-8-subscriber-link-plan.md).
+
 ## Why it looks the way it does
 
 The interesting parts of this codebase are not the features. They are the four constraints the
@@ -619,7 +627,7 @@ as `resident_class = 'non-resident'`, which is 390.
 
 ## Status
 
-Honest version, as of v0.3.0:
+Honest version, as of v0.6.0:
 
 | Phase | State |
 |---|---|
@@ -628,6 +636,7 @@ Honest version, as of v0.3.0:
 | **Lawn signs** (not in the original plan) | **Shipped.** GPS placement with accuracy and photo, boundary check, pickup list, delivery list from `contact.wants_sign`. |
 | **3 — Field hardening** | **Shipped.** Offline write queue and turf cache, sign photos held until they can upload, nearest-first ordering, the printable paper turf sheet, add-to-home-screen, and a proper tablet layout. |
 | **4 — Reporting and admin** | **Planned.** Coverage and support reports by ward / community / turf / day, CSV export with an audit entry per download, diff-based re-import that preserves contacts. |
+| **8 — Website subscriber link** (5–7 tracked in `docs/TODO.md`) | **Shipped.** Five-minute pull sync from the campaign website, local exact + fuzzy voter matching, the organiser Sign-ups queue with one-click confirmation, and a decision ledger that survives re-imports. |
 
 Full history is in [`CHANGELOG.md`](CHANGELOG.md), and the same changelog, roadmap and a
 "how it works" guide are readable inside the app from the account page.
