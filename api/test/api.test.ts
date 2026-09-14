@@ -3488,7 +3488,7 @@ describe('subscriber link (website sync + matcher)', () => {
     await db.query(`DELETE FROM subscriber_link WHERE external_id LIKE $1`, [`t8-${RUN}-%`]);
     await db.query(`DELETE FROM voter_contact WHERE value = $1`, [contactEmail]);
     await db.query(
-      `DELETE FROM audit_log WHERE action IN ('subscriber_sync', 'suggest_match', 'auto_accept_match', 'decide_match')`,
+      `DELETE FROM audit_log WHERE action IN ('subscriber_sync', 'suggest_match', 'auto_accept_match', 'apply_match_ledger', 'decide_match')`,
     );
   });
 
@@ -3647,5 +3647,84 @@ describe('subscriber link (website sync + matcher)', () => {
       ])
     ).rows[0];
     assert.equal(cand?.status, 'accepted');
+  });
+
+  it('never auto-accepts a pending (unconfirmed) subscriber, even on an exact contact hit', async () => {
+    // The email is proven to match a door-collected contact for exactly one voter — the same shape
+    // that auto-links a confirmed row — but this row's email ownership is unproven.
+    signups.push({
+      id: extId('pending'),
+      status: 'pending',
+      name: 'Unconfirmed Claimant',
+      email: contactEmail,
+      phone: '',
+      interests: '',
+      message: '',
+      consent: 'v1: pending confirmation',
+      created_at: '2026-09-14 14:00:00',
+      updated_at: '2026-09-14 14:00:00',
+    });
+    const res = await makeSync().runOnce();
+    assert.ok(res);
+    const row = await reqByExt('pending');
+    assert.equal(row.household_id, null, 'a pending row is never machine-linked');
+    const cand = (
+      await db.query(`SELECT status FROM match_candidate WHERE public_request_id = $1 AND natural_key = $2`, [
+        row.id,
+        sample.natural_key,
+      ])
+    ).rows[0];
+    assert.equal(cand?.status, 'suggested', 'the exact hit is offered for review, not accepted');
+    const ledger = (
+      await db.query(`SELECT count(*)::int AS n FROM subscriber_link WHERE external_id = $1`, [extId('pending')])
+    ).rows[0];
+    assert.equal(ledger.n, 0, 'no durable link minted');
+  });
+
+  it('rejecting the linked candidate unlinks the request and does not re-link on the next pass', async () => {
+    // A confirmed exact hit auto-links, then an organizer says "not them" — the wrong door must be
+    // cleared, and a later matcher pass must not silently restore it.
+    signups.push({
+      id: extId('undo'),
+      status: 'confirmed',
+      name: 'Wrongly Linked',
+      email: contactEmail,
+      phone: '',
+      interests: '',
+      message: '',
+      consent: 'v1: confirmed',
+      created_at: '2026-09-14 15:00:00',
+      updated_at: '2026-09-14 15:00:00',
+    });
+    await makeSync().runOnce();
+    const linked = await reqByExt('undo');
+    assert.equal(linked.household_id, sample.household_id, 'auto-linked first');
+    const acc = (
+      await db.query(`SELECT id FROM match_candidate WHERE public_request_id = $1 AND status = 'accepted'`, [linked.id])
+    ).rows[0];
+    assert.ok(acc, 'has an accepted candidate');
+
+    const rej = await app.inject({
+      method: 'POST',
+      url: `/api/public/requests/${linked.id}/decide`,
+      payload: { candidate_id: acc.id, decision: 'reject' },
+      headers: { cookie: organizerCookie },
+    });
+    assert.equal(rej.statusCode, 200, rej.body);
+
+    const unlinked = await reqByExt('undo');
+    assert.equal(unlinked.household_id, null, 'reject cleared the wrong link');
+
+    // A fresh matcher pass must leave it unlinked: the ledger says rejected.
+    await makeSync().runOnce();
+    const still = await reqByExt('undo');
+    assert.equal(still.household_id, null, 'not silently re-linked');
+    const led = (
+      await db.query(`SELECT status FROM subscriber_link WHERE external_id = $1 AND natural_key = $2`, [
+        extId('undo'),
+        sample.natural_key,
+      ])
+    ).rows[0];
+    assert.equal(led?.status, 'rejected');
   });
 });

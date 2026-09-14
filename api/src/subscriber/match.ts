@@ -52,6 +52,8 @@ interface RequestRow {
   phone: string | null;
   address: string | null;
   household_id: string | null;
+  /** null for direct public-form posts; only 'confirmed' website rows may auto-accept. */
+  website_status: 'pending' | 'confirmed' | 'unsubscribed' | null;
 }
 
 interface CandidateRow {
@@ -62,6 +64,8 @@ interface CandidateRow {
   address: string | null;
   score: number;
   method: 'email' | 'phone' | 'name' | 'name_address';
+  /** Tier-0 only: the door-collected value this matched was later withdrawn (may be a wrong number). */
+  withdrawn?: boolean;
 }
 
 /** lowercase, punctuation squashed to spaces — the shape voter.full_name compares best in. */
@@ -106,9 +110,12 @@ export async function runMatcher(db: Db, log: FastifyBaseLogger, config: Config)
 
   const requests = await q<RequestRow>(
     db,
-    `SELECT id, source, external_id, name, email, phone, address, household_id
+    // handled_at IS NULL: a request an organizer already dealt with (or closed as junk) is not a
+    // matching target — otherwise a deploy that back-fills matched_at=NULL on every historical row
+    // would silently re-match and, for exact hits, auto-link closed requests.
+    `SELECT id, source, external_id, name, email, phone, address, household_id, website_status
        FROM public_request
-      WHERE matched_at IS NULL
+      WHERE matched_at IS NULL AND handled_at IS NULL
       ORDER BY created_at
       LIMIT $1`,
     [BATCH],
@@ -143,7 +150,10 @@ async function matchOne(
   const key = ledgerKey(req);
   const decided = new Set<string>();
 
-  // ---- ledger: re-apply what somebody (or the exact-hit rule) already decided.
+  // ---- ledger: re-apply what somebody (or the exact-hit rule) already decided. ORDER BY
+  // decided_at DESC so that when more than one 'accepted' row exists for a subscriber (two organizers
+  // racing on stale queues), the LATEST decision is the one whose household is re-linked — the same
+  // last-writer-wins the live UPDATE gives, made deterministic across a re-import.
   const ledger = await q<{ natural_key: string; status: 'accepted' | 'rejected'; decided_by: string | null; decided_at: Date; voter_id: string | null; household_id: string | null; full_name: string | null; address: string | null }>(
     db,
     `SELECT sl.natural_key, sl.status, sl.decided_by, sl.decided_at,
@@ -151,9 +161,11 @@ async function matchOne(
        FROM subscriber_link sl
        LEFT JOIN voter v ON v.natural_key = sl.natural_key
        LEFT JOIN household h ON h.id = v.household_id
-      WHERE sl.source = $1 AND sl.external_id = $2`,
+      WHERE sl.source = $1 AND sl.external_id = $2
+      ORDER BY sl.decided_at DESC`,
     [key.source, key.external_id],
   );
+  let ledgerLinked = false;
   for (const row of ledger) {
     decided.add(row.natural_key);
     await upsertCandidate(db, req.id, {
@@ -168,37 +180,69 @@ async function matchOne(
       decided_by: row.decided_by,
       decided_at: row.decided_at,
     });
-    if (row.status === 'accepted' && row.household_id && !req.household_id) {
+    // Only the most recent accepted row (re-)links the household; earlier accepts are superseded.
+    if (row.status === 'accepted' && row.household_id && !req.household_id && !ledgerLinked) {
       await q(db, `UPDATE public_request SET household_id = $2 WHERE id = $1`, [req.id, row.household_id]);
       req.household_id = row.household_id;
+      ledgerLinked = true;
       stats.ledger_applied += 1;
     }
   }
+  if (ledger.length > 0) {
+    // Re-applying the ledger reads voter names and addresses and can re-link a household. That is a
+    // machine read/write of list data, so it is audited like every other — ids and counts only.
+    await audit(db, log, {
+      userId: null,
+      action: 'apply_match_ledger',
+      target: req.id,
+      detail: { rows: ledger.length, relinked: ledgerLinked },
+      ip: null,
+    });
+  }
 
-  // ---- tier 0: exact contact-info joins. Withdrawn consent still identifies — an unsubscribe
-  // takes the person off a send list, not off the planet — so withdrawn rows still count here.
+  // ---- tier 0: exact contact-info joins.
   const email = (req.email ?? '').trim().toLowerCase();
   const phone = (req.phone ?? '').trim();
-  const exact = await q<CandidateRow>(
+  const exactRaw = await q<CandidateRow>(
     db,
-    `SELECT DISTINCT v.id AS voter_id, v.natural_key, v.household_id, v.full_name,
+    // bool_or(withdrawn_at IS NOT NULL): a value withdrawn at the door is often a *wrong* number/
+    // email recorded against this voter, so a match on it may be a mis-transcription rather than a
+    // real identification — enough to suggest, never enough to auto-link.
+    `SELECT v.id AS voter_id, v.natural_key, v.household_id, v.full_name,
             h.address, 1.0::real AS score,
-            CASE WHEN vc.channel = 'email' THEN 'email' ELSE 'phone' END AS method
+            CASE WHEN vc.channel = 'email' THEN 'email' ELSE 'phone' END AS method,
+            bool_or(vc.withdrawn_at IS NOT NULL) AS withdrawn
        FROM voter_contact vc
        JOIN voter v ON v.id = vc.voter_id
        JOIN household h ON h.id = v.household_id
       WHERE vc.voter_id IS NOT NULL
         AND ((vc.channel = 'email' AND $1 <> '' AND lower(vc.value) = $1)
-          OR (vc.channel = 'phone' AND $2 <> '' AND vc.value = $2))`,
+          OR (vc.channel = 'phone' AND $2 <> '' AND vc.value = $2))
+      GROUP BY v.id, v.natural_key, v.household_id, v.full_name, h.address, method`,
     [email, phone],
   );
+  // One voter can appear twice (email AND phone both match) — collapse to one row per natural_key so
+  // the auto-accept body runs once and stats/audit are not doubled.
+  const exact = dedupeByKey(exactRaw);
 
+  // The "exactly one voter" test must consider EVERY exact match, not just the not-yet-decided ones:
+  // otherwise a household contact shared by two voters (already suggested, so both 'decided') could
+  // leave a single fresh match and be auto-linked. Withdrawn-only matches never auto-accept.
+  const distinctVoters = new Set(exact.map((c) => c.natural_key));
   const freshExact = exact.filter((c) => !decided.has(c.natural_key));
   const autoAccept =
     config.MATCH_AUTO_ACCEPT === 'exact' &&
+    // Only a confirmed website subscriber has proven they own the email/phone they signed up with.
+    // A 'pending' row (or a direct public-form post, website_status NULL) is an unverified claim, so
+    // it may be *suggested* but never machine-linked — this is the double-opt-in gate the matcher
+    // would otherwise bypass.
+    req.website_status === 'confirmed' &&
     !req.household_id &&
-    new Set(freshExact.map((c) => c.natural_key)).size === 1;
+    distinctVoters.size === 1 &&
+    freshExact.length > 0 &&
+    freshExact.every((c) => !c.withdrawn);
 
+  let tier0Suggested = 0;
   for (const c of freshExact) {
     decided.add(c.natural_key);
     if (autoAccept) {
@@ -233,20 +277,37 @@ async function matchOne(
       });
       stats.auto_accepted += 1;
     } else {
-      await upsertCandidate(db, req.id, {
-        voter_id: c.voter_id,
-        natural_key: c.natural_key,
-        household_id: c.household_id,
-        voter_name: c.full_name,
-        household_address: c.address,
-        score: c.score,
-        method: c.method,
-        status: 'suggested',
-        decided_by: null,
-        decided_at: null,
-      });
+      await upsertCandidate(
+        db,
+        req.id,
+        {
+          voter_id: c.voter_id,
+          natural_key: c.natural_key,
+          household_id: c.household_id,
+          voter_name: c.full_name,
+          household_address: c.address,
+          score: c.score,
+          method: c.method,
+          status: 'suggested',
+          decided_by: null,
+          decided_at: null,
+        },
+        true,
+      );
       stats.suggested += 1;
+      tier0Suggested += 1;
     }
+  }
+  if (tier0Suggested > 0) {
+    // Exact-but-not-auto-accepted matches (e.g. a household contact shared by two voters) still read
+    // and persist voter names and addresses, so they are audited like the fuzzy tier.
+    await audit(db, log, {
+      userId: null,
+      action: 'suggest_match',
+      target: req.id,
+      detail: { n: tier0Suggested, tier: 'exact' },
+      ip: null,
+    });
   }
 
   // ---- tier 1: fuzzy. Skip when an accepted link already exists — the queue needs alternatives
@@ -271,8 +332,14 @@ async function matchOne(
       WHERE lower(v.full_name) % s.variant
          OR ($2 <> '' AND lower(h.address) % $2)
       GROUP BY v.id, v.natural_key, v.household_id, v.full_name, h.address, h.civic_num
-      ORDER BY max(similarity(lower(v.full_name), s.variant)) DESC
-      LIMIT 25`,
+      -- Order by the STRONGER of the two signals, not name alone: a post-marriage surname (or a
+      -- nickname this table doesn't know) can score near zero on name while the address nails it,
+      -- and ordering by name would drop that voter before the blended score is ever computed.
+      ORDER BY GREATEST(
+        max(similarity(lower(v.full_name), s.variant)),
+        CASE WHEN $2 <> '' THEN similarity(lower(h.address), $2) ELSE 0 END
+      ) DESC
+      LIMIT 40`,
     [variants, addr],
   );
 
@@ -297,18 +364,23 @@ async function matchOne(
     .slice(0, TOP_N);
 
   for (const c of scored) {
-    await upsertCandidate(db, req.id, {
-      voter_id: c.voter_id,
-      natural_key: c.natural_key,
-      household_id: c.household_id,
-      voter_name: c.full_name,
-      household_address: c.address,
-      score: c.score,
-      method: c.method,
-      status: 'suggested',
-      decided_by: null,
-      decided_at: null,
-    });
+    await upsertCandidate(
+      db,
+      req.id,
+      {
+        voter_id: c.voter_id,
+        natural_key: c.natural_key,
+        household_id: c.household_id,
+        voter_name: c.full_name,
+        household_address: c.address,
+        score: c.score,
+        method: c.method,
+        status: 'suggested',
+        decided_by: null,
+        decided_at: null,
+      },
+      true,
+    );
     stats.suggested += 1;
   }
 
@@ -326,6 +398,21 @@ async function matchOne(
   }
 }
 
+/**
+ * Collapse exact matches to one row per natural_key (a voter can hit on both email and phone).
+ * `withdrawn` AND-reduces: the match is only treated as unreliable when EVERY value the subscriber
+ * matched on for that voter was withdrawn — one live channel is enough to trust the identity.
+ */
+function dedupeByKey(rows: CandidateRow[]): CandidateRow[] {
+  const byKey = new Map<string, CandidateRow>();
+  for (const r of rows) {
+    const cur = byKey.get(r.natural_key);
+    if (!cur) byKey.set(r.natural_key, { ...r });
+    else cur.withdrawn = Boolean(cur.withdrawn) && Boolean(r.withdrawn);
+  }
+  return [...byKey.values()];
+}
+
 async function upsertCandidate(
   db: Db,
   requestId: string,
@@ -341,6 +428,11 @@ async function upsertCandidate(
     decided_by: string | null;
     decided_at: Date | null;
   },
+  // When true (every suggestion write), an existing row that a human — or a concurrent
+  // auto-accept — has already decided is left ALONE: the ON CONFLICT update only fires while the
+  // stored row is still 'suggested'. This is what stops a matcher pass that started before a
+  // decision from clobbering that decision back to 'suggested'.
+  preserveDecided = false,
 ): Promise<void> {
   await one(
     db,
@@ -358,6 +450,7 @@ async function upsertCandidate(
            status = excluded.status,
            decided_by = excluded.decided_by,
            decided_at = excluded.decided_at
+       ${preserveDecided ? "WHERE match_candidate.status = 'suggested'" : ''}
      RETURNING id`,
     [
       requestId,

@@ -128,6 +128,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (Boolean(cfg.WEBSITE_SYNC_URL) !== Boolean(cfg.WEBSITE_SYNC_TOKEN)) {
     throw new Error('WEBSITE_SYNC_URL and WEBSITE_SYNC_TOKEN must be set together');
   }
+  // The sync sends the website's admin token (which unlocks the whole GOTV export) as a Bearer
+  // header on every pass. Over http that token crosses the wire in cleartext — refuse to boot.
+  if (cfg.WEBSITE_SYNC_URL && !cfg.WEBSITE_SYNC_URL.startsWith('https://')) {
+    throw new Error('WEBSITE_SYNC_URL must be https (the sync sends a bearer token)');
+  }
   return cfg;
 }
 

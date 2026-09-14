@@ -4,6 +4,30 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-09-14
+
+### Fixed
+
+- **Subscriber link hardening**, from an adversarial review of the phase-8
+  feature. The matcher now auto-links only *confirmed* website subscribers
+  (a pending or direct-form row, whose email ownership is unproven, can only
+  be suggested — closing a double-opt-in bypass); the "exactly one voter"
+  test counts every exact match, not just undecided ones; withdrawn
+  door-contact values can suggest but never auto-link; a voter matching on
+  both email and phone is counted once; and already-handled requests are no
+  longer matched.
+- **Rejecting a match now works as an undo.** Rejecting the candidate a
+  request is linked to clears the link and re-opens it for matching, and the
+  queue shows an "Undo — not them" control on an accepted match. Accepting
+  one candidate demotes any rival accepted match so a re-import can't
+  resurrect a superseded link.
+- **Every machine read/link is audited** — the exact-suggestion and
+  ledger-replay paths now write audit rows like the rest; a decision records
+  the candidate id (never the name/address).
+- One malformed export row can no longer wedge a whole sync pass; the sync
+  URL must be https (it carries a bearer token); and `import.py --force` now
+  warns that the sign-up queue and match suggestions will be cleared.
+
 ## [0.6.1] - 2026-09-14
 
 ### Fixed

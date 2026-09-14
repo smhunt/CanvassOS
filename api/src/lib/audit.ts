@@ -85,6 +85,7 @@ export type AuditAction =
   | 'subscriber_sync'
   | 'suggest_match'
   | 'auto_accept_match'
+  | 'apply_match_ledger'
   | 'decide_match';
 
 export interface AuditEntry {

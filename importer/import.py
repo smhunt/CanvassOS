@@ -249,6 +249,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                 ("sign_photo", "sign photos (files on the volume would be orphaned)"),
                 ("voter_contact", "doorstep phone/email records, with their consent"),
                 ("turf_household", "turf membership"),
+                # Phase 8: public_request has an FK to household, so TRUNCATE CASCADE empties it and
+                # (transitively) match_candidate. The website sign-up queue and every fuzzy
+                # suggestion are destroyed; website-sourced rows re-sync within 5 minutes and
+                # accepted links are re-applied from subscriber_link (which has NO FK and survives),
+                # but DIRECT public-form submissions and their verbatim consent_text are gone for
+                # good. Named here so an operator is never surprised by it.
+                ("public_request", "website/public sign-ups (direct-form ones are NOT recoverable)"),
+                ("match_candidate", "voter-match suggestions (rebuilt by the matcher after re-sync)"),
             ]
             counts: list[tuple[str, str, int]] = []
             for table, label in dependents:

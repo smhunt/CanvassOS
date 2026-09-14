@@ -118,9 +118,35 @@ export class SubscriberSync {
     const signups = Array.isArray(body.signups) ? body.signups : [];
 
     let upserted = 0;
+    let failed = 0;
     for (const s of signups) {
       if (!s || !s.name || s.id === undefined || s.id === null) continue;
+      try {
+        upserted += await this.upsertOne(s);
+      } catch (err) {
+        // One malformed row (e.g. a NUL byte that Postgres rejects) must not abort the pass and
+        // strand every older row's confirm/unsubscribe update behind it. Skip it, keep going.
+        failed += 1;
+        this.log.error({ err, external_id: String(s.id) }, 'subscriber sync: row upsert failed, skipped');
+      }
+    }
 
+    // One audit row per pass, counts only — the per-row trail is the matcher's and the queue's.
+    await audit(this.db, this.log, {
+      userId: null,
+      action: 'subscriber_sync',
+      target: null,
+      detail: { pulled: signups.length, new: upserted, failed },
+      ip: null,
+    });
+
+    const match = await runMatcher(this.db, this.log, this.config);
+    this.log.info({ pulled: signups.length, new: upserted, failed, match }, 'subscriber sync pass done');
+    return { pulled: signups.length, upserted, match };
+  }
+
+  /** Upsert one export row into public_request; returns 1 if it was a fresh insert, else 0. */
+  private async upsertOne(s: WebsiteSignup): Promise<number> {
       let phone = (s.phone ?? '').trim() || null;
       if (phone) {
         try {
@@ -169,20 +195,6 @@ export class SubscriberSync {
           s.status,
         ],
       );
-      if (row[0]?.inserted) upserted += 1;
-    }
-
-    // One audit row per pass, counts only — the per-row trail is the matcher's and the queue's.
-    await audit(this.db, this.log, {
-      userId: null,
-      action: 'subscriber_sync',
-      target: null,
-      detail: { pulled: signups.length, new: upserted },
-      ip: null,
-    });
-
-    const match = await runMatcher(this.db, this.log, this.config);
-    this.log.info({ pulled: signups.length, new: upserted, match }, 'subscriber sync pass done');
-    return { pulled: signups.length, upserted, match };
+      return row[0]?.inserted ? 1 : 0;
   }
 }

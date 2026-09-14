@@ -47,6 +47,7 @@ const WANT_LABELS: Record<string, string> = {
 
 function RequestCard({ request: r }: { request: PublicRequest }) {
   const handle = useHandleRequest();
+  const decideAccepted = useDecideMatch();
 
   const accepted = r.candidates.find((c) => c.status === 'accepted');
   const open = r.candidates.filter((c) => c.status === 'suggested');
@@ -88,6 +89,14 @@ function RequestCard({ request: r }: { request: PublicRequest }) {
           ✓ Linked to <strong>{accepted.voter_name}</strong>
           {accepted.household_address && <span className="muted"> — {accepted.household_address}</span>}
           <span className="muted"> ({matchLabel(accepted)})</span>
+          <button
+            type="button"
+            className="linkbtn request__unlink"
+            disabled={decideAccepted.isPending}
+            onClick={() => decideAccepted.mutate({ requestId: r.id, candidateId: accepted.id, decision: 'reject' })}
+          >
+            Undo — not them
+          </button>
         </p>
       )}
 

@@ -279,21 +279,50 @@ export const publicRequestRoutes: FastifyPluginAsync = async (app) => {
       household_id: string | null;
       source: string;
       external_id: string | null;
+      linked: string | null;
     }>(
       app.db,
       `UPDATE match_candidate c
           SET status = $3, decided_by = $4, decided_at = now()
          FROM public_request pr
         WHERE c.id = $2 AND c.public_request_id = $1 AND pr.id = c.public_request_id
-        RETURNING c.natural_key, c.household_id, pr.source, pr.external_id`,
+        RETURNING c.natural_key, c.household_id, pr.source, pr.external_id, pr.household_id AS linked`,
       [id, b.candidate_id, status, me.id],
     );
     if (!cand) {
       return { ok: false };
     }
+    const ledgerExternal = cand.external_id ?? id;
 
-    if (status === 'accepted' && cand.household_id) {
-      await q(app.db, `UPDATE public_request SET household_id = $2 WHERE id = $1`, [id, cand.household_id]);
+    if (status === 'accepted') {
+      // One accepted match per request. Demote every OTHER accepted candidate (and its ledger row)
+      // to rejected first, so a second accept — two organizers on stale queues, or a correction —
+      // cannot leave two 'accepted' rows that then re-apply in an arbitrary order after a re-import.
+      const rivals = await q<{ natural_key: string }>(
+        app.db,
+        `UPDATE match_candidate
+            SET status = 'rejected', decided_by = $3, decided_at = now()
+          WHERE public_request_id = $1 AND id <> $2 AND status = 'accepted'
+          RETURNING natural_key`,
+        [id, b.candidate_id, me.id],
+      );
+      for (const r of rivals) {
+        await q(
+          app.db,
+          `UPDATE subscriber_link SET status = 'rejected', decided_by = $3, decided_at = now()
+            WHERE source = $1 AND external_id = $2 AND natural_key = $4`,
+          [cand.source, ledgerExternal, me.id, r.natural_key],
+        );
+      }
+      if (cand.household_id) {
+        await q(app.db, `UPDATE public_request SET household_id = $2 WHERE id = $1`, [id, cand.household_id]);
+      }
+    } else if (cand.linked && cand.household_id && cand.linked === cand.household_id) {
+      // Rejecting the very candidate the request is currently linked to (a wrong auto-accept, or a
+      // human undoing an accept) must UNLINK it — otherwise household_id would keep pointing at the
+      // rejected door with no way back. Clearing matched_at lets the matcher re-examine the row and
+      // surface other candidates; the ledger now says 'rejected', so it will not re-link this one.
+      await q(app.db, `UPDATE public_request SET household_id = NULL, matched_at = NULL WHERE id = $1`, [id]);
     }
 
     await one(
@@ -303,14 +332,16 @@ export const publicRequestRoutes: FastifyPluginAsync = async (app) => {
        ON CONFLICT (source, external_id, natural_key) DO UPDATE
          SET status = excluded.status, decided_by = excluded.decided_by, decided_at = now()
        RETURNING natural_key`,
-      [cand.source, cand.external_id ?? id, cand.natural_key, status, me.id],
+      [cand.source, ledgerExternal, cand.natural_key, status, me.id],
     );
 
     await audit(app.db, req.log, {
+      // candidate_id, not natural_key: the natural_key is lowercased name + address, i.e. personal
+      // data that must never enter audit_log. The candidate/request ids resolve it when needed.
       userId: me.id,
       action: 'decide_match',
       target: id,
-      detail: { decision: b.decision },
+      detail: { decision: b.decision, candidate_id: b.candidate_id },
       ip: req.ip,
     });
     return { ok: true };
