@@ -4,6 +4,19 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-09-14
+
+### Fixed
+
+- **The base-layer menu opened invisibly on a phone.** The map toolbar scrolls
+  sideways on a narrow screen, and a sideways-scrolling box also clips anything
+  hanging below it — so the layer dropdown was cut off the instant it opened and
+  the button looked broken. The menu now floats above the map instead of inside
+  the toolbar.
+- **The map's data-source credit no longer covers the bottom of the map on
+  load.** It starts as the small ⓘ button and opens on a tap, instead of
+  mounting as an expanded shaded panel.
+
 ## [0.6.0] - 2026-09-14
 
 ### Added

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.6.0';
+export const APP_VERSION = '0.6.1';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,14 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.6.1',
+    date: '2026-09-14',
+    changes: [
+      'Fixed the base-layer button on a phone — its menu was being clipped by the toolbar and appeared to do nothing.',
+      'The map’s data-source credit now starts collapsed to the ⓘ button instead of covering the bottom of the map.',
+    ],
+  },
   {
     version: '0.6.0',
     date: '2026-09-14',
