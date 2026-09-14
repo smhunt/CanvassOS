@@ -176,6 +176,12 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     });
     map.touchZoomRotate.disableRotation();
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+    // Compact attribution can mount already expanded, which on a phone drops a shaded slab of
+    // source text over the bottom of the map. Collapse it to the (i) button; a tap still opens it.
+    map
+      .getContainer()
+      .querySelector('.maplibregl-ctrl-attrib.maplibregl-compact')
+      ?.classList.remove('maplibregl-compact-show');
     map.addControl(new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }), 'bottom-right');
     map.addControl(
       new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showAccuracyCircle: true }),

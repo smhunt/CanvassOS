@@ -1,6 +1,7 @@
 import type { FeatureCollection, Polygon } from 'geojson';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { EMPTY_FILTERS, useMeta, usePoints, useTurfDoorsForMap, useTurfShapes, type PointFilters } from '../api/hooks';
 import type { PointProps } from '../api/types';
@@ -81,25 +82,53 @@ export function MapPage() {
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [drawing, setDrawing] = useState(false);
   const layersRef = useRef<HTMLDivElement>(null);
+  // The base-layer menu is rendered through a portal to <body> (below): on a phone the toolbar is
+  // an `overflow-x: auto` scroller, which forces `overflow-y: auto` and CLIPS an absolutely
+  // positioned dropdown the instant it opens under the 44px bar — the button looked dead. A fixed,
+  // body-level menu escapes that clip; these track where to place it and what counts as "inside".
+  const layersBtnRef = useRef<HTMLButtonElement>(null);
+  const layersMenuRef = useRef<HTMLDivElement>(null);
+  const [layersPos, setLayersPos] = useState<{ top: number; right: number } | null>(null);
 
   useEffect(() => writeLS(LS_MODE, mode), [mode]);
   useEffect(() => writeLS(LS_BASE, base), [base]);
 
+  const placeLayersMenu = useCallback(() => {
+    const el = layersBtnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    // Right-anchored under the button, in viewport coordinates for the fixed, body-level menu.
+    setLayersPos({ top: Math.round(r.bottom + 6), right: Math.round(window.innerWidth - r.right) });
+  }, []);
+
   useEffect(() => {
-    if (!layersOpen) return;
+    if (!layersOpen) {
+      setLayersPos(null);
+      return;
+    }
+    placeLayersMenu();
     const onDown = (e: MouseEvent) => {
-      if (layersRef.current && !layersRef.current.contains(e.target as Node)) setLayersOpen(false);
+      const t = e.target as Node;
+      if (layersRef.current?.contains(t) || layersMenuRef.current?.contains(t)) return;
+      setLayersOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setLayersOpen(false);
     };
+    // Capture scroll so the toolbar's own horizontal scroll re-anchors (or, on a real page scroll,
+    // moves) the menu with the button rather than leaving it stranded.
+    const onReflow = () => placeLayersMenu();
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onReflow);
+    window.addEventListener('scroll', onReflow, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onReflow);
+      window.removeEventListener('scroll', onReflow, true);
     };
-  }, [layersOpen]);
+  }, [layersOpen, placeLayersMenu]);
 
   const communities = useMemo(() => meta.data?.communities.map((c) => c.community) ?? [], [meta.data]);
   const wards = useMemo(() => meta.data?.wards.map((w) => w.ward) ?? [], [meta.data]);
@@ -340,6 +369,7 @@ export function MapPage() {
         </label>
         <div className="layers" ref={layersRef}>
           <button
+            ref={layersBtnRef}
             type="button"
             className="btn btn--map"
             onClick={() => setLayersOpen((o) => !o)}
@@ -350,8 +380,19 @@ export function MapPage() {
             <LayersIcon />
             <span className="layers__label">{BASE_LAYERS.find((b) => b.id === base)?.label}</span>
           </button>
-          {layersOpen && (
-            <div className="card menu menu--layers" role="menu" aria-label="Base layer">
+        </div>
+        {/* Portalled to <body>: see the layersBtnRef note above — the toolbar clips an in-place
+            dropdown on a phone. Fixed-positioned under the button, closed on outside tap / Escape. */}
+        {layersOpen &&
+          layersPos &&
+          createPortal(
+            <div
+              ref={layersMenuRef}
+              className="card menu menu--layers"
+              role="menu"
+              aria-label="Base layer"
+              style={{ position: 'fixed', top: layersPos.top, right: layersPos.right }}
+            >
               {BASE_LAYERS.map((b) => (
                 <button
                   key={b.id}
@@ -367,9 +408,9 @@ export function MapPage() {
                   {b.label}
                 </button>
               ))}
-            </div>
+            </div>,
+            document.body,
           )}
-        </div>
         <button
           type="button"
           className={`btn btn--map${turfsOn ? ' btn--map-active' : ''}`}
