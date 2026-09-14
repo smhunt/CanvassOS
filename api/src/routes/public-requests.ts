@@ -183,13 +183,28 @@ export const publicRequestRoutes: FastifyPluginAsync = async (app) => {
       })
       .parse(req.query);
 
+    // Candidates ride along as a JSON array per request (phase 8): the queue is where an
+    // organizer confirms or rejects the matcher's suggestions, so the two are one screen and
+    // one read. Candidate rows carry voter names and addresses — organizer-only, like /search.
     const rows = await q<Record<string, unknown>>(
       app.db,
-      `SELECT id, created_at, name, email, phone, address, note, wants, consent_text,
-              handled_at, handled_by, household_id, sign_id
-       FROM public_request
-       ${qp.open ? 'WHERE handled_at IS NULL' : ''}
-       ORDER BY created_at DESC
+      `SELECT pr.id, pr.created_at, pr.name, pr.email, pr.phone, pr.address, pr.note, pr.wants,
+              pr.consent_text, pr.handled_at, pr.handled_by, pr.household_id, pr.sign_id,
+              pr.source, pr.external_id, pr.website_status,
+              coalesce(mc.candidates, '[]'::json) AS candidates
+       FROM public_request pr
+       LEFT JOIN LATERAL (
+         SELECT json_agg(json_build_object(
+                  'id', c.id, 'voter_id', c.voter_id, 'natural_key', c.natural_key,
+                  'household_id', c.household_id, 'voter_name', c.voter_name,
+                  'household_address', c.household_address, 'score', c.score,
+                  'method', c.method, 'status', c.status, 'decided_at', c.decided_at)
+                ORDER BY c.status = 'accepted' DESC, c.score DESC) AS candidates
+         FROM match_candidate c
+         WHERE c.public_request_id = pr.id
+       ) mc ON true
+       ${qp.open ? 'WHERE pr.handled_at IS NULL' : ''}
+       ORDER BY pr.created_at DESC
        LIMIT $1`,
       [qp.limit],
     );
@@ -236,6 +251,66 @@ export const publicRequestRoutes: FastifyPluginAsync = async (app) => {
       action: 'handle_public_request',
       target: id,
       detail: { handled: patch.handled },
+      ip: req.ip,
+    });
+    return { ok: true };
+  });
+
+  /**
+   * The human verdict on one of the matcher's candidates (phase 8). Accept sets the request's
+   * household_id — the same pointer the PATCH above has always recorded, arrived at faster.
+   * Either verdict is written to the subscriber_link ledger, which is what survives a voters-list
+   * re-import; the matcher re-applies it afterwards. Never touches voter/household, never mints
+   * consent, never sends anything.
+   */
+  app.post('/public/requests/:id/decide', { preHandler: requireRole('organizer') }, async (req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const b = z
+      .object({
+        candidate_id: z.string().uuid(),
+        decision: z.enum(['accept', 'reject']),
+      })
+      .parse(req.body ?? {});
+    const me = req.session!.user;
+    const status = b.decision === 'accept' ? 'accepted' : 'rejected';
+
+    const cand = await one<{
+      natural_key: string;
+      household_id: string | null;
+      source: string;
+      external_id: string | null;
+    }>(
+      app.db,
+      `UPDATE match_candidate c
+          SET status = $3, decided_by = $4, decided_at = now()
+         FROM public_request pr
+        WHERE c.id = $2 AND c.public_request_id = $1 AND pr.id = c.public_request_id
+        RETURNING c.natural_key, c.household_id, pr.source, pr.external_id`,
+      [id, b.candidate_id, status, me.id],
+    );
+    if (!cand) {
+      return { ok: false };
+    }
+
+    if (status === 'accepted' && cand.household_id) {
+      await q(app.db, `UPDATE public_request SET household_id = $2 WHERE id = $1`, [id, cand.household_id]);
+    }
+
+    await one(
+      app.db,
+      `INSERT INTO subscriber_link (source, external_id, natural_key, status, decided_by)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (source, external_id, natural_key) DO UPDATE
+         SET status = excluded.status, decided_by = excluded.decided_by, decided_at = now()
+       RETURNING natural_key`,
+      [cand.source, cand.external_id ?? id, cand.natural_key, status, me.id],
+    );
+
+    await audit(app.db, req.log, {
+      userId: me.id,
+      action: 'decide_match',
+      target: id,
+      detail: { decision: b.decision },
       ip: req.ip,
     });
     return { ok: true };

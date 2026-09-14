@@ -85,6 +85,21 @@ const schema = z.object({
   // that holds the voters list.
   PUBLIC_FORM_ORIGINS: z.string().default(''),
 
+  // ------------------------------------------------------------ website subscriber sync (phase 8)
+  // Pulls the campaign website's sign-up list into public_request and runs the local matcher.
+  // BOTH must be set or the feature is off — the safe default, like every optional integration.
+  // The URL is the website's authenticated admin export (e.g.
+  // "https://sean-hunt.pages.dev/api/signups"); the token is that site's ADMIN_TOKEN. Outbound
+  // only: nothing derived from the voters list ever goes the other way.
+  WEBSITE_SYNC_URL: z.string().url().optional(),
+  WEBSITE_SYNC_TOKEN: optionalSecret(16),
+  WEBSITE_SYNC_INTERVAL_MS: z.coerce.number().int().min(60_000).default(300_000),
+  // What the matcher may do without a human: 'exact' (default) auto-links a subscriber whose
+  // email or E.164 phone equals a door-collected voter_contact value resolving to exactly one
+  // voter; 'off' makes even those a suggestion for the organizer queue. Fuzzy matches are never
+  // auto-accepted at any setting — matching a person to a real door stays a human job.
+  MATCH_AUTO_ACCEPT: z.enum(['exact', 'off']).default('exact'),
+
   LOG_LEVEL: z.string().default('info'),
 });
 
@@ -107,6 +122,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   if (cfg.MESSAGING_QUIET_START >= cfg.MESSAGING_QUIET_END) {
     throw new Error('MESSAGING_QUIET_START must be earlier than MESSAGING_QUIET_END');
+  }
+  // Half a sync configuration is a misconfiguration, not a feature toggle: somebody set a URL and
+  // forgot the token (or vice versa) and would otherwise discover it by silence.
+  if (Boolean(cfg.WEBSITE_SYNC_URL) !== Boolean(cfg.WEBSITE_SYNC_TOKEN)) {
+    throw new Error('WEBSITE_SYNC_URL and WEBSITE_SYNC_TOKEN must be set together');
   }
   return cfg;
 }

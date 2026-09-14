@@ -77,7 +77,15 @@ export type AuditAction =
   | 'update_sender_number'
   | 'inbound_stop'
   | 'inbound_join'
-  | 'subscribe_request';
+  | 'subscribe_request'
+  // Phase 8 — the website subscriber link. The sync row is counts-only; the two match rows are
+  // NULL-user machine actions (the matcher read voter names to rank them, or linked a request on
+  // an exact contact hit), and decide_match is the human verdict. Same rule as everywhere: the
+  // detail carries ids and counts, never a name, address or contact value.
+  | 'subscriber_sync'
+  | 'suggest_match'
+  | 'auto_accept_match'
+  | 'decide_match';
 
 export interface AuditEntry {
   userId: string | null;

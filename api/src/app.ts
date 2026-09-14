@@ -26,6 +26,7 @@ import { statsRoutes } from './routes/stats.js';
 import { streetRoutes } from './routes/streets.js';
 import { publicRequestRoutes } from './routes/public-requests.js';
 import { subscribeRoutes } from './routes/subscribe.js';
+import { SubscriberSync } from './subscriber/sync.js';
 import { assignmentRoutes, turfRoutes } from './routes/turfs.js';
 import { userRoutes } from './routes/users.js';
 import { voterContactRoutes } from './routes/voter-contacts.js';
@@ -46,6 +47,13 @@ declare module 'fastify' {
      * provider and no test can make a real, billed call.
      */
     messaging: { provider: MessageProvider; worker: SendWorker };
+    /**
+     * Phase 8 — the website subscriber sync + matcher. NULL unless WEBSITE_SYNC_URL and
+     * WEBSITE_SYNC_TOKEN are both set. Built here so it shares db/log/httpFetch (tests drive
+     * runOnce() with a stubbed fetch); server.ts starts the schedule — buildApp never does, so
+     * no test accidentally has a five-minute timer pulling a website.
+     */
+    subscriberSync: SubscriberSync | null;
   }
 }
 
@@ -98,8 +106,15 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
     quiet: { start: config.MESSAGING_QUIET_START, end: config.MESSAGING_QUIET_END },
   });
   app.decorate('messaging', { provider, worker });
+
+  const subscriberSync = SubscriberSync.enabled(config)
+    ? new SubscriberSync({ db, log: app.log, config, fetch: app.httpFetch })
+    : null;
+  app.decorate('subscriberSync', subscriberSync);
+
   app.addHook('onClose', async () => {
     worker.stopScheduling();
+    subscriberSync?.stopScheduling();
   });
 
   await app.register(fastifyHelmet, {
