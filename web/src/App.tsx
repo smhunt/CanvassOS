@@ -23,6 +23,8 @@ const SignsPage = lazy(() => import('./pages/SignsPage').then((m) => ({ default:
 // A paper turf sheet is the fallback when a phone dies or the signal never arrives.
 const CampaignsPage = lazy(() => import('./pages/CampaignsPage').then((m) => ({ default: m.CampaignsPage })));
 const TurfSheetPage = lazy(() => import('./pages/TurfSheetPage').then((m) => ({ default: m.TurfSheetPage })));
+// The website sign-up queue with the matcher's suggestions (phase 8), organiser-only.
+const RequestsPage = lazy(() => import('./pages/RequestsPage').then((m) => ({ default: m.RequestsPage })));
 
 export default function App() {
   return (
@@ -104,6 +106,16 @@ export default function App() {
               <RequireRole min="organizer">
                 <Suspense fallback={<LoadingList rows={4} label="Loading messaging…" />}>
                   <CampaignsPage />
+                </Suspense>
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/requests"
+            element={
+              <RequireRole min="organizer">
+                <Suspense fallback={<LoadingList rows={4} label="Loading sign-ups…" />}>
+                  <RequestsPage />
                 </Suspense>
               </RequireRole>
             }

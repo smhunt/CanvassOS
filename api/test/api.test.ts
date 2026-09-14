@@ -39,6 +39,7 @@ import { createPool, type Db } from '../src/db.js';
 import { clearStreetViewCache, type FetchLike } from '../src/lib/streetview.js';
 import { LogProvider } from '../src/messaging/provider.js';
 import { normalizeContactValue } from '../src/routes/voter-contacts.js';
+import { SubscriberSync } from '../src/subscriber/sync.js';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
@@ -3429,5 +3430,222 @@ describe('messaging (opt-in SMS and email)', () => {
     assert.ok(body.numbers.some((n) => n.id === num.id));
     assert.equal(typeof body.daily_capacity, 'number');
     assert.equal((await call('GET', '/api/messaging/numbers', volunteerCookie)).statusCode, 403);
+  });
+});
+
+// ------------------------------------------------------------------ phase 8 — subscriber link
+
+describe('subscriber link (website sync + matcher)', () => {
+  /** The website's export, as the stubbed fetch serves it. Mutated per test, then re-synced. */
+  let signups: Array<Record<string, unknown>> = [];
+  const websiteFetch: FetchLike = async (input) => {
+    const url = String(input);
+    assert.ok(url.startsWith('https://website.test/api/signups'), `sync called ${url}`);
+    return new Response(JSON.stringify({ count: signups.length, signups }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  const extId = (n: string) => `t8-${RUN}-${n}`;
+  const makeSync = (autoAccept: 'exact' | 'off' = 'exact') =>
+    new SubscriberSync({
+      db,
+      log: app.log,
+      config: {
+        ...app.config,
+        WEBSITE_SYNC_URL: 'https://website.test/api/signups',
+        WEBSITE_SYNC_TOKEN: 'x'.repeat(24),
+        MATCH_AUTO_ACCEPT: autoAccept,
+      },
+      fetch: websiteFetch,
+    });
+
+  /** A real voter with a mapped door, straight from the test database. */
+  let sample: { id: string; full_name: string; natural_key: string; household_id: string };
+  let contactEmail: string;
+
+  before(async () => {
+    const r = await db.query(
+      `SELECT v.id, v.full_name, v.natural_key, v.household_id
+         FROM voter v JOIN household h ON h.id = v.household_id
+        WHERE h.record_quality = 'good' AND v.full_name IS NOT NULL AND length(v.full_name) > 5
+        ORDER BY v.natural_key LIMIT 1`,
+    );
+    sample = r.rows[0];
+    assert.ok(sample, 'test database has voters');
+    // A door-collected email for that voter, so tier 0 has something to hit.
+    contactEmail = `door+${RUN}@test.local`;
+    await db.query(
+      `INSERT INTO voter_contact (voter_id, household_id, channel, value, consent_updates, source)
+       VALUES ($1, $2, 'email', $3, true, 'door')`,
+      [sample.id, sample.household_id, contactEmail],
+    );
+  });
+
+  after(async () => {
+    await db.query(`DELETE FROM public_request WHERE source = 'website' AND external_id LIKE $1`, [`t8-${RUN}-%`]);
+    await db.query(`DELETE FROM subscriber_link WHERE external_id LIKE $1`, [`t8-${RUN}-%`]);
+    await db.query(`DELETE FROM voter_contact WHERE value = $1`, [contactEmail]);
+    await db.query(
+      `DELETE FROM audit_log WHERE action IN ('subscriber_sync', 'suggest_match', 'auto_accept_match', 'decide_match')`,
+    );
+  });
+
+  const reqByExt = async (n: string) =>
+    (
+      await db.query(`SELECT * FROM public_request WHERE source = 'website' AND external_id = $1`, [extId(n)])
+    ).rows[0];
+
+  it('pulls the website export, upserts idempotently, and maps the vocabulary', async () => {
+    signups = [
+      {
+        id: extId('a'),
+        status: 'confirmed',
+        name: sample.full_name, // exact name of a real voter -> fuzzy suggestion, never auto-link
+        email: `web-a+${RUN}@test.local`,
+        phone: '',
+        interests: 'volunteer,lawn-sign',
+        message: 'Happy to help.',
+        consent: 'v1 (2026-09): consented to campaign emails via the website form',
+        created_at: '2026-09-14 12:00:00',
+        updated_at: '2026-09-14 12:00:00',
+      },
+      {
+        id: extId('b'),
+        status: 'unsubscribed',
+        name: `Zzyx Qwerty ${RUN}`,
+        email: `web-b+${RUN}@test.local`,
+        phone: '',
+        interests: '',
+        message: '',
+        consent: 'v1 (2026-09): consented, then unsubscribed',
+        created_at: '2026-09-14 12:00:00',
+        updated_at: '2026-09-14 12:05:00',
+      },
+    ];
+    const first = await makeSync().runOnce();
+    assert.ok(first);
+    assert.equal(first.pulled, 2);
+    assert.equal(first.upserted, 2);
+
+    const again = await makeSync().runOnce();
+    assert.ok(again);
+    assert.equal(again.upserted, 0, 'second pass inserts nothing new');
+
+    const a = await reqByExt('a');
+    assert.ok(a, 'row a landed');
+    assert.deepEqual(a.wants, ['volunteer', 'sign']);
+    assert.equal(a.note, 'Happy to help.');
+    assert.equal(a.website_status, 'confirmed');
+    const b = await reqByExt('b');
+    assert.equal(b.website_status, 'unsubscribed');
+  });
+
+  it('suggests the exact-name voter fuzzily but never auto-links a name', async () => {
+    const a = await reqByExt('a');
+    const cands = (
+      await db.query(`SELECT * FROM match_candidate WHERE public_request_id = $1 ORDER BY score DESC`, [a.id])
+    ).rows;
+    assert.ok(cands.length >= 1, 'name match suggested');
+    assert.equal(cands[0].natural_key, sample.natural_key);
+    assert.equal(cands[0].status, 'suggested', 'a name match is a question, not a link');
+    assert.equal(a.household_id, null);
+
+    const b = await reqByExt('b');
+    const none = await db.query(`SELECT count(*)::int AS n FROM match_candidate WHERE public_request_id = $1`, [b.id]);
+    assert.equal(none.rows[0].n, 0, 'nonsense name matches nobody');
+  });
+
+  it('auto-accepts a single-voter exact email hit, and records it in the ledger', async () => {
+    signups.push({
+      id: extId('c'),
+      status: 'confirmed',
+      name: 'Somebody FromTheDoor',
+      email: contactEmail,
+      phone: '',
+      interests: 'volunteer',
+      message: '',
+      consent: 'v1 (2026-09): consented to campaign emails via the website form',
+      created_at: '2026-09-14 13:00:00',
+      updated_at: '2026-09-14 13:00:00',
+    });
+    const res = await makeSync().runOnce();
+    assert.ok(res?.match);
+    assert.equal(res.match.auto_accepted, 1);
+
+    const c = await reqByExt('c');
+    assert.equal(c.household_id, sample.household_id, 'request linked to the voter’s door');
+    const cand = (
+      await db.query(
+        `SELECT * FROM match_candidate WHERE public_request_id = $1 AND natural_key = $2`,
+        [c.id, sample.natural_key],
+      )
+    ).rows[0];
+    assert.equal(cand.status, 'accepted');
+    assert.equal(cand.method, 'email');
+    assert.equal(cand.decided_by, null, 'machine decision carries no user id');
+    const ledger = (
+      await db.query(`SELECT * FROM subscriber_link WHERE source = 'website' AND external_id = $1`, [extId('c')])
+    ).rows[0];
+    assert.equal(ledger?.status, 'accepted');
+  });
+
+  it('shows candidates in the organizer queue and takes a human verdict', async () => {
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/public/requests?open=true&limit=200',
+      headers: { cookie: organizerCookie },
+    });
+    assert.equal(list.statusCode, 200);
+    const body = list.json() as { requests: Array<{ external_id: string | null; candidates: Array<{ id: string; status: string }> }> };
+    const rowA = body.requests.find((r) => r.external_id === extId('a'));
+    assert.ok(rowA, 'website row visible in the queue');
+    const suggestion = rowA.candidates.find((c) => c.status === 'suggested');
+    assert.ok(suggestion, 'queue carries the suggestion');
+
+    const a = await reqByExt('a');
+    const decide = await app.inject({
+      method: 'POST',
+      url: `/api/public/requests/${a.id}/decide`,
+      payload: { candidate_id: suggestion.id, decision: 'accept' },
+      headers: { cookie: organizerCookie },
+    });
+    assert.equal(decide.statusCode, 200, decide.body);
+
+    const after1 = await reqByExt('a');
+    assert.equal(after1.household_id, sample.household_id, 'accept records the door');
+    const ledger = (
+      await db.query(`SELECT * FROM subscriber_link WHERE source = 'website' AND external_id = $1`, [extId('a')])
+    ).rows[0];
+    assert.equal(ledger?.status, 'accepted');
+    assert.ok(ledger?.decided_by, 'human decision carries the organizer id');
+
+    // Volunteers see none of this.
+    const vol = await app.inject({
+      method: 'GET',
+      url: '/api/public/requests',
+      headers: { cookie: volunteerCookie },
+    });
+    assert.equal(vol.statusCode, 403);
+  });
+
+  it('re-applies the ledger after the queue is rebuilt (a re-import in miniature)', async () => {
+    // A voters-list re-import truncates public_request; the sync then re-creates the rows with
+    // fresh uuids. Simulate exactly that for row c and prove the accepted link comes back with
+    // nobody clicking anything.
+    await db.query(`DELETE FROM public_request WHERE source = 'website' AND external_id = $1`, [extId('c')]);
+    const res = await makeSync().runOnce();
+    assert.ok(res);
+    const c = await reqByExt('c');
+    assert.ok(c, 'sync re-created the row');
+    assert.equal(c.household_id, sample.household_id, 'ledger re-linked it');
+    const cand = (
+      await db.query(`SELECT status, method FROM match_candidate WHERE public_request_id = $1 AND natural_key = $2`, [
+        c.id,
+        sample.natural_key,
+      ])
+    ).rows[0];
+    assert.equal(cand?.status, 'accepted');
   });
 });

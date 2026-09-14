@@ -2035,3 +2035,61 @@ select {
   gap: 0.5rem;
   margin-top: 0.6rem;
 }
+
+/* ------------------------------------------------------------------ sign-up queue (phase 8) */
+.request {
+  margin-bottom: 0.75rem;
+}
+.request--handled {
+  opacity: 0.65;
+}
+.request__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.request__contact {
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+.request__note {
+  margin: 0.25rem 0;
+  font-style: italic;
+}
+.request__match {
+  margin: 0.5rem 0 0;
+}
+.request__flag {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-2, #eee);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.request__flag--danger {
+  background: var(--danger, #b3261e);
+  color: #fff;
+}
+.request__candidates {
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border, #ddd);
+  padding-top: 0.5rem;
+}
+.candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+}
+.candidate__who {
+  overflow-wrap: anywhere;
+}
+.candidate__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}

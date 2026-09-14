@@ -18,6 +18,7 @@ import type {
   LegalHousehold,
   Meta,
   PointsCollection,
+  PublicRequest,
   Quality,
   Role,
   SearchResult,
@@ -481,6 +482,41 @@ export function usePickupList() {
     queryKey: ['signs', 'pickup'],
     queryFn: () => api.get<{ signs: PickupSign[] }>('/signs/pickup').then((r) => r.signs),
     staleTime: 30_000,
+  });
+}
+
+// ------------------------------------------------------------------ phase 8 — subscriber link
+
+/** The public-request queue, matcher candidates riding along. Organizer-only server-side. */
+export function usePublicRequests(open: boolean) {
+  return useQuery({
+    queryKey: ['public-requests', open],
+    queryFn: () =>
+      api.get<{ requests: PublicRequest[] }>('/public/requests', { open }).then((r) => r.requests),
+    staleTime: 30_000,
+  });
+}
+
+/** Accept or reject one candidate; the queue refetches so the verdict shows immediately. */
+export function useDecideMatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { requestId: string; candidateId: string; decision: 'accept' | 'reject' }) =>
+      api.post<{ ok: boolean }>(`/public/requests/${input.requestId}/decide`, {
+        candidate_id: input.candidateId,
+        decision: input.decision,
+      }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['public-requests'] }),
+  });
+}
+
+/** Mark a request handled (or reopen it). */
+export function useHandleRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { requestId: string; handled: boolean }) =>
+      api.patch<{ ok: boolean }>(`/public/requests/${input.requestId}`, { handled: input.handled }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['public-requests'] }),
   });
 }
 

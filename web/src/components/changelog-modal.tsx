@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.5.3';
+export const APP_VERSION = '0.6.0';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,13 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.6.0',
+    date: '2026-09-14',
+    changes: [
+      'Website sign-ups now arrive in the new Sign-ups screen on their own, with the likely voter match already suggested — exact email/phone hits link themselves, everything else is one click to confirm.',
+    ],
+  },
   {
     version: '0.5.3',
     date: '2026-09-11',

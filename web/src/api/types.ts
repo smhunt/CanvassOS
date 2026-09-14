@@ -566,3 +566,41 @@ export interface TurfShape {
   n_households: number;
   contacted: number;
 }
+
+// ------------------------------------------------------------------ phase 8 — subscriber link
+
+/** One of the matcher's ranked voter suggestions for a public request. */
+export interface MatchCandidate {
+  id: string;
+  voter_id: string | null;
+  natural_key: string;
+  household_id: string | null;
+  voter_name: string;
+  household_address: string | null;
+  score: number;
+  method: 'email' | 'phone' | 'name' | 'name_address' | 'ledger';
+  status: 'suggested' | 'accepted' | 'rejected';
+  decided_at: string | null;
+}
+
+/** A website sign-up (or direct public-form post) in the organizer queue. */
+export interface PublicRequest {
+  id: string;
+  created_at: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  note: string | null;
+  wants: string[];
+  consent_text: string;
+  handled_at: string | null;
+  handled_by: string | null;
+  household_id: string | null;
+  sign_id: string | null;
+  source: string;
+  external_id: string | null;
+  /** The website's double-opt-in state; null for rows that came straight to the public form. */
+  website_status: 'pending' | 'confirmed' | 'unsubscribed' | null;
+  candidates: MatchCandidate[];
+}

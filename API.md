@@ -729,10 +729,50 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
     its own double opt-in at `POST /api/subscribe`.
   - Audit `public_request` (no user id — nobody was signed in).
 
-- `GET /api/public/requests?open=true&limit=100` → organizer/admin. The submissions, newest first.
-  Audit `view_public_requests`.
+- `GET /api/public/requests?open=true&limit=100` → organizer/admin. The submissions, newest first,
+  each row carrying `source`, `external_id`, `website_status` and a `candidates` array (phase 8,
+  below). Audit `view_public_requests`.
 - `PATCH /api/public/requests/:id` → organizer/admin. `{ handled?, household_id?, sign_id? }` —
   mark one dealt with and record the door it turned out to be. Audit `handle_public_request`.
+
+## Subscriber link (phase 8)
+
+The campaign website keeps its own sign-up list (Cloudflare D1, double opt-in, unsubscribes). A
+sync worker in this API **pulls** that list every `WEBSITE_SYNC_INTERVAL_MS` (default 5 min) over
+the site's authenticated admin export and upserts it into `public_request` (`source = 'website'`,
+`external_id` = the site's row id, `website_status` mirroring pending/confirmed/unsubscribed).
+Pull, not push: the website holds no credentials into this stack, nothing new is exposed to the
+internet, and downtime self-heals on the next pull. Design and rationale:
+`docs/phase-8-subscriber-link-plan.md`.
+
+After each pull a **local** matcher ranks likely voter matches per request — exact email/E.164
+joins against door-collected `voter_contact` values, then nickname-expanded trigram on
+`voter.full_name` plus address trigram + civic-number agreement against `household.address`. No
+voter row is ever sent to an external service; the matcher is SQL and a nickname table. Results
+land in `match_candidate` (top 3, with `score`, `method`, `status`), which rides along on the
+queue GET:
+
+```
+candidates: [{ id, voter_id, natural_key, household_id, voter_name, household_address,
+               score, method: email|phone|name|name_address|ledger,
+               status: suggested|accepted|rejected, decided_at }]
+```
+
+- `POST /api/public/requests/:id/decide` → organizer/admin. `{ candidate_id, decision:
+  "accept"|"reject" }`. Accept sets `public_request.household_id` — the same pointer PATCH has
+  always recorded. Either verdict is written to the `subscriber_link` ledger (keyed on the
+  subscriber's external id + the voter's `natural_key`, deliberately FK-free), which is what
+  survives a voters-list re-import: `TRUNCATE household CASCADE` empties `public_request` and
+  `match_candidate`, the sync rebuilds the queue, and the matcher re-applies the ledger with
+  nobody clicking anything. Audit `decide_match`.
+- With `MATCH_AUTO_ACCEPT=exact` (the default) the matcher itself accepts a match **only** when
+  the subscriber's email or normalized phone exactly equals a door-collected contact value
+  resolving to exactly one voter — a value shared across voters (a household email) is only ever a
+  suggestion. `off` makes even exact hits suggestions. Fuzzy matches are never auto-accepted at
+  any setting. Audit `auto_accept_match` / `suggest_match` (machine actions, NULL user id);
+  the sync pass itself audits `subscriber_sync` with counts only.
+- A match is a pointer. It never writes to `voter`/`household`, never mints or implies messaging
+  consent (`/api/subscribe`'s double opt-in remains the only path), and never sends anything.
 
 ## Audit (admin)
 - `GET /api/audit?limit=200&before=<id>` → `{ entries: [...] }`
@@ -762,10 +802,15 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
   the campaign names itself in an automated STOP/HELP/JOIN reply, default `This campaign`.
   `MESSAGING_WEBHOOK_TOKEN` — optional shared secret (≥16 chars) checked on both provider webhooks **in addition
   to** the provider signature and for every provider; a stack reachable from the internet should set it.
-- The API makes exactly two kinds of outbound HTTP request: the Street View provider call above, and the messaging
-  provider call — both via injectable seams (`app.httpFetch` and `app.messaging.provider`), so the test suite stubs
-  them and **no test ever makes a real, billed call**. With the default `MESSAGING_PROVIDER=log` the second one does
-  not exist at all.
+- Env (website subscriber sync, phase 8, optional): `WEBSITE_SYNC_URL` + `WEBSITE_SYNC_TOKEN` — the campaign
+  website's admin export and its bearer token; **both or neither** (half a configuration fails boot), absent
+  means the feature is off. `WEBSITE_SYNC_INTERVAL_MS` — default `300000`, minimum `60000`.
+  `MATCH_AUTO_ACCEPT` — `exact` (default) or `off`; see "Subscriber link".
+- The API makes exactly three kinds of outbound HTTP request: the Street View provider call above, the messaging
+  provider call, and the website subscriber-sync pull — all via injectable seams (`app.httpFetch` and
+  `app.messaging.provider`), so the test suite stubs them and **no test ever makes a real, billed call**. With the
+  default configuration (no `MESSAGING_PROVIDER`, no `WEBSITE_SYNC_URL`) only the Street View one can exist at
+  all. The sync pull is outbound-only and carries nothing derived from the voters list.
 - Logging: pino, request ids; never log request bodies on auth routes.
 
 ## Implementation notes (Phase 1 backend — clarifications, no shape changes)

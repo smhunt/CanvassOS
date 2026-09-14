@@ -4,6 +4,21 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-14
+
+### Added
+
+- **The website subscriber link (phase 8).** Sign-ups from sean-hunt.com now flow into the
+  Sign-ups queue on their own: a sync worker pulls the website's admin export every five minutes
+  (pull, not push — no new public endpoints, no credentials on the website, downtime self-heals),
+  and a local matcher ranks likely voter matches per sign-up — exact email/phone joins against
+  door-collected contact info, then nickname-aware fuzzy name and address matching, all in
+  Postgres, with no voter row ever leaving this stack. Exact single-voter contact hits may
+  auto-link (`MATCH_AUTO_ACCEPT=exact`, settable to `off`); everything fuzzier is a suggestion an
+  organizer confirms with one click on the new **Sign-ups** screen. Decisions live in a ledger
+  that survives voters-list re-imports, every machine action is audited, and a match remains a
+  pointer — it never merges website data into the voters list and never mints messaging consent.
+
 ## [0.5.3] - 2026-09-11
 
 ### Changed
