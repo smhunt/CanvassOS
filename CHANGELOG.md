@@ -4,6 +4,31 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-09-15
+
+First release. CanvassOS runs the campaign's canvass in the field, on real data, at
+https://canvass.webarchitecture.ca: 7,140 households and 16,892 electors imported, turfs assigned,
+doors recorded, lawn signs tracked, and a newer voters list can be taken in place without losing any
+of it.
+
+**What a campaign gets:** the voters list imported and mapped; login with volunteer, organizer and
+admin roles; turfs cut from streets or a drawn polygon and assigned; the door screen with contact
+history and a follow-up queue; offline canvassing with a write queue, a separate sign-photo queue and
+a turf cache, so a basement with no signal loses nothing; nearest-first door ordering; a printable
+turf sheet; lawn signs with GPS, photos, pickup and delivery lists and a map; doorstep phone and email
+with per-purpose consent; opt-in SMS with STOP handling and CRTC hours; the reachability report with
+optional Claude-written advice; website sign-ups pulled in and matched to electors every five minutes;
+and the diff-based re-import.
+
+**Built around one legal constraint:** the voters list is personal information under the *Municipal
+Elections Act* s. 23(7)-(8). TLS only, login on every page, role-gated fields, volunteers scoped to
+their own turfs, an `audit_log` row on every read of personal data, encrypted backups, and `make
+purge` after the election.
+
+**Not in 1.0, deliberately:** coverage and support reports by ward, community, turf and day; CSV
+export with an audit entry per download; in-app notifications (designed in
+`docs/phase-7-notifications-plan.md`); geo-targeted advertising (`docs/phase-6-advertising-plan.md`).
+
 ## [0.7.1] - 2026-09-15
 
 ### Changed

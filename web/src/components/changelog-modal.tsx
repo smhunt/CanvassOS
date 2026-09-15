@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.7.1';
+export const APP_VERSION = '1.0.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,14 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.0.0',
+    date: '2026-09-15',
+    changes: [
+      'First release. Everything a canvass needs day to day is here and running on the real list: the map, turfs, the door screen, follow-ups, lawn signs, offline canvassing, the printable sheet, texts and the reports.',
+      'Still to come: coverage and support reports by ward and turf, CSV export, and in-app notifications.',
+    ],
+  },
   {
     version: '0.7.1',
     date: '2026-09-15',

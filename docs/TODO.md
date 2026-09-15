@@ -33,10 +33,10 @@ Last updated **2026-09-15**.
       organisers and volunteers ride the same delivery path, and carry the retention trap
       `prompt_plan.md` flags: a message WILL contain voters-list data, so it needs the same audit,
       retention and `make purge` treatment as everything else.
-- [ ] **An address field on the public campaign website's form.** The endpoint
-      (`POST /api/public/requests`) is live and takes one, but the site's form has no address
-      input, so a lawn-sign request currently arrives with nowhere to deliver it. Also send
-      `consent_text` as the literal wording displayed beside the tick boxes.
+- [ ] **Send `consent_text` from the campaign website's form** as the literal wording displayed
+      beside the tick boxes, so the stored consent can say exactly what was agreed to. (The address
+      field this entry used to ask for is live: the site's form collects one and lawn-sign requests
+      arrive with somewhere to deliver them.)
 - [ ] **Coverage and support reports** by ward / community / turf / day (Phase 4).
 - [ ] **CSV export with an audit entry per download** (Phase 4).
 

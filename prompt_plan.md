@@ -7,6 +7,13 @@ Users: Sean (admin), a small core team (organizers), volunteers on phones at the
 
 ## Status — 2026-09-15
 
+**Released as 1.0.0** and renamed CanvassOS. Phases 1, 2, 3 and 5 are shipped, Phase 4 is partly
+shipped, and the tool is running the campaign's canvass on the real list at
+https://canvass.webarchitecture.ca. What 1.0 deliberately leaves out: coverage and support reports by
+ward/community/turf/day, CSV export with an audit entry per download, in-app notifications
+(`docs/phase-7-notifications-plan.md`) and geo-targeted advertising
+(`docs/phase-6-advertising-plan.md`).
+
 Everything below this section is the **original plan, unedited**: a record of what was intended, not of
 what happened. This section is the difference between the two. `CHANGELOG.md` has the release-by-release
 detail; `docs/README.md` describes what the code actually does now.
