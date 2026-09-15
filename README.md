@@ -325,6 +325,49 @@ The importer prints the `hh_flag` values it saw, per-ward and per-community coun
 institution counts, and verifies every total after loading — a mismatch rolls the whole transaction
 back. It refuses to run twice on identical files (sha256 recorded in `import_run`).
 
+### Taking a newer list without losing canvass work
+
+When the clerk issues a corrected or updated list, **do not use `make import-force`**. It replaces the
+list with `TRUNCATE household CASCADE`, which also deletes every canvass result, lawn sign, sign photo
+row, doorstep consent record, turf membership and website sign-up. Use the diff:
+
+```bash
+make backup                                               # always, first
+make import-diff  LABEL="voters list export 2026-10-02"   # dry run: prints the change, writes nothing
+make import-apply LABEL="voters list export 2026-10-02"   # makes exactly that change, in one transaction
+```
+
+The dry run reports households and voters matched, new, removed-and-deleted and removed-but-kept; how
+many doors the new export renumbered; how many new houses needed a fresh id; and likely moves.
+
+What the apply guarantees, and why:
+
+- **Canvass work stays on the same door.** The pipeline numbers households sequentially in sort order,
+  so one new house renumbers every door after it. The diff never matches on that id. It matches on the
+  pipeline's own address key, and a matched door keeps its database id whatever the new export called it.
+- **Nothing that references the list is deleted.** A voter or household that has left the list but is
+  cited by a contact, sign, consent record, turf or sign-up is kept, and still counts in totals until
+  someone deals with it. Before committing, the apply counts every contact, sign, photo, consent record,
+  turf membership and sign-up, and **rolls the whole transaction back if any of those numbers went down**.
+- **No household id is ever reused**, because `audit_log` records household ids as text and a reused
+  id would silently change what past audit rows are about.
+- **A person at a new address is reported as a possible move, never linked.** Nothing on the list says
+  it is the same person.
+- **A voter whose address only changed spelling** ("ST." to "ST") is re-keyed rather than replaced, and
+  the website subscriber ledger follows them to the new key.
+
+The planner is `importer/diff.py`, pure and unit-tested (`cd importer && python3 -m pytest -q
+test_diff.py`). `importer/test_apply_integration.py` applies a deliberately awkward changed list to a
+throwaway copy of `canvass_test` and checks that every seeded contact, sign, consent record and turf
+membership is still at the same street address:
+
+```bash
+cd importer
+CANVASS_TEST_DESTRUCTIVE=1 \
+IMPORT_TEST_ADMIN_URL=postgresql://canvass:$POSTGRES_PASSWORD@localhost:5443/postgres \
+  python3 -m pytest -q test_apply_integration.py
+```
+
 ### First login and inviting people
 
 Browse to `https://canvass.webarchitecture.ca` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. The

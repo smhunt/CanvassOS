@@ -9,14 +9,6 @@ Last updated **2026-09-15**.
 
 ## Blocking / highest value
 
-- [ ] **Diff-based list re-import.** The biggest gap in the whole project. Today `make import-force`
-      runs `TRUNCATE household CASCADE`, which also empties `contact`, `sign`, `sign_photo`,
-      `voter_contact` and `turf_household`. If the clerk issues an updated list before 26 October
-      there is currently no way to take it without destroying every canvass result, lawn sign and
-      consent record collected so far — and since 0.6.2 it also clears the website sign-up queue
-      and match suggestions (`public_request`, `match_candidate`). Needs: match on `natural_key`,
-      classify new / removed / moved, show the diff before applying, keep everything that
-      references a surviving household. **In progress 2026-09-15.**
 - [ ] **Run the e2e suite.** `web/tools/e2e.py` had a stale hard-coded admin password and could not
       log in; it now takes `E2E_BASE` / `E2E_EMAIL` / `E2E_PASSWORD`. Point it at the demo stack and
       run it — nobody has yet, so the new UI checks in it are written but unproven.
@@ -50,6 +42,10 @@ Last updated **2026-09-15**.
 
 ## Recently shipped, worth a second look in the field
 
+- [x] **Diff-based list re-import (0.7.0).** `make import-diff` previews a newer list, `make
+      import-apply` applies it in place, keeping every contact, sign, consent record, turf and
+      sign-up. Not yet run against a real second export from the clerk — the first real one is
+      worth a careful read of the dry-run report before applying.
 - [x] Turf boundaries on the map, scoped; street-picked turfs get an approximate dotted hull.
 - [x] Tapping a boundary opens that turf — the map is no longer a dead end.
 - [x] Print sheet reachable from the turf drawer, not just the organiser-only Turfs page.

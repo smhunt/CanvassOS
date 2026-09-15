@@ -5,7 +5,7 @@ Users: Sean (admin), a small core team (organizers), volunteers on phones at the
 
 ---
 
-## Status — 2026-09-09
+## Status — 2026-09-15
 
 Everything below this section is the **original plan, unedited**: a record of what was intended, not of
 what happened. This section is the difference between the two. `CHANGELOG.md` has the release-by-release
@@ -16,7 +16,7 @@ detail; `docs/README.md` describes what the code actually does now.
 | 1. Foundation + read-only viewer | **shipped** | Compose stack, `db/schema.sql`, the Python importer, login/roles/invites, full-municipality map with filters and search, household card, stats dashboard. 7,140 households / 16,892 voters loaded; 7,067 mapped, 70 legal descriptions, 11 institutions. |
 | 2. Canvassing core | **shipped** | Turfs from picked streets *or* a drawn polygon, `turf_household.walk_order`, assignments, the door screen with results/support/notes/flags, latest-status colouring on the map, follow-up queue, per-user activity. |
 | 3. Field hardening | **shipped** | PWA install and the app-shell service worker shipped back in Phase 1; walking order along the street shipped with turfs. Now added: the offline turf cache and write queue (`web/src/offline/` — IndexedDB, backoff, parked entries surfaced to the volunteer), nearest-first ordering from device GPS (`web/src/canvass/nearMe.ts`, with walk order still the default), the printable turf sheet at `/turfs/:turfId/sheet`, the add-to-home-screen path, a held queue for sign photos taken offline, and a four-stop breakpoint scale that gives iPads a master-detail door screen instead of desktop density under a finger. |
-| 4. Reporting + admin | **partly** | Encrypted backup/restore and `make purge` shipped in Phase 1; the audit log and admin user management with it. Since added: the **reachability report** (`/reports?tab=unreachable`, `GET /api/stats/reachability`) with optional Claude-written advice from aggregate counts only. **Not landed:** coverage/support reports by ward/community/turf/day, CSV export with audit entries, and the diff-based list re-import — still the biggest gap, because today `make import-force` deletes every contact, sign and consent record instead (see CLAUDE.md). |
+| 4. Reporting + admin | **partly** | Encrypted backup/restore and `make purge` shipped in Phase 1; the audit log and admin user management with it. Since added: the **reachability report** (`/reports?tab=unreachable`, `GET /api/stats/reachability`) with optional Claude-written advice from aggregate counts only. Since 2026-09-15 also the **diff-based list re-import** (`make import-diff`, then `make import-apply`), which updates the list in place and keeps every contact, sign, consent record, turf and sign-up. **Not landed:** coverage/support reports by ward/community/turf/day, and CSV export with audit entries. |
 | 5. Messaging | **shipped** | Opt-in SMS with email fallback: per-purpose consent, STOP honoured before the next queued send, CRTC sending window and weekend hours enforced in code, a test-send-to-yourself gate and a typed-word approval before anything leaves, and a drip scheduler because a Canadian long code is throttled to ~100-250/day and the excess fails silently. `MESSAGING_PROVIDER=log` by default: a real send needs both a live provider and its credentials, and the API refuses to boot with one without the other. |
 
 ### Phase 5 planned — 2026-09-06

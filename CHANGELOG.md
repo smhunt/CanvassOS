@@ -4,6 +4,33 @@ All notable changes to MC Canvass are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-15
+
+### Added
+
+- **Take a newer voters list without losing a single door knocked.** `make import-diff` compares a
+  new export with the loaded list and prints exactly what would change, writing nothing;
+  `make import-apply` makes that change in place, in one transaction. Until now the only way to load
+  an updated list was `make import-force`, which deletes every canvass result, lawn sign, sign photo
+  row, doorstep consent record, turf membership and website sign-up along with the old list.
+
+  The hard part is that the pipeline's household ids are not stable: it numbers houses sequentially
+  in sort order, so one new house renumbers every door after it. Matching on that id would have
+  quietly moved canvass history to the wrong addresses. The diff matches on the pipeline's own
+  address key instead, and a matched door keeps its database id whatever the new export called it.
+
+  Also: nothing a contact, sign, consent record, turf or sign-up points at is ever deleted — those
+  rows are kept and reported; a household id is never reused, since the audit log records them as
+  text; a voter whose address only changed spelling is re-keyed rather than replaced, and the
+  website subscriber ledger follows them; a person at a new address is reported as a possible move,
+  never linked. Before committing, the apply counts every contact, sign, photo, consent record, turf
+  membership and sign-up and rolls back if any of those numbers went down.
+
+  Checked against the real list: a dry run of the loaded export matched all 7,140 households and
+  16,892 voters with nothing renumbered, and an integration test applies a deliberately awkward
+  changed list to a throwaway copy and confirms every seeded record is still at the same street
+  address.
+
 ## [0.6.2] - 2026-09-14
 
 ### Fixed

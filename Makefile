@@ -72,6 +72,16 @@ import-force: ## re-import a NEW list even though canvass contacts exist (DELETE
 	$(COMPOSE) --profile import run --rm --build importer \
 	  --voters /data/voters_final.csv --households /data/households.csv --label "$(LABEL)" --force
 
+import-diff: ## DRY RUN: report what a new list would change, write nothing (LABEL="voters list export 2026-10-02")
+	@test -f data/voters_final.csv -a -f data/households.csv || { echo "put voters_final.csv and households.csv in data/"; exit 1; }
+	$(COMPOSE) --profile import run --rm --build importer \
+	  --voters /data/voters_final.csv --households /data/households.csv --label "$(LABEL)" --diff
+
+import-apply: ## apply a new list IN PLACE, keeping contacts, signs, consent and turfs (run import-diff first; back up first)
+	@test -f data/voters_final.csv -a -f data/households.csv || { echo "put voters_final.csv and households.csv in data/"; exit 1; }
+	$(COMPOSE) --profile import run --rm --build importer \
+	  --voters /data/voters_final.csv --households /data/households.csv --label "$(LABEL)" --diff --apply
+
 backup: ## encrypted dump -> backups/canvass-<stamp>.sql.gz.gpg (pg_dump | gzip | gpg --symmetric AES256, passphrase = BACKUP_PASSPHRASE from .env)
 	@PASS=$(call envval,BACKUP_PASSPHRASE); test -n "$$PASS" || { echo "set BACKUP_PASSPHRASE in .env"; exit 1; }
 	mkdir -p $(BACKUP_DIR)

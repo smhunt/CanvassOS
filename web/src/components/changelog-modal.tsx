@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.6.2';
+export const APP_VERSION = '0.7.0';
 export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
 
 export interface Release {
@@ -11,6 +11,14 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.7.0',
+    date: '2026-09-15',
+    changes: [
+      'A newer voters list can now be loaded without losing anything: every door knocked, lawn sign, consent record and turf stays attached to the same address.',
+      'The update is previewed first and nothing is written until it is confirmed.',
+    ],
+  },
   {
     version: '0.6.2',
     date: '2026-09-14',
@@ -364,14 +372,18 @@ export const ROADMAP: RoadmapGroup[] = [
     ],
   },
   {
+    category: 'Shipped — taking a newer voters list',
+    icon: '✅',
+    items: [
+      { label: 'Load an updated list in place, keeping every contact, sign, consent record and turf', priority: 'high', done: true },
+      { label: 'Preview exactly what a new list would change before anything is written', priority: 'high', done: true },
+      { label: 'People at a new address are flagged as possible moves, never merged automatically', priority: 'medium', done: true },
+    ],
+  },
+  {
     category: 'Planned — Phase 4: reporting and admin',
     icon: '📈',
     items: [
-      {
-        label:
-          'Diff-based re-import of a newer list — new, removed and moved voters, keeping contacts. The biggest remaining gap: today a re-import deletes every contact, sign and consent record.',
-        priority: 'high',
-      },
       { label: 'Coverage and support reports by ward, community, turf and day', priority: 'high' },
       { label: 'CSV export with an audit entry for every download', priority: 'medium' },
       { label: 'Aerial imagery layer from the county GIS — current, free, and covers the rural roads', priority: 'low' },

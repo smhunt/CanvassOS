@@ -22,9 +22,10 @@ approximate hull drawn dotted), **the reachability report** (`GET /api/stats/rea
 `/reports?tab=unreachable`) and **optional Claude-written advice** on it (off unless
 `ADVICE_API_KEY` is set).
 
-**Phase 4 is the remaining gap** — coverage/support reports by ward/community/turf/day, CSV export
-with audit, and above all the **diff-based re-import**: today `make import-force` deletes every
-contact, sign and consent record.
+**Phase 4 is partly done.** The **diff-based re-import** shipped 2026-09-15 (`make import-diff`, then
+`make import-apply`): it updates the list in place and keeps every contact, sign, consent record,
+turf and sign-up. Still missing: coverage/support reports by ward/community/turf/day, and CSV export
+with audit.
 
 **Deployed** at `https://canvass.webarchitecture.ca` behind the pre-existing Cloudflare Tunnel — not
 `sean-hunt.com`, because a tunnel hostname must be on Cloudflare DNS and that zone is on OpenSRS
@@ -69,7 +70,9 @@ make demo                     # drop + rebuild canvass_demo (schema.sql, migrati
 
 make migrate                  # apply pending db/migrations/*.sql   (make migrate-status to list them)
 make import LABEL="voters list export 2026-09-03"   # one-shot importer (compose profile "import")
-make import-force             # re-import when contacts exist — DESTRUCTIVE, see the landmine below
+make import-diff LABEL="…"    # DRY RUN a newer list: what would change, nothing written
+make import-apply LABEL="…"   # apply it in place, keeping contacts/signs/consent/turfs (back up first)
+make import-force             # replace the list outright — DESTRUCTIVE, see the landmine below
 
 make logs SERVICE=api  |  make ps  |  make psql  |  make restart  |  make down  |  make build
 make backup                   # pg_dump | gzip | gpg AES256 -> backups/canvass-<stamp>.sql.gz.gpg
@@ -203,7 +206,24 @@ counts and **names all five dependent tables** before refusing (exit 2) — it u
 alone, which let `--force` quietly destroy lawn signs and doorstep consent records. `to_regclass` is
 checked per table so a database predating a migration still works. If you add a table with an FK to
 `household`, add it to the `dependents` list in `importer/import.py` in the same commit. Back up
-first. (Phase 4 is where the diff-based re-import lands.)
+first. **For a real list update, use `make import-diff` / `make import-apply` instead** — see below.
+
+**The diff re-import must never match households on `household.id`.** `pipeline/build_lists.py`
+assigns `H-{community}-{seq:05d}` sequentially in sort order, so one new house renumbers every door
+after it; a diff keyed on the id would silently re-attach canvass results, signs and consent records
+to the wrong address, which is worse than `--force` destroying them loudly. `importer/diff.py` matches
+households on `norm_address(property_address)` — the pipeline's own grouping key, copied not imported
+because the importer image has no `pipeline/`; **if the pipeline's `norm_street()` changes, change it
+there too** or every house looks replaced. A matched door keeps its database id. The other rules, all
+tested: a household id is never reused (`audit_log.target` stores them as text); voters match on a
+normalised key because the stored `natural_key` embeds the raw address; `#n` duplicates pair
+positionally so a file-order reshuffle is not churn; referenced leavers are kept and a kept voter
+forces its household to be kept; moves are reported, never linked; a re-keyed voter moves
+`subscriber_link` and `match_candidate` to the new key in the same transaction. `apply_plan` counts
+every contact, sign, photo, consent record, turf membership and sign-up before and after and **rolls
+back if any went down** — keep that check. Kept rows still count in totals: nothing filters them,
+because threading a filter through ~70 reads was too much risk this close to the election.
+`importer/test_apply_integration.py` templates a throwaway `canvass_difftest` from `canvass_test`.
 
 **`api/src/lib/serialize.ts` is the single enforcement point for role-based field stripping**, and
 `api/src/lib/scope.ts` is the single enforcement point for volunteer turf scoping. Every row leaving the
@@ -380,8 +400,9 @@ together.
 
 sha256s both CSVs into `import_run`; a re-run on identical files is a no-op; a different file truncates
 and reloads in one transaction; it refuses (exit 2) when `contact` rows exist unless `--force` (see the
-landmine). It verifies row counts and per-ward/community totals after loading and rolls back on any
-mismatch. Field mapping lives next to each column and in README.md — including the known quirks:
+landmine). `--diff` (with or without `--apply`) is the in-place alternative; the planning is pure, in
+`importer/diff.py`, and `import.py` only fetches, prints and applies. The Dockerfile copies both files.
+It verifies row counts and per-ward/community totals after loading and rolls back on any mismatch. Field mapping lives next to each column and in README.md — including the known quirks:
 duplicate list entries get a `#2` suffix on `natural_key` (which is UNIQUE), and `household.n_nonresident`
 sums to 394 (it includes the 4 `resident_class = 'unknown'` voters) while `/api/stats/overview` reports
 390.
