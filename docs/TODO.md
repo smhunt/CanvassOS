@@ -3,7 +3,7 @@
 Running list of what is asked for, in flight, and deliberately not being built. `CHANGELOG.md` is
 what shipped; `prompt_plan.md` is the phase plan; this is the working queue between them.
 
-Last updated **2026-09-11**.
+Last updated **2026-09-15**.
 
 ---
 
@@ -13,8 +13,10 @@ Last updated **2026-09-11**.
       runs `TRUNCATE household CASCADE`, which also empties `contact`, `sign`, `sign_photo`,
       `voter_contact` and `turf_household`. If the clerk issues an updated list before 26 October
       there is currently no way to take it without destroying every canvass result, lawn sign and
-      consent record collected so far. Needs: match on `natural_key`, classify new / removed / moved,
-      show the diff before applying, keep everything that references a surviving household.
+      consent record collected so far — and since 0.6.2 it also clears the website sign-up queue
+      and match suggestions (`public_request`, `match_candidate`). Needs: match on `natural_key`,
+      classify new / removed / moved, show the diff before applying, keep everything that
+      references a surviving household. **In progress 2026-09-15.**
 - [ ] **Run the e2e suite.** `web/tools/e2e.py` had a stale hard-coded admin password and could not
       log in; it now takes `E2E_BASE` / `E2E_EMAIL` / `E2E_PASSWORD`. Point it at the demo stack and
       run it — nobody has yet, so the new UI checks in it are written but unproven.
@@ -22,16 +24,11 @@ Last updated **2026-09-11**.
       Safari to print" instead of a button iOS silently ignores. Verified by reasoning and by the
       platform's documented behaviour, not on the device.
 
-## In flight
-
-- [ ] **Loading skeletons on the remaining screens.** An agent is converting the rest (stats,
-      reports, turfs, signs, messaging, users, audit, account, and the route-level Suspense
-      fallbacks). Door screen and turf sheet are already done.
-
 ## Asked for, not started
 
-- [ ] **Start the Meta advertising authorization today.** Zero development effort, ~2-3 weeks of
-      calendar against 46 days, and it is the critical path: the confirmation code arrives by post.
+- [ ] **Meta advertising authorization — underway.** Identity confirmation went through on
+      2026-09-15; the next step is the confirmation code that arrives by post (3–10 business days
+      per the research), then a day or two of disclaimer review. Watch the mail for it.
       `docs/phase-6-advertising-plan.md` has the detail. **TikTok and Spotify are both out** —
       TikTok prohibits political ads globally, and Spotify permits them only in the US, UK,
       Australia, India and Japan. Before spending anything, verify in Ads Manager that political
@@ -56,7 +53,10 @@ Last updated **2026-09-11**.
 - [x] Turf boundaries on the map, scoped; street-picked turfs get an approximate dotted hull.
 - [x] Tapping a boundary opens that turf — the map is no longer a dead end.
 - [x] Print sheet reachable from the turf drawer, not just the organiser-only Turfs page.
-- [x] List skeletons instead of a bare spinner on the door screen and the sheet.
+- [x] Loading skeletons shaped like the content, on every list and table screen (0.5.3).
+- [x] Website subscriber link (phase 8, 0.6.0–0.6.2): sign-ups from sean-hunt.com are pulled every
+      five minutes into the same `public_request` queue the push endpoint writes, with a local
+      voter matcher and a Sign-ups screen for confirming matches.
 - [x] The unreachable report, with optional Claude-written advice from aggregate counts only.
 - [x] Deployed at `https://canvass.webarchitecture.ca`.
 - [x] Record a visit from a door on the map, including doors in no turf.
