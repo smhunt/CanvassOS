@@ -1,7 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '0.7.0';
-export const REPO_URL = 'https://github.com/smhunt/mc-canvass';
+export const APP_VERSION = '0.7.1';
+export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
   version: string;
@@ -11,6 +11,14 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '0.7.1',
+    date: '2026-09-15',
+    changes: [
+      'The app is now called CanvassOS.',
+      'Nothing saved on your phone was touched: doors waiting to sync, saved turfs and held sign photos are all still there.',
+    ],
+  },
   {
     version: '0.7.0',
     date: '2026-09-15',
@@ -131,7 +139,7 @@ export const CHANGELOG: Release[] = [
       'Doors can be ordered nearest-first from your GPS, as well as in walking order.',
       'Printable paper turf sheet, for a dead battery or no signal at all.',
       'Proper iPad layout \u2014 the door list and the open door side by side.',
-      'Add MC Canvass to your home screen so it opens like an app.',
+      'Add CanvassOS to your home screen so it opens like an app.',
       'Move a turf from one volunteer to another, or take it off them.',
       'Optional street-level photo of a door, off unless a key is configured.',
     ],
@@ -442,7 +450,7 @@ export function ChangelogModal({ open, tab, onTab, onClose }: Props) {
       <div className="card modal" role="dialog" aria-modal="true" aria-labelledby="about-h">
         <header className="modal__head">
           <h2 id="about-h" ref={headRef} tabIndex={-1}>
-            About MC Canvass <span className="muted">v{APP_VERSION}</span>
+            About CanvassOS <span className="muted">v{APP_VERSION}</span>
           </h2>
           <button type="button" className="btn btn--icon" onClick={onClose} aria-label="Close about this app">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -498,7 +506,7 @@ function ChangelogPanel() {
       <p className="muted small">
         Source and issues:{' '}
         <a href={REPO_URL} target="_blank" rel="noreferrer">
-          github.com/smhunt/mc-canvass
+          github.com/smhunt/CanvassOS
         </a>
       </p>
     </div>

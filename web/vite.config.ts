@@ -48,7 +48,7 @@ function appShellServiceWorker(): Plugin {
       const assets = ['/', ...files, ...PUBLIC_SHELL_FILES].map((p) => encodeURI(p));
       let h = 0;
       for (const ch of assets.join('|')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-      const source = `/* MC Canvass app-shell service worker (generated at build) */
+      const source = `/* CanvassOS app-shell service worker (generated at build) */
 const CACHE = 'mc-canvass-shell-${h.toString(16)}';
 const ASSETS = ${JSON.stringify(assets)};
 self.addEventListener('install', (event) => {

@@ -23,7 +23,7 @@ def font(size: int):
 
 im = Image.new("RGB", (W, H), BG)
 d = ImageDraw.Draw(im)
-lines = [("MC Canvass", 96, FG, -150), ("Door-knocking for a municipal campaign", 44, MUTED, -10),
+lines = [("CanvassOS", 96, FG, -150), ("Door-knocking for a municipal campaign", 44, MUTED, -10),
          ("Middlesex Centre, Ontario", 34, DIM, 70)]
 for text, size, colour, dy in lines:
     f = font(size)

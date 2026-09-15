@@ -1,6 +1,6 @@
 {
-  "name": "MC Canvass",
-  "short_name": "MC Canvass",
+  "name": "CanvassOS",
+  "short_name": "CanvassOS",
   "description": "Middlesex Centre voter map and canvassing tool",
   "id": "/",
   "start_url": "/map",

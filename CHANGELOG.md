@@ -1,8 +1,22 @@
 # Changelog
 
-All notable changes to MC Canvass are recorded here. The format follows
+All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.7.1] - 2026-09-15
+
+### Changed
+
+- **Renamed to CanvassOS**, in the repository (`smhunt/CanvassOS`), the app title, the home-screen
+  name, the wordmark and the docs. The GitHub redirect keeps old clone URLs working.
+- The stored identifiers deliberately did **not** change: the IndexedDB database is still
+  `mc-canvass-field`, the door-order preference is still `mc-canvass.door-order`, and the
+  service-worker cache prefix is still `mc-canvass-shell-`. Renaming any of them would strand a
+  volunteer's queued doors, cached turfs and held sign photos on their phone, where `make purge`
+  cannot reach. The local checkout is still `~/Code/mc-canvass`, so every path in these docs holds.
+- The wordmark's two spans became `.wordmark__word` + `.wordmark__badge` (the boxed half is now
+  "OS"); the old `__mc` / `__rest` names described the old name.
 
 ## [0.7.0] - 2026-09-15
 
@@ -571,4 +585,4 @@ Phase 1: self-hosted canvass stack — importer, API, MapLibre viewer.
   caches the hashed bundle files — no workbox dependency. API responses are not cached; offline turf
   data arrives in Phase 3.
 
-[0.1.0]: https://github.com/smhunt/mc-canvass/releases/tag/v0.1.0
+[0.1.0]: https://github.com/smhunt/CanvassOS/releases/tag/v0.1.0

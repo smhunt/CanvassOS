@@ -11,9 +11,9 @@ export function useUser(): User {
 
 export function Wordmark() {
   return (
-    <span className="wordmark" aria-label="MC Canvass">
-      <span className="wordmark__mc">MC</span>
-      <span className="wordmark__rest">Canvass</span>
+    <span className="wordmark" aria-label="CanvassOS">
+      <span className="wordmark__word">Canvass</span>
+      <span className="wordmark__badge">OS</span>
     </span>
   );
 }

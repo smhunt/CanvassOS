@@ -5,7 +5,7 @@ Voiced by OpenAI TTS (`gpt-4o-mini-tts`, voice `ash`) via `demo/tts.py`, falling
 exactly as long as its own audio — that is what keeps picture and voice in step with no manual
 timing. Rebuild with `./demo/make_video.sh`.
 
-1. MC Canvass is a door-knocking tool for one municipal campaign. It maps the whole voters list — seven thousand doors, sixteen thousand electors.
+1. CanvassOS is a door-knocking tool for one municipal campaign. It maps the whole voters list — seven thousand doors, sixteen thousand electors.
 
 2. An organiser cuts the map into turfs — by street or by drawing a shape — sees the door count before committing, then hands each one to a volunteer.
 

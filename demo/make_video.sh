@@ -26,7 +26,7 @@ TITLE="$B/00-title.png"
 python3 demo/title_card.py "$TITLE" "$W" "$H"
 
 scenes=(
-"$TITLE|MC Canvass is a door-knocking tool for one municipal campaign. It maps the whole voters list — seven thousand doors, sixteen thousand electors."
+"$TITLE|CanvassOS is a door-knocking tool for one municipal campaign. It maps the whole voters list — seven thousand doors, sixteen thousand electors."
 "$STILLS/01-turfs.jpg|An organiser cuts the map into turfs — by street or by drawing a shape — sees the door count before committing, then hands each one to a volunteer."
 "$STILLS/02-door-list.jpg|Doors come in walking order, each carrying whatever happened there last time."
 "$STILLS/03-door-open.jpg|One tap records the result and moves to the next house. Speaking to someone opens support, flags and a note."

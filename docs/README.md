@@ -1,6 +1,6 @@
 # Architecture & API integration
 
-Developer orientation for `mc-canvass` — the self-hosted voter map / canvassing tool for the Sean Hunt
+Developer orientation for `CanvassOS` — the self-hosted voter map / canvassing tool for the Sean Hunt
 mayoral campaign (Middlesex Centre, Ontario; election day 2026-10-26).
 
 **What exists today:** Phase 1 (import, login with roles, map / search / stats), Phase 2 (turfs,

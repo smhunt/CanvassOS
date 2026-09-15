@@ -1,4 +1,4 @@
-# Middlesex Centre Canvass
+# CanvassOS
 
 Door-knocking, voter contact and lawn-sign tracking for one municipal campaign — Sean Hunt's run for
 mayor of Middlesex Centre, Ontario, election day **26 October 2026**.
@@ -208,7 +208,7 @@ real public street names, safe to screenshot.
 Prerequisites: Docker with compose v2, Node 22, Python 3.12 with `pip install 'psycopg[binary]'`.
 
 ```bash
-git clone https://github.com/smhunt/mc-canvass && cd mc-canvass
+git clone https://github.com/smhunt/CanvassOS && cd CanvassOS
 cp .env.example .env && $EDITOR .env      # any values will do for a demo
 
 make devdb                                # stack + Postgres published on 127.0.0.1:5443
@@ -403,7 +403,7 @@ printed on every page of the sheet itself, next to a line for who entered it.
 
 ### Installing it on a phone
 
-Volunteers should add MC Canvass to the home screen — it opens full screen and starts faster at the
+Volunteers should add CanvassOS to the home screen — it opens full screen and starts faster at the
 door. On Android/Chrome the app offers an **Add** button; on **iPhone and iPad, tap Share, then "Add
 to Home Screen"** (Safari has no install button, so the app shows those instructions instead). Either
 way it asks once: dismiss it and it stays dismissed on that phone.

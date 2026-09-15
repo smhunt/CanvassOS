@@ -1,4 +1,4 @@
-# Middlesex Centre Canvass — build plan
+# CanvassOS — build plan
 
 Self-hosted (Docker) voter map + canvassing tool for the Sean Hunt mayoral campaign.
 Users: Sean (admin), a small core team (organizers), volunteers on phones at the door.

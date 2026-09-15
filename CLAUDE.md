@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Self-hosted voter map + canvassing tool for the Sean Hunt mayoral campaign (Middlesex Centre, Ontario;
+CanvassOS: self-hosted voter map + canvassing tool for the Sean Hunt mayoral campaign (Middlesex Centre, Ontario;
 election day 2026-10-26). `prompt_plan.md` holds the 4-phase build plan and a dated status section.
 
 **Shipped:** Phase 1 (import, auth/roles, map/search/stats), Phase 2 (turfs from streets or a drawn

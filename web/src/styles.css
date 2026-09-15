@@ -1,4 +1,4 @@
-/* MC Canvass — single stylesheet, custom properties, light default + prefers-color-scheme dark. */
+/* CanvassOS — single stylesheet, custom properties, light default + prefers-color-scheme dark. */
 
 /*
  * ------------------------------------------------------------------ breakpoint scale
@@ -249,7 +249,7 @@ table.visually-hidden {
   gap: 0.3rem;
   letter-spacing: 0.01em;
 }
-.wordmark__mc {
+.wordmark__badge {
   font-weight: 800;
   font-size: 1.15rem;
   padding: 0 0.3rem;
@@ -257,7 +257,7 @@ table.visually-hidden {
   border-radius: 5px;
   line-height: 1.3;
 }
-.wordmark__rest {
+.wordmark__word {
   font-weight: 600;
   font-size: 1.05rem;
 }

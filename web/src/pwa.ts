@@ -135,12 +135,12 @@ function show(offer: Offer): void {
   root.id = ROOT_ID;
   root.className = 'mc-install';
   root.setAttribute('role', 'region');
-  root.setAttribute('aria-label', 'Add MC Canvass to your home screen');
+  root.setAttribute('aria-label', 'Add CanvassOS to your home screen');
 
   const text = document.createElement('div');
   text.className = 'mc-install__text';
   const title = document.createElement('strong');
-  title.textContent = 'Add MC Canvass to your home screen';
+  title.textContent = 'Add CanvassOS to your home screen';
   const body = document.createElement('p');
   body.textContent =
     offer.kind === 'ios'

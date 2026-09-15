@@ -153,7 +153,7 @@ export function AccountPage() {
           <h2 id="about-app-h">About this app</h2>
           <span className="tag tag--neutral mono">v{APP_VERSION}</span>
         </div>
-        <p className="muted small">MC Canvass — Phase 1: the voters list, the map and the numbers. Canvassing itself lands in Phase 2.</p>
+        <p className="muted small">CanvassOS — Phase 1: the voters list, the map and the numbers. Canvassing itself lands in Phase 2.</p>
         <div className="row">
           <button type="button" className="btn btn--small" onClick={() => setAbout('changelog')}>
             Changelog

@@ -250,7 +250,7 @@ export function SubscribePage() {
 }
 
 /**
- * Who this page belongs to, said first. Deliberately not the app's `Wordmark` — "MC Canvass" is the
+ * Who this page belongs to, said first. Deliberately not the app's `Wordmark` — "CanvassOS" is the
  * name of the campaign's internal tool and means nothing to a passer-by, who needs to know whose
  * texts they are agreeing to before they read anything else.
  */
