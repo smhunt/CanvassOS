@@ -9,8 +9,8 @@ cache, the separate sign-photo queue, nearest-first door ordering, the printable
 add-to-home-screen path, and a real tablet layout — §6 and §7), plus three things that were not in
 the original plan at all: **lawn signs** with GPS and photos, **doorstep phone/email with
 per-purpose consent**, and **optional street-level imagery of a door** (off unless a key is
-configured — §5). Phase 4 (coverage reports, CSV export with audit entries, diff-based re-import) is
-not started.
+configured — §5). Phase 4 is partly done: the diff-based re-import shipped (`make import-diff`, then
+`make import-apply`); coverage reports and CSV export with audit entries are not started.
 
 This file explains how the pieces fit together. It is not the operator manual and not the API contract:
 
@@ -191,8 +191,10 @@ mc-canvass/
 │   │   └── 002_voter_contact.sql voter_contact, contact_channel
 │   └── migrate.sh               applies pending migrations, records them in schema_migration
 │
-├── importer/                    one-shot loader: import.py (single file, stdlib + psycopg), requirements.txt,
-│                                Dockerfile. Reads /data/*.csv read-only, writes household/voter/import_run.
+├── importer/                    one-shot loader: import.py (stdlib + psycopg), diff.py (the pure re-import
+│                                planner), test_diff.py (unit) and test_apply_integration.py (against a
+│                                throwaway clone), requirements.txt, Dockerfile. Reads /data/*.csv read-only,
+│                                writes household/voter/import_run.
 │
 ├── pipeline/
 │   └── build_lists.py           rebuilds the importer's two CSVs from the clerk's .xlsx + county open
@@ -329,8 +331,14 @@ civic address (`civic_num`, `street`, `street_type`, `street_dir`, `unit`), `lat
 provenance (`addr_match`, `record_quality`), the `is_legal` / `is_institution` flags, the denormalized
 counts (`n_voters`, `n_nonresident`, `n_po_box`) and the walking-order keys (`street_sort`,
 `num_sort`). `voter` holds split name fields plus `name_raw` for traceability, `resident_class`, the
-mailing fields, and `natural_key` (UNIQUE) — the stable identity used to match voters across
-re-imports. Indexes: ward, community, `(lat, lon)`, `(street_sort, num_sort)`, and GIN trigram indexes
+mailing fields, and `natural_key` (UNIQUE) — the identity used to match voters across re-imports, once
+normalised, because the stored key embeds the raw address string.
+
+**`household.id` is not a stable identity**, and nothing may match on it across list exports. The
+pipeline assigns `H-{community}-{seq:05d}` sequentially in sort order, so one new house renumbers every
+door after it. The diff re-import (`importer/diff.py`) therefore matches households on the normalised
+property address, and a matched door keeps the id it already has — which is what keeps every contact,
+sign, consent record and turf pointing at the right house. Indexes: ward, community, `(lat, lon)`, `(street_sort, num_sort)`, and GIN trigram indexes
 on `household.address` and `voter.full_name` for `/api/search`.
 
 The current load is **7,140 households and 16,892 electors**, of which **7,067** have coordinates and
