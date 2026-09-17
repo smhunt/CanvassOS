@@ -18,7 +18,7 @@ STAMP := $(shell date +%Y%m%d-%H%M%S)
 # read one value out of .env without `include` (passwords may contain $ or # which make would mangle)
 envval = $$(sed -n 's/^$(1)=//p' $(ENV_FILE) 2>/dev/null | tail -1)
 
-.PHONY: help up up-tunnel devdb demo migrate migrate-status reset-password down restart restart-tunnel build logs ps import import-force backup restore purge psql test tunnel-status
+.PHONY: help up up-tunnel devdb demo migrate migrate-status reset-password down restart restart-tunnel build logs ps import import-force backup backup-offsite restore purge purge-offsite psql test tunnel-status
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -83,20 +83,32 @@ import-apply: ## apply a new list IN PLACE, keeping contacts, signs, consent and
 	  --voters /data/voters_final.csv --households /data/households.csv --label "$(LABEL)" --diff --apply
 
 backup: ## encrypted dump -> backups/canvass-<stamp>.sql.gz.gpg (pg_dump | gzip | gpg --symmetric AES256, passphrase = BACKUP_PASSPHRASE from .env)
-	@PASS=$(call envval,BACKUP_PASSPHRASE); test -n "$$PASS" || { echo "set BACKUP_PASSPHRASE in .env"; exit 1; }
-	mkdir -p $(BACKUP_DIR)
-	set -o pipefail
+	@# ONE shell command, joined with backslashes. macOS ships GNU Make 3.81, which predates
+	@# .ONESHELL (3.82), so the declaration at the top of this file is SILENTLY IGNORED there and
+	@# every recipe line would otherwise run in its own shell. Written as separate lines, $$PASS was
+	@# empty by the time gpg saw it — encrypting the voters list with an EMPTY passphrase — and
+	@# `set -o pipefail` never applied, so a failed pg_dump was masked by a successful gzip and
+	@# produced a truncated backup that still exited 0. Do not split these back into separate lines.
+	@PASS=$(call envval,BACKUP_PASSPHRASE); test -n "$$PASS" || { echo "set BACKUP_PASSPHRASE in .env"; exit 1; }; \
+	mkdir -p $(BACKUP_DIR); \
+	set -o pipefail; \
 	$(COMPOSE) exec -T db pg_dump -U canvass --clean --if-exists --no-owner --no-privileges canvass \
 	  | gzip -9 \
 	  | gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
-	        --passphrase "$$PASS" -o $(BACKUP_DIR)/canvass-$(STAMP).sql.gz.gpg
-	ls -lh $(BACKUP_DIR)/canvass-$(STAMP).sql.gz.gpg
-	@echo "restore with: make restore FILE=$(BACKUP_DIR)/canvass-$(STAMP).sql.gz.gpg"
+	        --passphrase "$$PASS" -o $(BACKUP_DIR)/canvass-$(STAMP).sql.gz.gpg; \
+	ls -lh $(BACKUP_DIR)/canvass-$(STAMP).sql.gz.gpg; \
+	echo "restore with: make restore FILE=$(BACKUP_DIR)/canvass-$(STAMP).sql.gz.gpg"
+
+backup-offsite: ## make backup + ship it (and any sign photos) to $BACKUP_S3_URI, verified — this is the cron target
+	@./scripts/backup-offsite.sh
 
 restore: ## restore FILE=backups/canvass-....sql.gz.gpg into an EMPTY database (run after `make up` on a fresh volume)
-	@test -n "$(FILE)" || { echo "usage: make restore FILE=backups/canvass-<stamp>.sql.gz.gpg"; exit 1; }
-	PASS=$(call envval,BACKUP_PASSPHRASE)
-	set -o pipefail
+	@# One shell command — same GNU Make 3.81 reason as `backup` above. Split back into lines, $$PASS
+	@# is empty here too, which would happily "restore" a backup that was written with the same bug
+	@# and so hide it.
+	@test -n "$(FILE)" || { echo "usage: make restore FILE=backups/canvass-<stamp>.sql.gz.gpg"; exit 1; }; \
+	PASS=$(call envval,BACKUP_PASSPHRASE); test -n "$$PASS" || { echo "set BACKUP_PASSPHRASE in .env"; exit 1; }; \
+	set -o pipefail; \
 	gpg --batch --pinentry-mode loopback --passphrase "$$PASS" -d "$(FILE)" \
 	  | gunzip \
 	  | $(COMPOSE) exec -T db psql -U canvass -v ON_ERROR_STOP=1 canvass
@@ -112,7 +124,32 @@ purge: ## AFTER THE ELECTION: stop the stack, delete ALL volumes (database, web,
 	@if [ -d data/sign-photos ]; then \
 	  find data/sign-photos -type f -print -exec shred -u -z -n 3 {} + ; rmdir data/sign-photos 2>/dev/null || true; \
 	fi
+	$(MAKE) purge-offsite CONFIRM=PURGE
 	@echo "purged. Also remove: $(BACKUP_DIR)/*.gpg, any copies of the list on laptops/phones, and the pipeline outputs."
+	@echo "On AWS also: terminate the instance (delete-on-termination destroys the EBS volume), delete"
+	@echo "the bucket, release the Elastic IP, revoke the IAM role, confirm no snapshots or AMIs exist,"
+	@echo "then prove nothing survives:  aws resourcegroupstaggingapi get-resources \\"
+	@echo "  --tag-filters Key=Project,Values=canvass-2026 --region ca-central-1"
+
+purge-offsite: ## destroy the off-site backups in $BACKUP_S3_URI — needs ADMIN credentials (the instance role cannot delete)
+	@# One logical shell command: macOS ships GNU Make 3.81, which predates .ONESHELL, so a recipe
+	@# written as separate lines would run each in its own shell and lose every variable.
+	@URI="$(call envval,BACKUP_S3_URI)"; \
+	if [ -z "$$URI" ]; then echo "no BACKUP_S3_URI configured — nothing off-site to destroy"; exit 0; fi; \
+	URI="$${URI%/}"; \
+	if [ "$(CONFIRM)" != "PURGE" ]; then \
+	  echo "This permanently destroys every encrypted backup under $$URI."; \
+	  read -r -p "Type PURGE to continue: " ans; [ "$$ans" = "PURGE" ] || { echo "aborted"; exit 1; }; \
+	fi; \
+	AWS="aws $${AWS_PROFILE:+--profile $$AWS_PROFILE} $${AWS_REGION:+--region $$AWS_REGION}"; \
+	$$AWS s3 rm "$$URI" --recursive; \
+	LEFT="$$($$AWS s3 ls "$$URI" --recursive | wc -l | tr -d '[:space:]')"; \
+	if [ "$$LEFT" != "0" ]; then \
+	  echo "STILL PRESENT: $$LEFT object(s) under $$URI — NOT purged." >&2; \
+	  echo "Re-run with admin credentials (AWS_PROFILE=...); the instance role cannot delete." >&2; \
+	  exit 1; \
+	fi; \
+	echo "off-site backups destroyed and verified empty: $$URI"
 
 demo: ## (re)build canvass_demo — fabricated residents for screenshots, video and training
 	@echo "Building canvass_demo from entirely fabricated data (never the voters list)."
