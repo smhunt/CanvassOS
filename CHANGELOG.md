@@ -4,6 +4,59 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-09-17
+
+### Security
+
+- **`TRUST_PROXY` is a hop count, not a flag.** `TRUST_PROXY=1` was being handed to Fastify as the
+  boolean `true`, which tells `proxy-addr` to trust every hop and therefore to return the *left-most*
+  `X-Forwarded-For` entry — the one the caller supplies. `req.ip` is not cosmetic: it is written to
+  `audit_log.ip`, the Municipal Elections Act artefact, and it is the key the login rate limiter
+  counts on. Both were forgeable by anyone who could reach the origin directly. A numeric value now
+  means "trust this many proxies nearest the server", so the existing `1` yields the address Caddy
+  itself set; `true` still means trust-all, and a CIDR or comma-separated list passes through
+  (`trustProxyFrom` in `api/src/app.ts`, unit-tested in `api/test/trustproxy.test.ts`).
+- **The plain `Caddyfile` now overwrites `X-Forwarded-For` with the TCP peer** instead of appending to
+  whatever arrived, so a forged value is discarded rather than merely out-ranked. Mode B already did
+  the equivalent from `CF-Connecting-IP`; both modes now set the header rather than trusting it.
+- Not exploitable on the live stack, which runs `Caddyfile.tunnel` — but it would have become
+  exploitable the first time `make up` was used on an internet-facing host, which is one habitual
+  command away.
+
+### Fixed
+
+- **Backups were being encrypted with an empty passphrase.** macOS ships GNU Make 3.81 and
+  `.ONESHELL` arrived in 3.82, so the declaration at the top of the `Makefile` has always been
+  silently ignored on the machine that runs the campaign and every recipe line ran in its own shell.
+  In `backup` that meant `$$PASS` was set in one shell and read in another, so `gpg` received
+  nothing; `restore` had the same bug and so decrypted those archives without complaint, hiding it.
+  `set -o pipefail` likewise never reached the `pg_dump | gzip | gpg` pipeline, so a failed dump was
+  masked by a successful `gzip` and produced a truncated file that still exited 0. Nothing was in
+  fact lost: this went unnoticed because no backup had ever been taken and `backups/` did not exist.
+  Both recipes are now single shell commands joined with backslashes, which behaves identically on
+  3.81 and 4.x.
+
+### Added
+
+- **Off-site encrypted backups.** `make backup-offsite` (`scripts/backup-offsite.sh`) runs
+  `make backup`, uploads the dump to `$BACKUP_S3_URI/db/` and **verifies it with
+  `aws s3api head-object`** rather than trusting the exit code — a silent no-op upload is the failure
+  mode that leaves you believing you have backups you do not have. It also tars and encrypts the
+  `signphotos` volume to `$BACKUP_S3_URI/photos/`, because `pg_dump` does not cover the photographs of
+  electors' houses, and prunes local `*.gpg` older than 14 days. New env var `BACKUP_S3_URI`; absent
+  means local backups only, which is to say the only copy shares a disk with the database.
+- **`make purge-offsite`** destroys those objects after the election and then *proves* the bucket is
+  empty, failing loudly if it is not. The instance role deliberately carries no `s3:DeleteObject`, so
+  a compromised box cannot destroy the only off-site copies — which also means this target needs
+  admin credentials. `make purge` now invokes it and prints the AWS-side checklist.
+- **A third deployment shape: AWS EC2 behind the same Cloudflare Tunnel.** `t3.medium` on Ubuntu
+  24.04 in **ca-central-1**, so Ontario electors' personal information stays in Canada; an encrypted
+  30 GiB gp3 root volume with `DeleteOnTermination`; **no inbound security-group rule at all** (the
+  tunnel dials out) and administration through SSM Session Manager rather than SSH; backups to an S3
+  bucket in the same region. Everything is tagged `Project=canvass-2026` because the account is
+  shared, so "close the account" is not available as the destruction artefact. See README "C. AWS
+  EC2 behind the Cloudflare Tunnel" for the x86_64-not-Graviton landmine.
+
 ## [1.0.0] - 2026-09-15
 
 First release. CanvassOS runs the campaign's canvass in the field, on real data, at

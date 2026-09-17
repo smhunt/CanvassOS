@@ -1,20 +1,31 @@
-# Cloudflare Tunnel config for canvass.sean-hunt.com.
+# Cloudflare Tunnel config for canvass.webarchitecture.ca — the hostname actually deployed. Not
+# sean-hunt.com: a tunnel hostname must be served by Cloudflare DNS, and that zone is on OpenSRS
+# carrying the campaign's Google Workspace MX. See README "DNS — what is actually deployed".
 #
-# Copy to ~/.cloudflared/canvass.yml and fill in the tunnel UUID printed by
+# Paths below are the Linux/systemd layout (mode C, the EC2 host), which is where `cloudflared
+# service install` looks. On the Mac (mode B) the hostname is currently an ingress entry in the
+# PRE-EXISTING tunnel's ~/.cloudflared/config.yml, run by a LaunchAgent — see README "The live
+# setup". This file is the dedicated-tunnel form, which is what the EC2 host runs.
+#
+# Copy to /etc/cloudflared/canvass.yml and fill in the tunnel UUID printed by
 # `cloudflared tunnel create canvass`. Contains no secrets — the credentials live in the
-# separate <UUID>.json that command writes. Do NOT commit that file.
+# separate <UUID>.json that command writes, which belongs next to it (root-owned, mode 600).
+# Do NOT commit that file.
 #
-#   cloudflared tunnel --config ~/.cloudflared/canvass.yml run
+#   sudo cloudflared --config /etc/cloudflared/canvass.yml service install   # then `systemctl enable --now cloudflared`
+#   cloudflared tunnel --config /etc/cloudflared/canvass.yml run             # foreground, for a first test
 #
 # A dedicated tunnel (rather than an ingress entry on an existing one) keeps the voters-list
 # service on its own credential and lifecycle: stopping it takes the canvass app offline
 # without touching anything else.
 
 tunnel: REPLACE-WITH-TUNNEL-UUID
-credentials-file: /Users/seanhunt/.cloudflared/REPLACE-WITH-TUNNEL-UUID.json
+credentials-file: /etc/cloudflared/REPLACE-WITH-TUNNEL-UUID.json
 
 ingress:
   # `make up-tunnel` publishes Caddy here (loopback only). Caddy serves the SPA and proxies /api.
-  - hostname: canvass.sean-hunt.com
+  # The tunnel dials out, so the host needs no inbound port open at all — on EC2 the security group
+  # has no inbound rule and administration goes through SSM Session Manager rather than SSH.
+  - hostname: canvass.webarchitecture.ca
     service: http://localhost:3031
   - service: http_status:404

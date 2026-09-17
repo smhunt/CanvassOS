@@ -16,7 +16,7 @@ This file explains how the pieces fit together. It is not the operator manual an
 
 | Document | Authority for |
 |---|---|
-| [`../README.md`](../README.md) | Deploy (both modes), `make up` / `make import` / `make migrate`, backups, restore, purge, importer field mapping, the pipeline, the `web/Dockerfile` contract |
+| [`../README.md`](../README.md) | Deploy (all three shapes), `make up` / `make import` / `make migrate`, backups (local and off-site), restore, purge, importer field mapping, the pipeline, the `web/Dockerfile` contract |
 | [`../API.md`](../API.md) | The endpoint/role contract — request and response shapes, audit actions, env vars. **Authoritative.** |
 | [`../prompt_plan.md`](../prompt_plan.md) | The four phases, what has shipped against each, and what is deliberately deferred |
 | [`../CLAUDE.md`](../CLAUDE.md) | Working conventions and the landmines, for anyone changing this codebase |
@@ -33,8 +33,12 @@ Doorstep phone numbers and email addresses are **not** list data and are governe
 
 ## 1. System overview
 
-The same five-service compose stack runs in **two deployment modes**. They differ only in what Caddy
-does: terminate TLS itself, or serve plain HTTP on loopback behind a Cloudflare Tunnel.
+The same five-service compose stack runs in **two Caddy modes across three hosts**. The modes differ
+only in what Caddy does: terminate TLS itself, or serve plain HTTP on loopback behind a Cloudflare
+Tunnel. Mode B is that second shape on the office Mac and **mode C is the identical configuration on
+an AWS EC2 host** — same `make up-tunnel`, same `Caddyfile.tunnel`, same hostname, different hardware
+— so only two diagrams are needed. See `../README.md` "Deploying for real" for the host-level
+differences (and the x86_64-not-Graviton landmine, which is about the `db` image, not about Caddy).
 
 ### Mode A — public host (`make up`)
 
@@ -57,22 +61,26 @@ flowchart LR
     B -- "https · GET /" --> CA
     B -- "https · /api/*" --> CA
     CA -- "static, try_files {path} /index.html" --> WEBV
-    CA -- "reverse_proxy api:3000" --> API
+    CA -- "reverse_proxy api:3000<br/>header_up X-Forwarded-For {http.request.remote.host}" --> API
     API -- "pg pool (max 10)" --> DB
     API -- "read/write image files" --> PHOTOS
     CSV --> IMP
     IMP -- "one transaction, then exits" --> DB
 ```
 
-### Mode B — Cloudflare Tunnel (`make up-tunnel`, the current setup)
+### Mode B / C — Cloudflare Tunnel (`make up-tunnel`, the current setup)
 
-The stack runs on the office Mac, which has no public address. `docker-compose.tunnel.yml` overrides
-Caddy's ports (`!override`, so 80/443 stay unbound) and swaps in `Caddyfile.tunnel`.
+The stack runs on a host with no public address — the office Mac (mode B), or the EC2 instance it is
+moving to (mode C, whose security group has no inbound rule at all, because the tunnel dials out).
+`docker-compose.tunnel.yml` overrides Caddy's ports (`!override`, so 80/443 stay unbound) and swaps
+in `Caddyfile.tunnel`. The diagram is the same for both; only the box the tunnel runs on changes,
+and with it where `cloudflared`'s config lives (`~/.cloudflared/` under a LaunchAgent, or
+`/etc/cloudflared/` under systemd).
 
 ```mermaid
 flowchart LR
     B["Browser (PWA)"]
-    CF["Cloudflare edge<br/>TLS terminates here<br/>canvass.sean-hunt.com"]
+    CF["Cloudflare edge<br/>TLS terminates here<br/>canvass.webarchitecture.ca"]
     CLD["cloudflared (on the host)<br/>deploy/cloudflared-canvass.yml"]
 
     subgraph compose["docker compose -f docker-compose.yml -f docker-compose.tunnel.yml"]
@@ -88,12 +96,22 @@ flowchart LR
     API --> DB
 ```
 
-**Why the header rewrite.** With TLS terminating at the edge, every request reaches the API from the
-tunnel's own address. `Caddyfile.tunnel` copies `CF-Connecting-IP` into `X-Forwarded-For`, and the API
-runs with `TRUST_PROXY=1`, so `req.ip` is the real client. Without it `audit_log` would record one
-meaningless address for the entire campaign — and the audit log is the Municipal Elections Act
-artefact, so that is not cosmetic. HSTS is still set in tunnel mode because the browser-to-edge hop is
-HTTPS.
+**Why the header rewrite — in both modes, differently.** With TLS terminating at the edge, every
+request reaches the API from the tunnel's own address, so `Caddyfile.tunnel` copies `CF-Connecting-IP`
+into `X-Forwarded-For`; without it `audit_log` would record one meaningless address for the entire
+campaign, and the audit log is the Municipal Elections Act artefact. Mode A has the mirror-image
+problem: Caddy is internet-facing, so the plain `Caddyfile` **overwrites** the header with the TCP
+peer (`{http.request.remote.host}`) rather than appending to it, which discards a value the caller
+forged. A single-valued `header_up` replaces; it does not append. The common rule is that Caddy
+*sets* `X-Forwarded-For` in both modes and never passes through what arrived.
+
+**And `TRUST_PROXY=1` is a hop count, not a flag.** It means "believe one proxy, the one nearest the
+API", so `proxy-addr` walks the header in from the right and takes the address Caddy itself wrote.
+Boolean `true` would trust *every* hop and therefore return the left-most entry — the caller's. That
+matters because `req.ip` is written to `audit_log.ip` and is the key the login rate limiter counts
+on: both were forgeable while `"1"` was being coerced to `true`. See `trustProxyFrom` in
+`api/src/app.ts` and `api/test/trustproxy.test.ts`. HSTS is still set in tunnel mode because the
+browser-to-edge hop is HTTPS.
 
 A third overlay, `docker-compose.devdb.yml` (`make devdb`), publishes the database on
 `127.0.0.1:5443` so the `npm run dev` API and the test suite can reach the one imported copy of the
@@ -136,9 +154,9 @@ large, never queried, and keeping them as files means `make purge` destroys them
 
 | Component | Technology | Version | Responsible for |
 |---|---|---|---|
-| Reverse proxy / TLS | Caddy (`caddy:2-alpine`) | 2 | Mode A: Let's Encrypt cert for `$DOMAIN`, HTTP→HTTPS. Both modes: `zstd`/`gzip`, security headers (HSTS, `X-Content-Type-Options`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `-Server`), static SPA with SPA fallback, `/api/*` → `api:3000`. Mode B adds the `X-Forwarded-For` rewrite |
-| Tunnel (mode B) | `cloudflared` on the host | — | `deploy/cloudflared-canvass.yml`: `canvass.sean-hunt.com` → `http://localhost:3031`. A dedicated tunnel, so stopping it takes only this service offline |
-| Database | PostgreSQL in the PostGIS image (`postgis/postgis:16-3.4`) | PG 16 / PostGIS 3.4 | All persistence. Extensions actually used: `pgcrypto`, `citext`, `pg_trgm`. PostGIS is available but **still unused** — see §4 |
+| Reverse proxy / TLS | Caddy (`caddy:2-alpine`) | 2 | Mode A: Let's Encrypt cert for `$DOMAIN`, HTTP→HTTPS. Both modes: `zstd`/`gzip`, security headers (HSTS, `X-Content-Type-Options`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `-Server`), static SPA with SPA fallback, `/api/*` → `api:3000`. **Both** modes *set* `X-Forwarded-For` rather than passing it through — mode A to the TCP peer (it is internet-facing, so an arriving value is forged), mode B/C from `CF-Connecting-IP` (the edge is the only client it can see) |
+| Tunnel (modes B, C) | `cloudflared` on the host | — | `deploy/cloudflared-canvass.yml`: `canvass.webarchitecture.ca` → `http://localhost:3031`. A dedicated tunnel, so stopping it takes only this service offline. LaunchAgent + `~/.cloudflared/` on the Mac; systemd + `/etc/cloudflared/` on EC2 |
+| Database | PostgreSQL in the PostGIS image (`postgis/postgis:16-3.4`) | PG 16 / PostGIS 3.4 | All persistence. Extensions actually used: `pgcrypto`, `citext`, `pg_trgm`. PostGIS is available but **still unused** — see §4. **amd64-only: `postgis/postgis` publishes no arm64 image on any tag**, so the host must be x86_64 (it runs on Apple Silicon only through Rosetta) |
 | API runtime | Node.js (`node:22-alpine`), ESM, non-root user | 22 | Runs `dist/server.js` on port 3000 |
 | API framework | Fastify | ^4.29.0 | HTTP server, hooks, plugin scoping, error handler |
 | API plugins | `@fastify/cookie` / `@fastify/helmet` / `@fastify/rate-limit` / `@fastify/multipart` | ^9.4.0 / ^11.1.1 / ^9.1.0 / ^8.3.1 | Signed session cookie; API response headers; 10 req/min/IP on `auth/login` and `auth/accept-invite` (`global: false`, opt-in per route); the one multipart route (sign photos, limits: 1 file, 8 MB) |
@@ -176,12 +194,19 @@ mc-canvass/
 ├── docker-compose.yml           five services: db, api, web (build-only), caddy, importer (profile "import")
 ├── docker-compose.tunnel.yml    overlay: Caddy on 127.0.0.1:3031, no 80/443, no ACME
 ├── docker-compose.devdb.yml     overlay: publishes the database on 127.0.0.1:5443 (never on a public host)
-├── Caddyfile                    mode A — TLS + security headers + /api/* proxy + SPA fallback
-├── Caddyfile.tunnel             mode B — same routing on :80, plus X-Forwarded-For from CF-Connecting-IP
+├── Caddyfile                    mode A — TLS + security headers + /api/* proxy + SPA fallback, and
+│                                X-Forwarded-For OVERWRITTEN with the TCP peer (it is internet-facing)
+├── Caddyfile.tunnel             modes B/C — same routing on :80, plus X-Forwarded-For from CF-Connecting-IP
 ├── deploy/
 │   └── cloudflared-canvass.yml  tunnel ingress template (no secrets; credentials live outside the repo)
-├── Makefile                     up / up-tunnel / devdb / migrate / import / backup / restore / purge / psql / test
-├── .env.example                 DOMAIN, POSTGRES_PASSWORD, SESSION_SECRET, ADMIN_*, BACKUP_PASSPHRASE, SIGN_PHOTO_DIR
+├── scripts/
+│   ├── backup-offsite.sh        the cron target: make backup, then dump + signphotos to S3, each
+│   │                            upload VERIFIED with head-object, then local *.gpg older than 14d pruned
+│   └── reset-password.sh        set a password directly against the database
+├── Makefile                     up / up-tunnel / devdb / migrate / import / backup / backup-offsite /
+│                                restore / purge / purge-offsite / psql / test
+├── .env.example                 DOMAIN, POSTGRES_PASSWORD, SESSION_SECRET, ADMIN_*, BACKUP_PASSPHRASE,
+│                                BACKUP_S3_URI (optional; absent = local backups only), SIGN_PHOTO_DIR
 │
 ├── db/
 │   ├── schema.sql               the base schema. Mounted into /docker-entrypoint-initdb.d/ and applied
@@ -234,7 +259,8 @@ mc-canvass/
 │   └── test/
 │       ├── api.test.ts          integration suite against a real, imported database. Two safety
 │       │                        rails guard it — see "Landmines" in ../CLAUDE.md before running it
-│       └── geo.test.ts          pure unit tests for the point-in-polygon maths (no database)
+│       ├── geo.test.ts          pure unit tests for the point-in-polygon maths (no database)
+│       └── trustproxy.test.ts   pure unit tests for the TRUST_PROXY hop-count coercion (no database)
 │
 ├── web/
 │   ├── vite.config.ts           dev server (port + mkcert HTTPS + /api proxy, both overridable by
@@ -892,9 +918,11 @@ re-walking on paper); a volunteer reads their own `GET /api/assignments/mine`.
    `fetch('/api/households/…', { credentials: 'same-origin' })`. The `canvass_sid` cookie rides along
    automatically; nothing else authenticates the call.
 2. **Caddy.** The request matches `handle /api/*` and is reverse-proxied to `api:3000` over the compose
-   network. In mode A Caddy terminates TLS; in mode B it also rewrites `X-Forwarded-For` from
-   `CF-Connecting-IP`. Either way the API runs with `TRUST_PROXY=1`, so `req.ip` is the real client
-   address for the rate limiter and the audit row.
+   network. In mode A Caddy terminates TLS and overwrites `X-Forwarded-For` with the TCP peer; in
+   modes B/C it rewrites the same header from `CF-Connecting-IP`. Either way Caddy *sets* that header
+   rather than forwarding what arrived, and the API runs with `TRUST_PROXY=1` — one hop, so
+   `proxy-addr` reads from the right and `req.ip` is the address Caddy wrote, not one the caller
+   chose. That is what the rate limiter keys on and what goes in the audit row.
 3. **Fastify `onRequest` — session.** The global hook registered by `registerSessionHook`
    (`api/src/auth/guard.ts`) runs `loadSession`: read the cookie, `unsignCookie` it, sanity-check the
    UUID shape, then one indexed query joining `session` to `app_user` filtered on `expires_at > now()`.
@@ -969,10 +997,13 @@ Dev URL: **https://dev.ecoworks.ca:3030** — never `localhost` or a raw LAN IP.
 serves TLS, the session cookie keeps its `Secure` flag in development too (no `COOKIE_SECURE=false`
 needed), which is how production behaves.
 
-**Production:** **https://canvass.sean-hunt.com**. Currently mode B — Caddy on `127.0.0.1:3031`, TLS at
-the Cloudflare edge. In mode A, Caddy owns 80/443 with an automatic Let's Encrypt certificate for
-`$DOMAIN` and port 80 must stay open for the ACME challenge and the HTTP→HTTPS redirect. Either way the
-API listens on 3000 inside the compose network and is never published.
+**Production:** **https://canvass.webarchitecture.ca** — not `sean-hunt.com`, for the DNS reason in
+`../README.md` "DNS — what is actually deployed". Currently mode B: Caddy on `127.0.0.1:3031`, TLS at
+the Cloudflare edge, the stack on the office Mac; mode C is the same thing on an EC2 host in
+`ca-central-1` and does not change the hostname or any port below. In mode A, Caddy owns 80/443 with
+an automatic Let's Encrypt certificate for `$DOMAIN` and port 80 must stay open for the ACME
+challenge and the HTTP→HTTPS redirect. In every mode the API listens on 3000 inside the compose
+network and is never published.
 
 ### The demo stack
 
