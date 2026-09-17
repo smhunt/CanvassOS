@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,15 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.0.1',
+    date: '2026-09-17',
+    changes: [
+      'The app now runs on an always-on server instead of the office Mac, so it stays reachable when that machine sleeps, reboots or leaves the network.',
+      'Backups now run every night on their own and are copied somewhere other than the server they came from, encrypted the whole way.',
+      'Tightened how a visitor\'s address is recorded in the access log — that log is the record the Municipal Elections Act requires the campaign to keep.',
+    ],
+  },
   {
     version: '1.0.0',
     date: '2026-09-15',
