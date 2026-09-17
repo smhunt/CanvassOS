@@ -22,6 +22,8 @@ const schema = z.object({
   ADMIN_PASSWORD: optionalSecret(10),
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default('0.0.0.0'),
+  // A HOP COUNT (see trustProxyFrom in app.ts), not a flag: "1" = trust only the proxy nearest the
+  // server. "true" would trust every hop and make req.ip client-forgeable.
   TRUST_PROXY: z.string().default('1'),
   // Set to "false" for plain-http local development; the production stack is TLS-only.
   COOKIE_SECURE: z

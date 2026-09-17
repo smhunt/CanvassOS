@@ -3,7 +3,16 @@
 	encode zstd gzip
 
 	handle /api/* {
-		reverse_proxy api:3000
+		reverse_proxy api:3000 {
+			# Caddy is internet-facing in this mode, so overwrite X-Forwarded-For with the TCP peer
+			# rather than appending to whatever the client sent. Without this a caller can forge the
+			# header and choose the address recorded in audit_log — the Municipal Elections Act
+			# artefact — and the IP the login rate limiter keys on. A single-valued header_up
+			# REPLACES the header; it does not append.
+			# If a CDN is ever put in front of this mode, switch to the CF-Connecting-IP form used by
+			# Caddyfile.tunnel — this line would otherwise faithfully record the CDN's edge address.
+			header_up X-Forwarded-For {http.request.remote.host}
+		}
 	}
 
 	handle {
