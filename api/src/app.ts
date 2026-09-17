@@ -71,6 +71,21 @@ export interface BuildOptions {
 // Auth routes must never have their bodies logged (API.md "Logging").
 const NO_BODY_LOG = /^\/api\/auth\//;
 
+/**
+ * TRUST_PROXY is a HOP COUNT, not a boolean. Handing Fastify `true` tells proxy-addr to trust every
+ * hop, which makes it return the LEFT-MOST X-Forwarded-For entry — the one the client supplied. That
+ * is forgeable, and `req.ip` is not cosmetic here: it is written to `audit_log.ip` (the Municipal
+ * Elections Act artefact) and is the rate-limit key on login. A count means proxy-addr walks in from
+ * the right and stops after that many hops, so "1" yields the address Caddy itself set and ignores
+ * anything injected ahead of it.
+ */
+export function trustProxyFrom(v: string): boolean | number | string {
+  if (v === 'true') return true;
+  if (v === 'false' || v === '') return false;
+  if (/^\d+$/.test(v)) return Number(v);
+  return v; // CIDR or comma-separated list — proxy-addr parses these itself
+}
+
 export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
   const { config } = opts;
   const app = Fastify({
@@ -81,7 +96,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
             level: config.LOG_LEVEL,
             redact: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
           },
-    trustProxy: config.TRUST_PROXY === '1' || config.TRUST_PROXY === 'true',
+    trustProxy: trustProxyFrom(config.TRUST_PROXY),
     genReqId: (req) => (req.headers['x-request-id'] as string | undefined) ?? randomUUID(),
     disableRequestLogging: false,
     bodyLimit: 64 * 1024,
