@@ -230,17 +230,19 @@ database that already has households, so the demo is the same every time.
 
 ## Deploying for real
 
-Two shapes. Both start from `cp .env.example .env`, which wants `DOMAIN`, `POSTGRES_PASSWORD`,
-`SESSION_SECRET` (`openssl rand -base64 48`), `ADMIN_EMAIL`, `ADMIN_PASSWORD` (≥ 10 chars) and
-`BACKUP_PASSPHRASE`.
+Three shapes, but only two Caddy configurations: B and C are the same tunnel setup on different
+hardware, and differ in the host, not the stack. All three start from `cp .env.example .env`, which
+wants `DOMAIN`, `POSTGRES_PASSWORD`, `SESSION_SECRET` (`openssl rand -base64 48`), `ADMIN_EMAIL`,
+`ADMIN_PASSWORD` (≥ 10 chars) and `BACKUP_PASSPHRASE` — plus `BACKUP_S3_URI` if the backups are to
+leave the box (see "Backups and restore").
 
 <details>
 <summary><b>A. Public Docker host (Ubuntu VM or VPS) — Caddy gets its own certificate</b></summary>
 
 Prerequisites: Ubuntu 22.04/24.04, Docker Engine + compose v2 (`docker compose version`), `make`,
-`gpg`. A public DNS **A record** `canvass.sean-hunt.com → <server IP>` and inbound **ports 80 and
-443** open — Caddy obtains and renews the Let's Encrypt certificate itself, and port 80 is needed
-for the ACME challenge and the HTTP→HTTPS redirect.
+`gpg`. A public DNS **A record** `$DOMAIN → <server IP>` and inbound **ports 80 and 443** open —
+Caddy obtains and renews the Let's Encrypt certificate itself, and port 80 is needed for the ACME
+challenge and the HTTP→HTTPS redirect.
 
 ```bash
 git clone <repo> canvass && cd canvass
@@ -248,6 +250,13 @@ cp .env.example .env && $EDITOR .env
 make up                       # builds api + web, starts db → api → web(build) → caddy
 make logs SERVICE=caddy       # wait for "certificate obtained"
 ```
+
+**Client IPs.** Caddy is internet-facing in this mode, so `Caddyfile` **overwrites**
+`X-Forwarded-For` with the TCP peer rather than appending to whatever the caller sent — a
+single-valued `header_up` replaces the header. Without that, a caller could choose the address
+recorded in `audit_log` (the Municipal Elections Act artefact) and the address the login rate limiter
+keys on. If a CDN is ever put in front of this mode, switch that line to the `CF-Connecting-IP` form
+`Caddyfile.tunnel` uses, or the log will faithfully record the CDN's edge address for every request.
 </details>
 
 <details>
@@ -310,6 +319,61 @@ Encrypt cert.
 **Operational caveats of hosting on the Mac:** the app is unreachable whenever the machine sleeps or
 leaves the network, and the voters list lives on that disk — so keep FileVault on, keep `make backup`
 running, and remember `make purge` after 26 October 2026.
+</details>
+
+<details>
+<summary><b>C. AWS EC2 behind the Cloudflare Tunnel — the same stack, off the Mac</b></summary>
+
+Mode B's operational caveats are the reason this exists: a machine that sleeps, leaves the network or
+reboots to a login screen takes the canvass down mid-shift. Mode C is **the same `make up-tunnel`
+stack and the same `Caddyfile.tunnel`**, on a host that stays up, publishing the same
+`canvass.webarchitecture.ca` through the same kind of dedicated tunnel. Nothing in the compose files,
+the Caddy config or `TRUST_PROXY` changes — there is still exactly one proxy in front of the API.
+
+| | |
+|---|---|
+| Instance | `t3.medium`, **x86_64** — see the landmine below, this is not a preference |
+| OS | Ubuntu 24.04 LTS |
+| Region | **ca-central-1**, so Ontario electors' personal information stays in Canada |
+| Root volume | 30 GiB gp3, **encrypted**, `DeleteOnTermination=true` — the disk dies with the instance |
+| Security group | **no inbound rules at all**. The tunnel dials out; nothing needs to reach in |
+| Administration | **SSM Session Manager**, not SSH — no key to lose, no port 22 to leave open |
+| Backups | S3 in the same region, GPG-encrypted before upload — see "Backups and restore" |
+| Tags | `Project=canvass-2026` on every resource |
+
+**It must be x86_64. Do not "optimise" this to Graviton.** `postgis/postgis` publishes **no arm64
+image on any tag** — 16-3.4, 16-3.4-alpine, 16-3.5, 16-3.5-alpine and 17-3.5 are all amd64-only —
+so on a `t4g.*` the `db` container crash-loops at boot. It works on an Apple Silicon Mac only because
+Docker Desktop emulates amd64 through Rosetta, which is exactly the kind of local success that makes
+this look like a shrug. Nor is plain `postgres:16` a drop-in substitute: a `pg_dump` taken from the
+PostGIS image carries `COMMENT ON EXTENSION postgis` statements, and `make restore` runs `psql -v
+ON_ERROR_STOP=1`, so the restore aborts. **Restore into the same image the dump came from.**
+
+```bash
+# on the instance, over SSM
+git clone <repo> /srv/canvass && cd /srv/canvass
+cp .env.example .env && $EDITOR .env      # DOMAIN=canvass.webarchitecture.ca, BACKUP_S3_URI=…
+make up-tunnel
+make tunnel-status                        # is the loopback origin answering?
+```
+
+`cloudflared` runs as a systemd unit rather than a LaunchAgent: config and credentials live in
+`/etc/cloudflared/` (see [`deploy/cloudflared-canvass.yml`](deploy/cloudflared-canvass.yml)),
+installed with `sudo cloudflared --config /etc/cloudflared/canvass.yml service install` and enabled
+with `systemctl enable --now cloudflared`. That is the advantage over a LaunchAgent: a system service
+starts at boot, with nobody logged in.
+
+**The S3 bucket** is in `ca-central-1` alongside the instance, with Block Public Access on, a
+TLS-only bucket policy, versioning **off** and a 30-day lifecycle rule. The instance role can write
+and `head-object` but deliberately **cannot delete**, so a compromised box cannot destroy the only
+off-site copies. **Never enable Object Lock on it**: retention that cannot be shortened would make
+the legally required post-election purge impossible until it expired.
+
+**Everything carries `Project=canvass-2026`** because this AWS account is shared with unrelated
+workloads — "close the account" is not available as the destruction artefact, so the tag is what lets
+the purge enumerate what must go. See "Purge, after the election".
+
+`docker-compose.devdb.yml` still never belongs on this host: it publishes Postgres on a host port.
 </details>
 
 ### Loading the list
@@ -486,18 +550,47 @@ diverge.
 <summary><b>Backups and restore</b></summary>
 
 `make backup` runs `pg_dump | gzip | gpg --symmetric --cipher-algo AES256` with `BACKUP_PASSPHRASE`
-from `.env` and writes `backups/canvass-<timestamp>.sql.gz.gpg`. Copy that file off the server — it
-is useless without the passphrase, so keep the passphrase somewhere other than the server.
+from `.env` and writes `backups/canvass-<timestamp>.sql.gz.gpg`. It is useless without the
+passphrase, so keep the passphrase somewhere other than the server.
 
-Restore onto a fresh stack: `make up`, then
+**`make backup-offsite` is the one to schedule.** `backups/` sits on the same disk as the database,
+so until the file leaves the host there is no copy that survives losing the box.
+[`scripts/backup-offsite.sh`](scripts/backup-offsite.sh) runs `make backup`, uploads the dump to
+`$BACKUP_S3_URI/db/` and then **verifies it with `aws s3api head-object`** rather than trusting the
+exit code — an upload that silently did nothing is the failure mode that leaves you believing you
+have backups you do not have. It also tars and encrypts the `signphotos` volume to
+`$BACKUP_S3_URI/photos/`, because `pg_dump` does not cover it: the moment a volunteer uploads one
+photograph of an elector's house, a database-only backup is quietly incomplete. Empty volume, no
+tarball, so a 45-day campaign does not accumulate 45 identical empty ones. Finally it prunes local
+`*.gpg` older than 14 days. Everything is encrypted **before** it leaves the host, so the bucket
+never holds plaintext personal information.
+
+```
+30 3 * * * cd /srv/canvass && ./scripts/backup-offsite.sh >> /var/log/canvass-backup.log 2>&1
+```
+
+Bucket design and the rule against Object Lock are in "C. AWS EC2 behind the Cloudflare Tunnel"
+above. On EC2 the instance role supplies the credentials; from a workstation, set `AWS_PROFILE`.
+
+Restore onto a fresh stack: `make up` (or `make up-tunnel`), then
 `make restore FILE=backups/canvass-<timestamp>.sql.gz.gpg` (the dump carries `--clean --if-exists`,
-so it replaces the empty schema created on first boot).
+so it replaces the empty schema created on first boot). **Restore into the same database image the
+dump came from**: a dump taken from `postgis/postgis` carries `COMMENT ON EXTENSION postgis`
+statements, and `make restore` runs `psql -v ON_ERROR_STOP=1`, so feeding it to a plain `postgres:16`
+aborts partway through.
 
-A daily cron line:
+**Test the restore, not the backup.** A file in a bucket proves an upload happened; it does not prove
+the dump inside it is loadable. Restore one into a throwaway database and count the households.
 
-```
-0 3 * * * cd /srv/canvass && make backup && find backups -name '*.gpg' -mtime +14 -delete
-```
+**A caveat about `make`.** macOS ships **GNU Make 3.81**, and `.ONESHELL:` — which this Makefile
+declares — arrived in **3.82**. On the Mac it is therefore silently ignored and every recipe line
+runs in its own shell. That is not academic: it is why `backup` and `restore` would have encrypted
+and decrypted with an **empty** passphrase (`$$PASS` was set in one shell and read in another) and
+why `set -o pipefail` never reached the `pg_dump | gzip | gpg` pipeline, so a failed dump was masked
+by a successful `gzip` and still exited 0. Nothing was actually lost only because no backup had ever
+been taken — `backups/` did not exist. Both are now single commands joined with
+backslashes. **Any new multi-line recipe must be written the same way**, whatever `.ONESHELL:` at the
+top of the file appears to promise. `make --version` tells you which one you are on.
 </details>
 
 <details>
@@ -517,10 +610,31 @@ contacts*. Phase 4 adds a diff-based re-import (new / removed / moved electors, 
 
 ```bash
 make backup                 # optional final encrypted archive, if the campaign must retain one briefly
-make purge                  # type PURGE: stops the stack, deletes the db/web/caddy/photo volumes,
-                            # shreds data/*.csv and data/sign-photos
-rm -f backups/*.gpg         # and any off-site copies
+AWS_PROFILE=<admin> make purge   # type PURGE: stops the stack, deletes the db/web/caddy/photo
+                            # volumes, shreds data/*.csv and data/sign-photos, then destroys the
+                            # off-site backups and proves the bucket is empty
+rm -f backups/*.gpg         # local archives, including the one just taken
 ```
+
+**`make purge` now calls `make purge-offsite CONFIRM=PURGE` itself**, and that step deliberately
+cannot succeed with the instance role: it has no `s3:DeleteObject`, because a compromised box must
+not be able to destroy the only off-site copies. So running `make purge` on the EC2 host fails
+loudly at the last step, *after* the local destruction has already happened. Either run the whole
+thing with admin credentials (`AWS_PROFILE=<admin> make purge`) or run `make purge-offsite` from a
+workstation first. It does not stop at `s3 rm`: it re-lists the prefix afterwards and exits non-zero
+if anything is still there, because "the delete command ran" is not evidence under the Act.
+
+On AWS, the volumes are only part of it. Work the tag:
+
+```bash
+aws resourcegroupstaggingapi get-resources \
+  --tag-filters Key=Project,Values=canvass-2026 --region ca-central-1
+```
+
+Terminate the instance (`DeleteOnTermination` takes the encrypted EBS volume with it), delete the
+bucket, release the Elastic IP, revoke the IAM role, and confirm no snapshots or AMIs were left
+behind. The account is shared with unrelated workloads, so closing it is not available as the
+destruction artefact — the tag query returning nothing is.
 </details>
 
 ## Development
@@ -567,7 +681,10 @@ TLS, the session cookie keeps its `Secure` flag end to end — `COOKIE_SECURE=fa
 you hit the API directly over plain HTTP rather than through the Vite proxy.
 
 API env: `DATABASE_URL`, `SESSION_SECRET` (≥ 32 chars), `DOMAIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`,
-`PORT` (3000), `TRUST_PROXY` (1), `COOKIE_SECURE` (true; `false` for plain-HTTP dev),
+`PORT` (3000), `TRUST_PROXY` (1 — a **hop count**, not a flag: the number of proxies nearest the
+server that may be believed, which is one Caddy in every mode. `true` would trust every hop and so
+return the left-most, caller-supplied `X-Forwarded-For` entry, and `req.ip` is what `audit_log.ip`
+and the login rate limiter are built on), `COOKIE_SECURE` (true; `false` for plain-HTTP dev),
 `BOUNDARY_PATH` (`../data/mc_boundary.json`; compose mounts it at `/data/mc_boundary.json`),
 `SIGN_PHOTO_DIR` (compose sets the `signphotos` volume; locally defaults to `./data/sign-photos`),
 `LOG_LEVEL`.

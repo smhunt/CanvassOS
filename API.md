@@ -787,7 +787,16 @@ candidates: [{ id, voter_id, natural_key, household_id, voter_name, household_ad
 - Sessions in `session` table; cookie value is the session id; 30-day sliding expiry.
 - Passwords: `argon2id` via `argon2` package.
 - All `SELECT`s that return voter rows go through one `serializeVoter(row, role)` function that strips organizer-only fields for volunteers — this is the single enforcement point.
-- Env: `DATABASE_URL`, `SESSION_SECRET` (for cookie signing), `DOMAIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` (used ONLY on first boot to create the initial admin if no users exist), `PORT` (default 3000), `HOST` (default `0.0.0.0`), `TRUST_PROXY=1`.
+- Env: `DATABASE_URL`, `SESSION_SECRET` (for cookie signing), `DOMAIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` (used ONLY on first boot to create the initial admin if no users exist), `PORT` (default 3000), `HOST` (default `0.0.0.0`), `TRUST_PROXY` (default `1`).
+- `TRUST_PROXY` is a **hop count**, not a flag: an integer is the number of proxies nearest the server
+  that may be believed, so `1` — one Caddy in front of the API, in every deployment mode — makes
+  `proxy-addr` walk `X-Forwarded-For` in from the right and stop at the address Caddy itself set.
+  `true` means trust *every* hop, which returns the left-most entry: the one the caller supplied, and
+  therefore forgeable. That is not a detail, because `req.ip` is written to `audit_log.ip` (the
+  Municipal Elections Act artefact) and is the key `auth/login` and `auth/accept-invite` rate-limit
+  on. `false`/empty is no trust at all; a CIDR or comma-separated list is passed through for
+  `proxy-addr` to parse. Coercion is `trustProxyFrom` in `api/src/app.ts`; `api/test/trustproxy.test.ts`
+  pins it (a pure unit test, no database).
 - Env (street-level imagery, both optional): `STREETVIEW_API_KEY` — **absent means the feature is off**, which is
   the default; when set it stays on the server and is never served to the browser. `STREETVIEW_PROVIDER` —
   `google` (the default and currently the only accepted value; a zod enum, so a typo fails boot rather than

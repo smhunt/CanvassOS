@@ -26,6 +26,29 @@ detail; `docs/README.md` describes what the code actually does now.
 | 4. Reporting + admin | **partly** | Encrypted backup/restore and `make purge` shipped in Phase 1; the audit log and admin user management with it. Since added: the **reachability report** (`/reports?tab=unreachable`, `GET /api/stats/reachability`) with optional Claude-written advice from aggregate counts only. Since 2026-09-15 also the **diff-based list re-import** (`make import-diff`, then `make import-apply`), which updates the list in place and keeps every contact, sign, consent record, turf and sign-up. **Not landed:** coverage/support reports by ward/community/turf/day, and CSV export with audit entries. |
 | 5. Messaging | **shipped** | Opt-in SMS with email fallback: per-purpose consent, STOP honoured before the next queued send, CRTC sending window and weekend hours enforced in code, a test-send-to-yourself gate and a typed-word approval before anything leaves, and a drip scheduler because a Canadian long code is throttled to ~100-250/day and the excess fails silently. `MESSAGING_PROVIDER=log` by default: a real send needs both a live provider and its credentials, and the API refuses to boot with one without the other. |
 
+### Since 1.0 — 2026-09-17
+
+Three things, none of them features. Released as **1.0.1**; `CHANGELOG.md` has the detail.
+
+- **`TRUST_PROXY` was being read as a boolean.** `TRUST_PROXY=1` reached Fastify as `true`, which
+  tells `proxy-addr` to trust every hop and so to return the *left-most* `X-Forwarded-For` entry —
+  the one the caller supplies. `req.ip` is `audit_log.ip` and the login rate-limit key, so both were
+  forgeable by anyone who could reach the origin directly. It is a hop count now. Not exploitable on
+  the live stack, which runs `Caddyfile.tunnel`, but it would have been the first time `make up` was
+  used on an internet-facing host. The plain `Caddyfile` now overwrites the header too, so the fix
+  does not depend on the API alone.
+- **Backups were encrypted with an empty passphrase.** macOS ships GNU Make 3.81 and `.ONESHELL`
+  arrived in 3.82, so the declaration at the top of the Makefile was silently ignored on the machine
+  that runs the campaign: `$$PASS` was set in one shell and read in another, and `set -o pipefail`
+  never reached the `pg_dump | gzip | gpg` pipeline. Nobody noticed because no backup had ever been
+  taken. Fixed, and off-site backups added on top — `make backup-offsite` to S3 with each upload
+  verified, `make purge-offsite` to destroy them afterwards and prove the bucket is empty.
+- **Moving off the office Mac.** A machine that sleeps, leaves the network or reboots to a login
+  screen takes the canvass down mid-shift. Mode C is the same `make up-tunnel` stack on an EC2 host
+  in `ca-central-1` (so the list stays in Canada), with no inbound security-group rule at all and
+  SSM instead of SSH. It must be **x86_64**: `postgis/postgis` publishes no arm64 image on any tag,
+  and it only appears to work on Apple Silicon because Rosetta emulates amd64.
+
 ### Phase 5 planned — 2026-09-06
 
 **SMS and email to electors who opted in.** SMS is the priority channel; email is the fallback; a
@@ -111,9 +134,15 @@ Design notes before anyone starts:
   it. `db/migrations/002_voter_contact.sql`.
 - **A migration runner.** The original plan assumed `db/migrations/` existed; it did not. `db/migrate.sh`
   + `make migrate` + the `schema_migration` table now carry every change after first boot.
-- **A second deployment mode.** The plan assumed a public host with Let's Encrypt. The live setup is
-  `make up-tunnel`: Caddy on `127.0.0.1:3031` behind a Cloudflare Tunnel, with `X-Forwarded-For`
-  rewritten from `CF-Connecting-IP` so `audit_log` records the real client.
+- **A second deployment mode, then a third host.** The plan assumed a public host with Let's Encrypt.
+  The live setup is `make up-tunnel`: Caddy on `127.0.0.1:3031` behind a Cloudflare Tunnel, with
+  `X-Forwarded-For` rewritten from `CF-Connecting-IP` so `audit_log` records the real client. That
+  header is set, never forwarded, in **both** modes — the public `Caddyfile` overwrites it with the
+  TCP peer for the same reason, since there it is the *caller* who would otherwise choose the address
+  in the log. The tunnel shape now also runs on an AWS host (mode C), unchanged apart from the box.
+- **Backups that leave the box.** Not in the plan beyond "backup script". `make backup-offsite` ships
+  the encrypted dump and the sign-photo volume to S3 and verifies each upload; `make purge-offsite`
+  destroys them afterwards and proves the bucket is empty.
 - **A demo stack.** `demo/seed_demo.py` builds `canvass_demo` from entirely fabricated residents (web
   3032 / API 3132), so screenshots, video and training never contain a real elector.
 - **The pipeline.** `pipeline/build_lists.py` reconstructs the importer's two CSVs from the clerk's list
