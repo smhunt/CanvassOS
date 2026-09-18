@@ -19,7 +19,18 @@
 - `localStorage` is for UI preferences only, always in try/catch.
 - Relative imports in `.ts`/`.tsx` do **not** carry `.js` in the web package (that rule is the API's ESM/NodeNext contract, not this one). Match neighbouring files.
 - Commits are small and typed: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
-- `CROSS_LIMIT_M = 150`. `AHEAD_MAX_M = 2000`.
+- `CROSS_LIMIT_M = 150`. `AHEAD_MAX_M = 2000`. `HELD_CROSS_LIMIT_M = 2 * CROSS_LIMIT_M` (a held door's wider release band).
+
+## Controller rulings that amend this plan
+
+Made during execution; each is recorded with its reasoning in the SDD ledger. Where a task's text
+below still disagrees with one of these, the ruling is the requirement.
+
+1. The web test script is `tsx --test src/canvass/*.test.ts` — npm runs scripts under `sh`, which has no globstar.
+2. `angleDiff` returns (-180, 180] exactly as the spec says; the plan's first formula returned [-180, 180).
+3. `DrivePage` filters open doors with `latestResult(d, queued)`, merging the offline outbox the way `DoorScreen` does — a door knocked in a dead zone must not be offered again.
+4. A held door is looked up outside the fresh-candidate filter and survives to `HELD_CROSS_LIMIT_M` (300 m); `AHEAD_MAX_M` does not apply to it. Task 2's code block below predates this — the committed `drive.ts` is authoritative.
+5. There is no `metres()`; distance formatting reuses the existing `formatDistance` from `nearMe.ts`.
 
 ## File Structure
 
@@ -361,11 +372,6 @@ export function selectAhead(doors: Door[], fix: DriveFix, held: string | null): 
   const upcoming = ahead.filter((c) => c.door.household_id !== current?.door.household_id).slice(0, 3);
   return { current, upcoming, fallback: false };
 }
-
-/** One formatter, so the card and the upcoming list can never disagree about a distance. */
-export function metres(m: number): string {
-  return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
-}
 ```
 
 - [ ] **Step 4: Run the tests**
@@ -497,7 +503,8 @@ git commit -m "feat(drive): a position feed tuned for a vehicle, sharing near-me
 Create `web/src/canvass/DriveCard.tsx`:
 
 ```tsx
-import { metres, type Candidate } from './drive';
+import type { Candidate } from './drive';
+import { formatDistance } from './nearMe';
 import { resultColour } from './status';
 
 export function DriveCard({ c, showNames, fallback }: { c: Candidate; showNames: boolean; fallback: boolean }) {
@@ -505,7 +512,7 @@ export function DriveCard({ c, showNames, fallback }: { c: Candidate; showNames:
   const names = c.door.voters.map((v) => v.display_name).join(', ');
   return (
     <div className="drive-card" style={{ borderColor: resultColour(c.door.last_result) }}>
-      <div className="drive-distance">{metres(c.distance_m)}</div>
+      <div className="drive-distance">{formatDistance(c.distance_m)}</div>
       <div className="drive-address">{c.door.address}</div>
       {c.side && !fallback ? <div className="drive-side">on your {c.side}</div> : null}
       {showNames && names ? <div className="drive-names">{names}</div> : null}
@@ -524,8 +531,11 @@ import { useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useDoors } from '../api/hooks';
 import { DriveCard } from '../canvass/DriveCard';
-import { metres, selectAhead } from '../canvass/drive';
+import { selectAhead } from '../canvass/drive';
+import { formatDistance } from '../canvass/nearMe';
+import { latestResult } from '../canvass/status';
 import { useDriveFix } from '../canvass/useDriveFix';
+import { useOutbox, useQueuedResults } from '../offline/useOutbox';
 import '../canvass/drive.css';
 
 export function DrivePage() {
@@ -534,15 +544,19 @@ export function DrivePage() {
   const { fix, failure, pending } = useDriveFix(true);
   const [showNames, setShowNames] = useState(true);
   const held = useRef<string | null>(null);
+  // Doors recorded on this phone but not yet synced. Without this a door knocked in a dead zone
+  // keeps last_result = null, and drive mode would send the driver straight back to it.
+  const outbox = useOutbox();
+  const queued = useQueuedResults(outbox);
 
   const selection = useMemo(() => {
     if (!fix || !doors.data) return null;
     // Only doors still worth driving to.
-    const open = doors.data.doors.filter((d) => d.last_result === null);
+    const open = doors.data.doors.filter((d) => latestResult(d, queued) === null);
     const s = selectAhead(open, fix, held.current);
     held.current = s.current?.door.household_id ?? null;
     return s;
-  }, [fix, doors.data]);
+  }, [fix, doors.data, queued]);
 
   if (failure) return <p className="cv-note">{failure.message}</p>;
   if (doors.isLoading || pending) return <p className="cv-note">Finding you…</p>;
@@ -564,7 +578,7 @@ export function DrivePage() {
       <ul className="drive-upcoming">
         {selection?.upcoming.map((u) => (
           <li key={u.door.household_id}>
-            {metres(u.distance_m)} · {u.door.address}
+            {formatDistance(u.distance_m)} · {u.door.address}
           </li>
         ))}
       </ul>
