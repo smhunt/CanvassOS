@@ -18,4 +18,12 @@
   .drive-card { flex: 1 1 60%; }
   .drive-upcoming { flex: 1 1 30%; }
   .drive-distance { font-size: 2.25rem; }
+  /* Both are flex children of .drive-screen too. Left at their default content-sized flex-basis,
+     the bar is narrow enough to share a line with the card's 60% basis, which pushes the list onto
+     a line of its own — the exact stacking this row layout exists to avoid — so the bar is forced
+     onto a full-width row of its own. The hint sits between the card and the list in the markup, so
+     giving it the same full-width treatment in place would split them instead of joining them;
+     `order: 1` moves it after both (they stay at the default order 0) so it prints below the pair. */
+  .drive-bar { flex: 1 1 100%; }
+  .drive-hint { flex: 1 1 100%; order: 1; }
 }
