@@ -33,6 +33,10 @@ below still disagrees with one of these, the ruling is the requirement.
 5. There is no `metres()`; distance formatting reuses the existing `formatDistance` from `nearMe.ts`.
 6. `DrivePage` imports `canvass.css` as well as `drive.css` — `.cv-note` lives there and that stylesheet is per-page, not global, so a reload on the drive route would otherwise lose it.
 7. `DrivePage`'s `useMemo` only reads `held.current`; a `useEffect` writes it. A memo callback must stay pure.
+8. Task 5's speech effect reads `selection?.fallback` — TypeScript does not narrow `selection` from a check on `c = selection?.current`, so the plain form fails under `strict`.
+9. `DrivePage` calls `useOfflineSync()`. Ruling 3 alone was incomplete: after the outbox flushes, the entry leaves `queued` while the cached doors query still says `last_result: null`, so the door came back.
+10. `DrivePage` has `DoorScreen`'s error branch for the doors query, first among its early returns — a failed load must never read as "No more doors ahead". Task 4's code block below predates rulings 9 and 10; the committed `DrivePage.tsx` is authoritative.
+11. The card's `resultColour` stays although it is constant under today's null-only filter. Whether drive mode should also offer "not home" revisits is a product question left to the candidate.
 
 ## File Structure
 
@@ -674,9 +678,8 @@ git commit -m "feat(drive): the glanceable card and its route"
 
 - [ ] **Step 1: Wake lock**
 
-If `tsc` does not know `WakeLockSentinel`/`WakeLock` (they arrive with a recent `lib.dom.d.ts`),
-declare the two names locally at the top of this file rather than widening `tsconfig` for the whole
-app or reaching for `any`.
+This project's TypeScript already knows the Wake Lock types (`lib` includes `DOM`), so call
+`navigator.wakeLock` directly — no local declarations and no cast.
 
 Create `web/src/canvass/useWakeLock.ts`:
 
@@ -697,7 +700,7 @@ export function useWakeLock(active: boolean): void {
     let dropped = false;
     const acquire = async () => {
       try {
-        lock = await (navigator as Navigator & { wakeLock: WakeLock }).wakeLock.request('screen');
+        lock = await navigator.wakeLock.request('screen');
       } catch {
         // Denied (battery saver, no user gesture). Nothing to do but carry on.
       }
@@ -779,7 +782,7 @@ useEffect(() => {
   if (!c || !prefs.speak) return;
   if (spokenFor.current === c.door.household_id) return;
   spokenFor.current = c.door.household_id;
-  const side = c.side && !selection.fallback ? `, on your ${c.side}` : '';
+  const side = c.side && !selection?.fallback ? `, on your ${c.side}` : '';
   announce(`Next door, ${Math.round(c.distance_m / 10) * 10} metres${side}`);
 }, [selection, prefs.speak]);
 ```
