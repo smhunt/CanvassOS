@@ -36,6 +36,7 @@ describe('angleDiff', () => {
     assert.equal(angleDiff(10, 350), 20);
     assert.equal(angleDiff(350, 10), -20);
     assert.equal(angleDiff(0, 0), 0);
-    assert.equal(Math.abs(angleDiff(0, 180)), 180);
+    assert.equal(angleDiff(0, 180), 180);
+    assert.equal(angleDiff(180, 0), 180);
   });
 });
