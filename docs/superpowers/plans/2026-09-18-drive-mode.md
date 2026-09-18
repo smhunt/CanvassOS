@@ -32,6 +32,7 @@ below still disagrees with one of these, the ruling is the requirement.
 4. A held door is looked up outside the fresh-candidate filter and survives to `HELD_CROSS_LIMIT_M` (300 m); `AHEAD_MAX_M` does not apply to it. Task 2's code block below predates this — the committed `drive.ts` is authoritative.
 5. There is no `metres()`; distance formatting reuses the existing `formatDistance` from `nearMe.ts`.
 6. `DrivePage` imports `canvass.css` as well as `drive.css` — `.cv-note` lives there and that stylesheet is per-page, not global, so a reload on the drive route would otherwise lose it.
+7. `DrivePage`'s `useMemo` only reads `held.current`; a `useEffect` writes it. A memo callback must stay pure.
 
 ## File Structure
 
@@ -528,7 +529,7 @@ export function DriveCard({ c, showNames, fallback }: { c: Candidate; showNames:
 Create `web/src/pages/DrivePage.tsx`. It owns the held-door state, which is what makes hysteresis work across renders:
 
 ```tsx
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useDoors } from '../api/hooks';
 import { DriveCard } from '../canvass/DriveCard';
@@ -557,10 +558,16 @@ export function DrivePage() {
     if (!fix || !doors.data) return null;
     // Only doors still worth driving to.
     const open = doors.data.doors.filter((d) => latestResult(d, queued) === null);
-    const s = selectAhead(open, fix, held.current);
-    held.current = s.current?.door.household_id ?? null;
-    return s;
+    return selectAhead(open, fix, held.current);
   }, [fix, doors.data, queued]);
+
+  // The held door is whatever was on screen for the previous fix. It is written here, in an effect,
+  // and only read inside the memo: a memo callback must stay pure — StrictMode runs it twice and
+  // React may discard a result — so a ref written there would make hysteresis depend on how often
+  // React happened to render.
+  useEffect(() => {
+    held.current = selection?.current?.door.household_id ?? null;
+  }, [selection]);
 
   if (failure) return <p className="cv-note">{failure.message}</p>;
   if (doors.isLoading || pending) return <p className="cv-note">Finding you…</p>;
