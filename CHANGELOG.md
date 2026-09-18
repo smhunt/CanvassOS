@@ -12,10 +12,29 @@ All notable changes to CanvassOS are recorded here. The format follows
   names the next door AHEAD of the vehicle, how far it is and which side of the road, and moves on to
   the next one by itself as the vehicle passes — nearest-first is the wrong question at the wheel,
   since the closest door is frequently the one just gone by. Reached from a turf's door screen via a
-  new **Drive** link. It can read the next door aloud (no name, ever — a voice carries further than a
-  screen) so the phone never needs to be touched while the car is moving, keeps the screen awake for
-  as long as it is open, and shows a one-time safety notice reminding the driver to mount the phone
-  and drive on a charger before the first door appears.
+  new **Drive** link, which sits with the list view's controls. It can read the next door aloud so the
+  phone never needs to be touched while the car is moving, keeps the screen awake for as long as it is
+  open, and shows a one-time safety notice reminding the driver to mount the phone and drive on a
+  charger before the first door appears.
+- **No name is ever spoken**, whatever the on-screen "Names" toggle says, for two independent reasons:
+  a voice carries outside the car in a way a screen does not, and Chrome/Android may synthesise
+  through a *remote* voice, which sends the utterance text to a third party — list data "provided to
+  another person" under *Municipal Elections Act* s. 23(8).
+- **Speech confirms itself out loud.** Tapping Start, or turning the speech toggle on, says so
+  immediately: an audible check that the phone will in fact talk to the driver, made while the car is
+  still parked and they can do something about it. It is also what iOS requires, since it refuses
+  programmatic speech until an utterance has been started inside a user gesture.
+- **Steady when the phone has no heading.** A phone only reports a course while it is actually moving,
+  and native iOS reports an invalid one as `-1`, which is now read as none rather than as due north.
+  Without a course the screen falls back to nearest-first — still holding the door it already had,
+  because on range alone two doors metres apart swap places on GPS noise — and says nothing at all: a
+  parked car needs no voice, and a phone stopped at a sign flips between course and no course
+  repeatedly, which would announce the same door over and over. The door is still spoken once as soon
+  as a real heading arrives.
+- **A door recorded offline is never offered again**, including during the few hundred milliseconds
+  between the outbox flushing that door's entry and the doors query being refetched — a gap in which
+  the door has no queued result *and* no saved one, and so reads as open. Drive mode remembers every
+  door it has seen queued rather than trusting either signal alone.
 
 ## [1.0.1] - 2026-09-17
 

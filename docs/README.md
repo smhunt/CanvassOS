@@ -703,11 +703,43 @@ cross-track before it straightens out, drop the door and immediately re-pick it 
 scheme exists to prevent, just relocated to a different number. A real turn onto a different road still
 releases it, since 300 m eventually fails too.
 
-`DrivePage.tsx` also merges the offline outbox into the doors it considers open, and calls
+A phone only reports a course while it is actually moving, so drive mode has to work without one: with
+`heading === null` the selection is plain nearest-first, and `useDriveFix.ts` also treats a *negative*
+heading as none, because native iOS reports an invalid course as `-1` rather than as null, and -1 is a
+finite number that would project as a heading of 359 degrees. The hold applies to that fallback too —
+more so, in fact, since with nothing but range to sort on, two doors metres apart swap places on GPS
+noise alone and the card strobes for as long as the car sits still. A held door has no band to fail
+there, so the only thing that releases it is its leaving the list of open doors.
+
+`DrivePage.tsx` merges the offline outbox into the doors it considers open, and calls
 `useOfflineSync()`, for the same reason the door screen does — see §6: a door knocked while out of
-signal must not be offered again as the next one ahead while it waits to sync. And the spoken
-announcement (`driveSpeech.ts`) never includes a name, whatever the on-screen "Names" toggle is set to
-— a voice carries outside the car in a way a screen does not.
+signal must not be offered again as the next one ahead while it waits to sync. Neither is sufficient
+alone, so it also **remembers every door it has ever seen queued**: `outbox.ts` drops a flushed entry
+and notifies immediately, while the listeners that invalidate the doors query fire only once the whole
+flush is done, and the refetch is another round trip after that. In between, a door just recorded has
+`last_result: null` and no queued entry — it reads as open again — which, in a driveway as signal
+returns, is precisely the door the card would flip back to and announce. The memory is a ref,
+accumulated in an effect and only read from the selection memo (a memo callback must stay pure), so an
+id is committed at least one render before the render that needs it.
+
+Speech is the reason a solo driver can use this at all, so it is a little more careful than a toggle.
+Tapping **Start**, or turning the toggle on, speaks a short confirmation *synchronously inside the
+tap*: that gives the driver an audible check while the car is still parked, and it is also what iOS
+requires, since programmatic speech is refused until an utterance has been started inside a user
+gesture. While there is no heading nothing is announced at all — a phone stopped at a sign flips
+between course and no course several times, and each flip would re-announce the same door — and the
+door is left unmarked, so it is still spoken once when a real heading arrives. Leaving the screen
+cancels anything still queued (`silence()`), because the utterance queue belongs to the document
+rather than to the component. And the announcement (`driveSpeech.ts`) never includes a name, whatever
+the on-screen "Names" toggle is set to, for two independent reasons: a voice carries outside the car
+in a way a screen does not, and Chrome/Android may synthesise through a **remote** voice, which sends
+the utterance text to a third party — that would be list data "provided to another person" under
+*MEA* s. 23(8), the rule that also shapes `streetview.ts` and `advice.ts`.
+
+Drive mode is entered from the **Drive** link in the door screen's header, among the list view's own
+controls. It is gated on `view === 'list'` although it is not a way of ordering the list, because in
+map view the Map toggle has to be the only child of `.cv-head__controls`: that is what the
+`> :only-child` rule in `canvass.css` keys on to let it fill the row.
 
 ---
 
