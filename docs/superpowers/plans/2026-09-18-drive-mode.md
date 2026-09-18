@@ -40,6 +40,12 @@ below still disagrees with one of these, the ruling is the requirement.
 12. The error branch duplicated between `DrivePage` and `DoorScreen` stands on this branch, parked as a follow-up: extracting it means refactoring the live door screen five weeks before the election to save ~15 lines.
 13. `useWakeLock` re-checks after `await request()` whether it was already cleaned up, and releases at once if so. Task 5's sample below predates this and could leak a lock under StrictMode; the committed file is authoritative.
 14. The two toggles use state labels ("Speech: on/off", "Names: on/off") with `aria-pressed`, not verb labels, which read backwards to assistive technology.
+15. The speech effect is gated on the safety notice having been dismissed.
+16. Tapping the card to open the door detail is deferred; the spec records why.
+17. The Drive link IS gated on `view === 'list'` — this reverses Task 6 Step 1 below, which broke the door screen's `:only-child` header rule in map view.
+18. In fallback `selectAhead` keeps the held door; nothing is announced in fallback; a negative heading is null.
+19. Start and turning speech on each speak a short confirmation from inside the tap.
+20. GPS and the wake lock start only once the notice is dismissed.
 
 ## File Structure
 
