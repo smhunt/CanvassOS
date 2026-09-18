@@ -34,12 +34,16 @@ export function useDriveFix(active: boolean): DriveFixState {
     setState((s) => ({ ...s, pending: true, failure: null }));
     const id = navigator.geolocation.watchPosition(
       (pos) => {
+        const h = pos.coords.heading;
         setState({
           fix: {
             at: { lat: pos.coords.latitude, lon: pos.coords.longitude },
             // null when stationary, and on desktops that have no course at all — drive.ts falls
-            // back to nearest-first rather than showing an empty card.
-            heading: Number.isFinite(pos.coords.heading) ? (pos.coords.heading as number) : null,
+            // back to nearest-first rather than showing an empty card. Negative is rejected too:
+            // native iOS reports an invalid course as -1 rather than as null, and -1 is a finite
+            // number, so without this the projection would run against a heading of 359 degrees and
+            // confidently name a door behind the car.
+            heading: h !== null && Number.isFinite(h) && h >= 0 ? h : null,
             speed_mps: Number.isFinite(pos.coords.speed) ? (pos.coords.speed as number) : null,
           },
           failure: null,

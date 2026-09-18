@@ -59,6 +59,8 @@ const door = (id: string, lat: number, lon: number): Door => ({
 });
 
 const northbound = (lat: number, lon: number): DriveFix => ({ at: { lat, lon }, heading: 0, speed_mps: 22 });
+/** A phone that reports no course: parked, or a desktop that has none at all. */
+const stationary = (lat: number, lon: number): DriveFix => ({ at: { lat, lon }, heading: null, speed_mps: null });
 
 describe('selectAhead', () => {
   it('ignores a nearer door that is behind, and picks the one ahead', () => {
@@ -102,6 +104,27 @@ describe('selectAhead', () => {
     const far = door('far', 43.010, -81.5);
     const sel = selectAhead([near, far], { at: { lat: 43.0, lon: -81.5 }, heading: null, speed_mps: null }, null);
     assert.equal(sel.fallback, true);
+    assert.equal(sel.current?.door.household_id, 'near');
+  });
+
+  it('keeps the held door in the fallback even when another is nearer', () => {
+    // A parked car with no heading: every tick re-sorts by distance, and a door metres away can
+    // trade places with the held one on GPS noise alone.
+    const near = door('near', 42.9995, -81.5);
+    const far = door('far', 43.010, -81.5);
+    const sel = selectAhead([near, far], stationary(43.0, -81.5), 'far');
+    assert.equal(sel.fallback, true);
+    assert.equal(sel.current?.door.household_id, 'far');
+    assert.equal(sel.upcoming[0]?.door.household_id, 'near');
+    assert.ok(!sel.upcoming.some((u) => u.door.household_id === 'far'));
+  });
+
+  it('falls through to nearest when the held door has left the list', () => {
+    // Recorded, or filtered out by the caller: a held id that is no longer on offer must not
+    // suppress the door that is.
+    const near = door('near', 42.9995, -81.5);
+    const far = door('far', 43.010, -81.5);
+    const sel = selectAhead([near, far], stationary(43.0, -81.5), 'gone');
     assert.equal(sel.current?.door.household_id, 'near');
   });
 
