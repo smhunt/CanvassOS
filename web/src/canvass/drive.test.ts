@@ -111,4 +111,29 @@ describe('selectAhead', () => {
     const sel = selectAhead([unmapped, ahead], northbound(43.0, -81.5), null);
     assert.equal(sel.current?.door.household_id, 'ahead');
   });
+
+  it('keeps a held door through a bend', () => {
+    // ~200 m off to the side: outside the 150 m acquire band, inside the 300 m release band.
+    const held = door('held', 43.002, -81.49754);
+    const deadAhead = door('dead-ahead', 43.003, -81.5);
+    const withHeld = selectAhead([held, deadAhead], northbound(43.0, -81.5), 'held');
+    assert.equal(withHeld.current?.door.household_id, 'held');
+    // Without a hold, that same door is too far off-track to be picked fresh.
+    const withoutHeld = selectAhead([held, deadAhead], northbound(43.0, -81.5), null);
+    assert.equal(withoutHeld.current?.door.household_id, 'dead-ahead');
+  });
+
+  it('releases a held door once the driver has turned off its road', () => {
+    // ~400 m off to the side: past even the 300 m release band.
+    const strayed = door('strayed', 43.002, -81.49509);
+    const deadAhead = door('dead-ahead', 43.003, -81.5);
+    const sel = selectAhead([strayed, deadAhead], northbound(43.0, -81.5), 'strayed');
+    assert.equal(sel.current?.door.household_id, 'dead-ahead');
+  });
+
+  it('AHEAD_MAX_M limits fresh candidates but not a held door', () => {
+    const far = door('far', 43.0225, -81.5); // ~2500 m ahead, past AHEAD_MAX_M
+    assert.equal(selectAhead([far], northbound(43.0, -81.5), null).current, null);
+    assert.equal(selectAhead([far], northbound(43.0, -81.5), 'far').current?.door.household_id, 'far');
+  });
 });
