@@ -17,6 +17,7 @@ const MapPage = lazy(() => import('./pages/MapPage').then((m) => ({ default: m.M
 // The door screen is what volunteers open in the field; the turf builder is organiser-only.
 const CanvassPage = lazy(() => import('./pages/CanvassPage').then((m) => ({ default: m.CanvassPage })));
 const DoorScreen = lazy(() => import('./pages/DoorScreen').then((m) => ({ default: m.DoorScreen })));
+const DrivePage = lazy(() => import('./pages/DrivePage').then((m) => ({ default: m.DrivePage })));
 const TurfsPage = lazy(() => import('./pages/TurfsPage').then((m) => ({ default: m.TurfsPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SignsPage = lazy(() => import('./pages/SignsPage').then((m) => ({ default: m.SignsPage })));
@@ -71,6 +72,14 @@ export default function App() {
             element={
               <Suspense fallback={<LoadingList rows={8} label="Loading the doors…" />}>
                 <DoorScreen />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/canvass/:turfId/drive"
+            element={
+              <Suspense fallback={<LoadingList rows={1} label="Starting drive mode…" />}>
+                <DrivePage />
               </Suspense>
             }
           />
