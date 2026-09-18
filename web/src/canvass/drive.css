@@ -1,7 +1,12 @@
 /* Drive mode. Read from a phone in a windscreen mount, so everything is one size larger than the
    rest of the app and the card carries the whole message without scrolling. */
 .drive-screen { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.drive-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+/* Three controls now (the link plus the speech and names toggles), and on a narrow phone the row is
+   too tight for all three at once; without wrap the labels squeeze rather than the row growing a
+   second line. Harmless in the landscape block below, where .drive-bar already gets the full row
+   width as a flex item of .drive-screen — that's a different flex context from the wrapping here,
+   which only governs .drive-bar's own children. */
+.drive-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .drive-card { border: 3px solid; border-radius: 12px; padding: 20px; }
 .drive-distance { font-size: 3rem; font-weight: 700; line-height: 1; }
 .drive-address { font-size: 1.5rem; margin-top: 8px; }
