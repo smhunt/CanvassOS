@@ -32,15 +32,28 @@ export function distanceM(a: Coords, b: Coords): number {
   return 2 * EARTH_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/**
+ * Initial great-circle bearing in degrees, 0 = true north. Drive mode needs the number, so this is
+ * the one implementation and compassOf rounds its result — an eight-point string and a heading
+ * comparison must never disagree about which way a door is.
+ */
+export function bearingDeg(a: Coords, b: Coords): number {
+  const dLon = rad(b.lon - a.lon);
+  const y = Math.sin(dLon) * Math.cos(rad(b.lat));
+  const x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(dLon);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Signed difference a - b, wrapped to (-180, 180]. Positive means a is clockwise of b. */
+export function angleDiff(a: number, b: number): number {
+  return ((((a - b) % 360) + 540) % 360) - 180;
+}
+
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 /** Initial great-circle bearing, rounded to eight points — the most a phone in a pocket can be trusted with. */
 export function compassOf(a: Coords, b: Coords): string {
-  const dLon = rad(b.lon - a.lon);
-  const y = Math.sin(dLon) * Math.cos(rad(b.lat));
-  const x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(dLon);
-  const deg = (Math.atan2(y, x) * 180) / Math.PI;
-  return COMPASS[Math.round(((deg + 360) % 360) / 45) % 8] as string;
+  return COMPASS[Math.round(bearingDeg(a, b) / 45) % 8] as string;
 }
 
 /**
