@@ -68,6 +68,10 @@ function project(door: Door, fix: DriveFix, heading: number): Candidate | null {
  * just because the vehicle has driven towards it), so it survives a bend in the road; a fresh
  * candidate is always judged against the narrower `CROSS_LIMIT_M` band. The selection only moves on
  * once the held door fails its own, wider test — passed, or the vehicle has turned off its road.
+ *
+ * With no heading at all — parked, or a desktop — the same hold applies to the nearest-first
+ * fallback: the held door stays current while it is still among the doors passed in, and only a door
+ * that has left that list (recorded, or filtered out upstream) gives the selection up.
  */
 export function selectAhead(doors: Door[], fix: DriveFix, held: string | null): Selection {
   if (fix.heading === null) {
@@ -80,9 +84,14 @@ export function selectAhead(doors: Door[], fix: DriveFix, held: string | null): 
       distance_m: distances.get(d.household_id) ?? 0,
       side: null,
     });
+    // The hold matters more here than it does with a heading, not less: with nothing but distance to
+    // sort on, two doors metres apart trade places on GPS noise alone, and the card strobes between
+    // them for as long as the car sits still. Holding needs no band to survive — there is no
+    // along/cross track to fail — so the only release is the door leaving the list it was picked from.
+    const current = (held ? mapped.find((d) => d.household_id === held) : undefined) ?? mapped[0] ?? null;
     return {
-      current: mapped[0] ? toCandidate(mapped[0]) : null,
-      upcoming: mapped.slice(1, 4).map(toCandidate),
+      current: current ? toCandidate(current) : null,
+      upcoming: mapped.filter((d) => d.household_id !== current?.household_id).slice(0, 3).map(toCandidate),
       fallback: true,
     };
   }

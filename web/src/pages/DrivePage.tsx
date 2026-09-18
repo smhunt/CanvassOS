@@ -91,9 +91,14 @@ export function DrivePage() {
     if (!seen) return;
     const c = selection?.current;
     if (!c || !prefs.speak) return;
+    // Nothing is ever said without a heading. A parked car needs no voice, and at a stop sign a
+    // phone flips between heading:null and a noisy course several times, which would announce the
+    // same door again on every flip. spokenFor is deliberately left unwritten while suppressed, so
+    // the door still gets its one announcement the moment a real heading arrives.
+    if (selection?.fallback) return;
     if (spokenFor.current === c.door.household_id) return;
     spokenFor.current = c.door.household_id;
-    const side = c.side && !selection?.fallback ? `, on your ${c.side}` : '';
+    const side = c.side ? `, on your ${c.side}` : '';
     announce(`Next door, ${Math.round(c.distance_m / 10) * 10} metres${side}`);
   }, [selection, prefs.speak, seen]);
 
