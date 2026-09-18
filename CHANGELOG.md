@@ -4,6 +4,19 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-09-18
+
+### Added
+
+- **Drive mode.** A glanceable screen for a canvasser driving rather than walking a rural turf: it
+  names the next door AHEAD of the vehicle, how far it is and which side of the road, and moves on to
+  the next one by itself as the vehicle passes — nearest-first is the wrong question at the wheel,
+  since the closest door is frequently the one just gone by. Reached from a turf's door screen via a
+  new **Drive** link. It can read the next door aloud (no name, ever — a voice carries further than a
+  screen) so the phone never needs to be touched while the car is moving, keeps the screen awake for
+  as long as it is open, and shows a one-time safety notice reminding the driver to mount the phone
+  and drive on a charger before the first door appears.
+
 ## [1.0.1] - 2026-09-17
 
 ### Security

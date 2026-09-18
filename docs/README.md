@@ -276,7 +276,8 @@ mc-canvass/
 │   │   ├── api/                 client.ts (the ONLY fetch wrapper), hooks.ts (every query/mutation),
 │   │   │                        types.ts (mirrors API.md)
 │   │   ├── pages/               one component per route (Login, Invite, Map, Canvass, DoorScreen,
-│   │   │                        Turfs, TurfSheet, Signs, Reports, Stats, Users, Audit, Account)
+│   │   │                        DrivePage, Turfs, TurfSheet, Signs, Reports, Stats, Users, Audit,
+│   │   │                        Account)
 │   │   ├── offline/             the field layer: db.ts (IndexedDB, no library), outbox.ts (queued
 │   │   │                        JSON writes + backoff), photoQueue.ts (the SEPARATE queue for sign
 │   │   │                        photo blobs), turfCache.ts (the opened turf's doors), useOutbox.ts
@@ -292,7 +293,10 @@ mc-canvass/
 │   │   │                        SpokeForm, ContactHistory, ContactDetails (phone/email + consent),
 │   │   │                        TurfMap, directions.ts (haversine + the map-app link), nearMe.ts
 │   │   │                        (nearest-first ordering), useBreakpoint.ts (the tablet stop in TS),
-│   │   │                        SyncStatus.tsx (the queue pill and its panel)
+│   │   │                        SyncStatus.tsx (the queue pill and its panel); drive mode's own files
+│   │   │                        sit alongside it: drive.ts (the along/cross-track selection maths —
+│   │   │                        see below), DriveCard.tsx, driveSpeech.ts (the speech prefs + the
+│   │   │                        announcement), useDriveFix.ts (the GPS feed), useWakeLock.ts
 │   │   ├── signs/               PlaceSignPanel, PhotoCapture/PhotoStrip, PickupPanel,
 │   │   │                        SignRequestsPanel, SignsMap (lazy), geolocation.ts, downscale.ts
 │   │   ├── reports/             follow-up queue and volunteer activity panels
@@ -677,6 +681,33 @@ door-order toggle (`web/src/canvass/nearMe.ts`) and the install banner's "not no
 (`web/src/pwa.ts`), each wrapped in try/catch so private browsing does not crash the app. The places
 personal data is deliberately persisted on a device are both in IndexedDB and both scoped and
 clearable from one button: the **turf cache** and the **held sign photos** — see §6.
+
+### Drive mode: along-track/cross-track, not nearest-first
+
+`web/src/canvass/drive.ts` picks the next door for someone driving a turf rather than walking it, and
+it deliberately does not reuse `nearMe.ts`'s plain nearest-first ordering: the closest door to a moving
+vehicle is frequently the one just passed. Instead each door is projected onto the vehicle's heading
+into an along-track distance (how far ahead, along the line of travel) and a cross-track offset (how
+far to one side, whose sign gives left/right) — a projection rather than an angular cone, because a
+fixed cone cannot be right at both ends: a door 40 m ahead and 25 m off the road and a door 400 m ahead
+and 25 m off sit at very different angles off the heading despite being an equally obvious "yes". A
+fresh candidate must have `along_m > 0` (behind is not ahead), `|cross_m| <= 150` (a parallel concession
+line, ~2 km over in rural Middlesex Centre, is never mistaken for the road being driven) and
+`along_m <= 2000` (past that it's the far end of the turf, not the next door).
+
+The door already on screen — `held`, the previous fix's selection — gets a second, wider test instead:
+it survives at `|cross_m| <= 300` (twice the acquire limit) and is exempt from the 2000 m cap entirely.
+Different acquire and release thresholds are the actual definition of hysteresis, not an incidental
+detail: a single shared limit would let a bend in the road, which briefly widens a held door's
+cross-track before it straightens out, drop the door and immediately re-pick it — the flicker this
+scheme exists to prevent, just relocated to a different number. A real turn onto a different road still
+releases it, since 300 m eventually fails too.
+
+`DrivePage.tsx` also merges the offline outbox into the doors it considers open, and calls
+`useOfflineSync()`, for the same reason the door screen does — see §6: a door knocked while out of
+signal must not be offered again as the next one ahead while it waits to sync. And the spoken
+announcement (`driveSpeech.ts`) never includes a name, whatever the on-screen "Names" toggle is set to
+— a voice carries outside the car in a way a screen does not.
 
 ---
 
