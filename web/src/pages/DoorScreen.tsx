@@ -237,6 +237,13 @@ export function DoorScreen() {
               Near me
             </button>
           )}
+          {turfId && (
+            // Not gated on view === 'list': drive mode leaves this screen entirely, it isn't a way
+            // of ordering the list, so it belongs on both the list and map headers.
+            <Link to={`/canvass/${turfId}/drive`} className="cv-seg__btn cv-viewbtn">
+              Drive
+            </Link>
+          )}
           <button
             type="button"
             className="cv-seg__btn cv-viewbtn"

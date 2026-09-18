@@ -195,6 +195,9 @@
   color: var(--text);
   font-weight: 650;
   cursor: pointer;
+  /* The Drive link renders this class on an <a>, not a <button> — reset the UA underline so it
+     doesn't announce itself as a hyperlink among segmented buttons. */
+  text-decoration: none;
 }
 .cv-seg__btn[aria-pressed='true'] {
   background: var(--brand);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.0.1';
+export const APP_VERSION = '1.1.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,14 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.1.0',
+    date: '2026-09-18',
+    changes: [
+      'New drive mode: on a rural turf it shows the next door ahead of you, how far it is and which side of the road, and moves on by itself as you pass. Open a turf and tap Drive.',
+      'It can read the next door out loud, so you never need to touch the phone while the car is moving.',
+    ],
+  },
   {
     version: '1.0.1',
     date: '2026-09-17',
