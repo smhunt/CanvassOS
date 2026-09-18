@@ -1,6 +1,6 @@
 # Drive mode — surfacing the next door ahead while driving
 
-**Status:** design, not yet built. **Date:** 2026-09-18.
+**Status:** built on `feat/drive-mode`; awaiting a field test. **Date:** 2026-09-18.
 
 ## The problem
 
@@ -170,3 +170,32 @@ confirm the card advances at the right moment and names the correct side of the 
 
 Continuous high-accuracy GPS plus a wake lock is the heaviest thing this app does to a battery. The
 honest guidance, which belongs in the interstitial, is to drive with the phone on a charger.
+
+## Amendments made during the build
+
+The text above is the design as approved. These are the places the build knowingly departs from it;
+each was a recorded ruling, with its reasoning, in the execution ledger.
+
+- **Tapping the card does not yet open the door detail — deferred.** It needs a `?door=` deep link
+  into `DoorScreen`'s open-door state, which means changing the live door screen five weeks before
+  the election. Today's path is "Back to the list", where with Near me on the door is the top row.
+  Workable, because recording happens stopped; it is the first follow-up.
+- **Two toggles, not one.** "Speech: on/off" and "Names: on/off" are separate controls with state
+  labels and `aria-pressed`; a verb label plus `aria-pressed` reads backwards to a screen reader.
+- **Wake Lock degradation is silent**, and the notice does not mention it — the notice is kept short
+  enough to actually be read.
+- **The offline gap is closed by memory, not timing.** `outbox` drops an entry from the queue before
+  its listeners refresh the door list, so for a few round-trips a just-recorded door looked open
+  again. The page remembers every household it has seen queued during this visit and never offers it.
+- **No heading: hold, and stay quiet.** With no course from the phone the screen still falls back to
+  nearest-first, but it keeps the held door while that door is open, and announces nothing — phones
+  flip between no heading and a noisy one at a stop sign, and a parked car needs no voice. A negative
+  heading is treated as none.
+- **Spoken confirmations.** Tapping Start, and turning speech on, each say a short phrase from inside
+  the tap: an audible check before driving off, and the user gesture iOS wants before it will allow
+  speech that is not triggered by one.
+- **GPS and the wake lock start only after the notice is dismissed**, so the location prompt does
+  not land on top of the safety notice.
+- **The Drive link sits with the list view's controls.** Shown in map view too, it became a second
+  child of the header controls and broke the rule that lets the Map toggle fill the row.
+
