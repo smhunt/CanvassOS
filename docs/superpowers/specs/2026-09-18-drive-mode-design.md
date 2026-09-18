@@ -79,7 +79,11 @@ road, and safe against catching the parallel road, because Ontario concession ro
 roughly 2 km apart. It is a named constant so a field test can move it.
 
 **Hysteresis is the stability rule and must not be dropped.** Once a door is selected it stays
-selected until `along` goes negative (it has been passed) or it is recorded. Without this, two doors
+selected until `along` goes negative (it has been passed) or it is recorded. A held door is also let go
+if it drifts more than `HELD_CROSS_LIMIT_M = 300` off the line of travel — twice the acquire limit —
+because the driver has turned off its road. The two thresholds differ on purpose: acquiring at 150 m
+and releasing at 300 m is what stops a bend in the road from dropping and re-picking the same door,
+while a genuine turn still releases it. `AHEAD_MAX_M` does not apply to a held door. Without this, two doors
 at nearly equal along-track distance swap places every GPS tick and the card strobes — the exact
 failure the separate screen exists to prevent.
 
