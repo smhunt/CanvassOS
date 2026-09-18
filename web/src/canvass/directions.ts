@@ -44,9 +44,13 @@ export function bearingDeg(a: Coords, b: Coords): number {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-/** Signed difference a - b, wrapped to (-180, 180]. Positive means a is clockwise of b. */
+/**
+ * Signed difference a - b, wrapped to (-180, 180]. Positive means a is clockwise of b. The obvious
+ * `((d % 360) + 540) % 360 - 180` idiom returns -180 for the antipodal case, i.e. [-180, 180) — the
+ * mirror image of this range — so the wrap is built the other way round instead.
+ */
 export function angleDiff(a: number, b: number): number {
-  return ((((a - b) % 360) + 540) % 360) - 180;
+  return 180 - ((((180 - (a - b)) % 360) + 360) % 360);
 }
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
