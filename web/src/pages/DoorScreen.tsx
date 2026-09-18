@@ -237,9 +237,11 @@ export function DoorScreen() {
               Near me
             </button>
           )}
-          {turfId && (
-            // Not gated on view === 'list': drive mode leaves this screen entirely, it isn't a way
-            // of ordering the list, so it belongs on both the list and map headers.
+          {view === 'list' && turfId && (
+            // Gated with the other list controls, though drive mode leaves this screen entirely: in
+            // map view the Map toggle must be the only child of .cv-head__controls, because that is
+            // what the `> :only-child` rule in canvass.css keys on to let it fill the row. A second
+            // child here silently unstyled the live map header.
             <Link to={`/canvass/${turfId}/drive`} className="cv-seg__btn cv-viewbtn">
               Drive
             </Link>

@@ -40,3 +40,17 @@ export function announce(text: string): void {
     // Some browsers throw without a prior user gesture; silence is an acceptable failure here.
   }
 }
+
+/**
+ * Drop anything still queued or being spoken. The queue belongs to the document, not to the screen
+ * that filled it, so leaving drive mode has to empty it explicitly or the last door follows the
+ * volunteer to wherever they went next. Same guards as announce, for the same reasons.
+ */
+export function silence(): void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+  } catch {
+    // Nothing to recover: the point of the call was to leave nothing behind.
+  }
+}
