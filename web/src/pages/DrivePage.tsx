@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useDoors } from '../api/hooks';
+import { isApiError } from '../api/client';
+import { useDoors, useOfflineSync } from '../api/hooks';
 import { DriveCard } from '../canvass/DriveCard';
 import { selectAhead } from '../canvass/drive';
 import { formatDistance } from '../canvass/nearMe';
 import { latestResult } from '../canvass/status';
 import { useDriveFix } from '../canvass/useDriveFix';
 import { useOutbox, useQueuedResults } from '../offline/useOutbox';
+import { ErrorBox } from '../components/ui';
 // .cv-note lives in canvass.css, which is imported per page rather than globally. Without this a
 // reload or a deep link on this route — a PWA reopening mid-drive — renders the banner unstyled.
 import '../canvass/canvass.css';
@@ -18,10 +20,15 @@ export function DrivePage() {
   const { fix, failure, pending } = useDriveFix(true);
   const [showNames, setShowNames] = useState(true);
   const held = useRef<string | null>(null);
-  // Doors recorded on this phone but not yet synced. Without this a door knocked in a dead zone
-  // keeps last_result = null, and drive mode would send the driver straight back to it.
+  // Doors recorded on this phone but not yet synced, merged in so a door already knocked in a dead
+  // zone isn't offered again while it sits in the outbox. That alone only covers the wait: once the
+  // outbox flushes, the entry drops out of `queued`, and without useOfflineSync below the cached
+  // doors query would still say last_result null, sending the driver straight back to it.
   const outbox = useOutbox();
   const queued = useQueuedResults(outbox);
+  // Refreshes the doors query the moment a flush lands, so a synced result replaces the queued one
+  // instead of the door reappearing between the outbox clearing and the next natural refetch.
+  useOfflineSync();
 
   const selection = useMemo(() => {
     if (!fix || !doors.data) return null;
@@ -38,8 +45,28 @@ export function DrivePage() {
     held.current = selection?.current?.door.household_id ?? null;
   }, [selection]);
 
+  // A failed load is a definite answer about this turf — check it before GPS state, which is
+  // irrelevant if there is no turf to drive.
+  if (doors.isError) {
+    const forbidden = isApiError(doors.error, 403) || isApiError(doors.error, 404);
+    return (
+      <div className="page page--narrow">
+        <ErrorBox
+          title={forbidden ? 'This turf is not assigned to you' : 'Could not load this turf'}
+          error={doors.error}
+          onRetry={forbidden ? undefined : () => void doors.refetch()}
+        />
+        <p>
+          {/* list=1 stops /canvass from auto-reopening the turf that just failed — otherwise the
+              only link off this page would loop straight back into the same error. */}
+          <Link to="/canvass?list=1">Back to my turfs</Link>
+        </p>
+      </div>
+    );
+  }
+
   if (failure) return <p className="cv-note">{failure.message}</p>;
-  if (doors.isLoading || pending) return <p className="cv-note">Finding you…</p>;
+  if (doors.isPending || pending) return <p className="cv-note">Finding you…</p>;
 
   return (
     <div className="drive-screen">
