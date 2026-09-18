@@ -37,6 +37,9 @@ below still disagrees with one of these, the ruling is the requirement.
 9. `DrivePage` calls `useOfflineSync()`. Ruling 3 alone was incomplete: after the outbox flushes, the entry leaves `queued` while the cached doors query still says `last_result: null`, so the door came back.
 10. `DrivePage` has `DoorScreen`'s error branch for the doors query, first among its early returns — a failed load must never read as "No more doors ahead". Task 4's code block below predates rulings 9 and 10; the committed `DrivePage.tsx` is authoritative.
 11. The card's `resultColour` stays although it is constant under today's null-only filter. Whether drive mode should also offer "not home" revisits is a product question left to the candidate.
+12. The error branch duplicated between `DrivePage` and `DoorScreen` stands on this branch, parked as a follow-up: extracting it means refactoring the live door screen five weeks before the election to save ~15 lines.
+13. `useWakeLock` re-checks after `await request()` whether it was already cleaned up, and releases at once if so. Task 5's sample below predates this and could leak a lock under StrictMode; the committed file is authoritative.
+14. The two toggles use state labels ("Speech: on/off", "Names: on/off") with `aria-pressed`, not verb labels, which read backwards to assistive technology.
 
 ## File Structure
 
@@ -810,7 +813,15 @@ git commit -m "feat(drive): keep the screen awake and announce the next door"
 
 - [ ] **Step 1: Entry point**
 
-In `DoorScreen.tsx`, beside the existing door-order toggle, add a link to `/canvass/${turfId}/drive` labelled **Drive**. Match the surrounding button markup exactly — grep the file for the existing toggle and copy its classes rather than inventing any.
+In `DoorScreen.tsx`, immediately after the "Near me" order toggle — the
+`<button className="cv-seg__btn cv-viewbtn" aria-pressed={order === 'near'}>` around line 225 — add a
+react-router `<Link>` to `/canvass/${turfId}/drive` labelled **Drive**, carrying the same two classes.
+`Link` is already imported. `turfId` comes from `useParams` and may be undefined, so render the link
+only when it is set. Unlike the Near-me toggle it is **not** gated on `view === 'list'`: drive mode is
+a way of leaving this screen, not a way of ordering its list. It is a link, so it takes no
+`aria-pressed`. Check that `.cv-seg__btn` renders correctly on an `<a>` (no underline, inherited
+colour); if it needs a reset, grep first and extend the existing rule in `canvass.css` rather than
+declaring the selector a second time.
 
 - [ ] **Step 2: The one-time interstitial**
 
