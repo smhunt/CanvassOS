@@ -18,6 +18,14 @@ import { orderByDistance } from './nearMe';
 const CROSS_LIMIT_M = 150;
 /** Beyond this there is nothing useful to say; it is the far end of a turf, not the next door. */
 const AHEAD_MAX_M = 2000;
+/**
+ * The held door's own, wider band. Acquiring at 150 m and releasing at 300 m means a bend in the
+ * road — which briefly widens a held door's cross-track before it straightens out again — cannot
+ * drop the door and immediately re-pick it; a genuine turn onto a different road still releases it.
+ * Different acquire/release thresholds are the actual definition of hysteresis; one shared number
+ * would just be the flicker this function exists to prevent, moved from 150 m to wherever it sits.
+ */
+const HELD_CROSS_LIMIT_M = 2 * CROSS_LIMIT_M;
 
 export interface DriveFix {
   at: Coords;
@@ -55,7 +63,11 @@ function project(door: Door, fix: DriveFix, heading: number): Candidate | null {
 /**
  * `held` is the household_id currently on screen. It wins whenever it is still ahead, which is the
  * whole stability story: two doors a few metres apart otherwise swap places on every GPS tick and
- * the card strobes. The selection only moves on once the held door has been passed.
+ * the card strobes. A held door is judged against the wider `HELD_CROSS_LIMIT_M` band (and is never
+ * subject to `AHEAD_MAX_M` — a door already on screen does not stop being the right thing to show
+ * just because the vehicle has driven towards it), so it survives a bend in the road; a fresh
+ * candidate is always judged against the narrower `CROSS_LIMIT_M` band. The selection only moves on
+ * once the held door fails its own, wider test — passed, or the vehicle has turned off its road.
  */
 export function selectAhead(doors: Door[], fix: DriveFix, held: string | null): Selection {
   if (fix.heading === null) {
@@ -75,24 +87,17 @@ export function selectAhead(doors: Door[], fix: DriveFix, held: string | null): 
     };
   }
 
-  const ahead: Candidate[] = [];
-  for (const d of doors) {
-    const c = project(d, fix, fix.heading);
-    if (!c) continue;
-    if (c.along_m <= 0) continue;
-    if (Math.abs(c.cross_m) > CROSS_LIMIT_M) continue;
-    if (c.along_m > AHEAD_MAX_M) continue;
-    ahead.push(c);
-  }
-  ahead.sort((a, b) => a.along_m - b.along_m);
+  const heading = fix.heading;
+  const projected = doors.map((d) => project(d, fix, heading)).filter((c): c is Candidate => c !== null);
 
-  const heldCandidate = held ? ahead.find((c) => c.door.household_id === held) ?? null : null;
+  const ahead = projected
+    .filter((c) => c.along_m > 0 && Math.abs(c.cross_m) <= CROSS_LIMIT_M && c.along_m <= AHEAD_MAX_M)
+    .sort((a, b) => a.along_m - b.along_m);
+
+  const stillHeld = (c: Candidate) =>
+    c.door.household_id === held && c.along_m > 0 && Math.abs(c.cross_m) <= HELD_CROSS_LIMIT_M;
+  const heldCandidate = held ? projected.find(stillHeld) ?? null : null;
   const current = heldCandidate ?? ahead[0] ?? null;
   const upcoming = ahead.filter((c) => c.door.household_id !== current?.door.household_id).slice(0, 3);
   return { current, upcoming, fallback: false };
-}
-
-/** One formatter, so the card and the upcoming list can never disagree about a distance. */
-export function metres(m: number): string {
-  return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
 }
