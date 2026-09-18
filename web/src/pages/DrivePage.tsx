@@ -4,7 +4,7 @@ import { isApiError } from '../api/client';
 import { useDoors, useOfflineSync } from '../api/hooks';
 import { DriveCard } from '../canvass/DriveCard';
 import { selectAhead } from '../canvass/drive';
-import { announce, readDrivePrefs, writeDrivePrefs } from '../canvass/driveSpeech';
+import { announce, readDrivePrefs, silence, writeDrivePrefs } from '../canvass/driveSpeech';
 import { formatDistance } from '../canvass/nearMe';
 import { latestResult } from '../canvass/status';
 import { useDriveFix } from '../canvass/useDriveFix';
@@ -41,8 +41,6 @@ function writeSeen(): void {
 export function DrivePage() {
   const { turfId } = useParams();
   const doors = useDoors(turfId);
-  const { fix, failure, pending } = useDriveFix(true);
-  useWakeLock(true);
   const [prefs, setPrefs] = useState(readDrivePrefs);
   const togglePref = (key: keyof typeof prefs) =>
     setPrefs((p) => {
@@ -50,10 +48,15 @@ export function DrivePage() {
       writeDrivePrefs(next);
       return next;
     });
-  // Gates both the safety notice below and the speech effect further down — see that effect's
-  // comment for why speech must wait for it too. A plain useState, not a ref: the notice has to
-  // re-render to disappear when Start is tapped.
+  // Declared before everything it gates: the safety notice below, the speech effect further down
+  // (see that effect's comment), and the two hooks on the next lines. A plain useState, not a ref:
+  // the notice has to re-render to disappear when Start is tapped.
   const [seen, setSeen] = useState(readSeen);
+  // Both wait for Start. Started unconditionally, the location-permission prompt lands on top of
+  // "Before you drive" — the driver is answering a system dialog about a screen they have not read
+  // yet — and the wake lock is requested for a page that is still just a paragraph of text.
+  const { fix, failure, pending } = useDriveFix(seen);
+  useWakeLock(seen);
   const held = useRef<string | null>(null);
   // Doors recorded on this phone but not yet synced, merged in so a door already knocked in a dead
   // zone isn't offered again while it sits in the outbox. That alone only covers the wait: once the
@@ -65,10 +68,25 @@ export function DrivePage() {
   // instead of the door reappearing between the outbox clearing and the next natural refetch.
   useOfflineSync();
 
+  // Every door that has been in the queue at any point this drive. `useOfflineSync` is not enough on
+  // its own: outbox.ts drops a flushed entry and notifies immediately, while the synced listeners
+  // that invalidate this query only fire at the end of the whole flush, and the refetch is a further
+  // round trip. For those several hundred milliseconds a door just recorded has last_result null and
+  // no queued entry, so it reads as open again — and parked in a driveway as signal returns, that is
+  // exactly the door the fallback would put back on the card and announce. A refetch that then fails
+  // leaves the turf cache saying null, so without this memory the door stays on offer indefinitely.
+  const everQueued = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const id of Object.keys(queued)) everQueued.current.add(id);
+  }, [queued]);
+
   const selection = useMemo(() => {
     if (!fix || !doors.data) return null;
-    // Only doors still worth driving to.
-    const open = doors.data.doors.filter((d) => latestResult(d, queued) === null);
+    // Only doors still worth driving to. The ref is read, never written, inside the memo: see the
+    // comment on the `held` effect below for why that rule holds for both of them.
+    const open = doors.data.doors.filter(
+      (d) => latestResult(d, queued) === null && !everQueued.current.has(d.household_id),
+    );
     return selectAhead(open, fix, held.current);
   }, [fix, doors.data, queued]);
 
@@ -80,8 +98,16 @@ export function DrivePage() {
     held.current = selection?.current?.door.household_id ?? null;
   }, [selection]);
 
+  // Stop mid-sentence when the driver leaves this screen. speechSynthesis belongs to the document,
+  // not to this component, so a queued utterance outlives the route change and would otherwise name
+  // a door on top of whatever the volunteer went to the door screen to do.
+  useEffect(() => () => silence(), []);
+
   // Announces only when the selected door changes, not on every GPS tick — spokenFor guards that.
-  // No name is ever spoken, regardless of the names toggle: a voice carries further than a screen.
+  // No name is ever spoken, regardless of the names toggle, and for two separate reasons: a voice
+  // carries further than a screen, and on Chrome/Android speechSynthesis may pick a REMOTE voice,
+  // which sends the utterance text to a third party — the voters list is personal information under
+  // the Municipal Elections Act and does not leave this stack to be read aloud.
   const spokenFor = useRef<string | null>(null);
   useEffect(() => {
     // Must wait for the safety notice to be dismissed. Without this the effect would speak while the
@@ -137,6 +163,12 @@ export function DrivePage() {
           type="button"
           className="btn btn--primary"
           onClick={() => {
+            // Spoken from inside the tap, synchronously, for two reasons. It is the driver's
+            // audible check that the phone will in fact talk to them, made while the car is still
+            // parked and they can do something about it; and iOS only permits programmatic speech
+            // after an utterance started inside a user gesture, so this is also what unlocks every
+            // later announcement.
+            if (prefs.speak) announce('Drive mode on');
             writeSeen();
             setSeen(true);
           }}
@@ -148,7 +180,12 @@ export function DrivePage() {
   }
 
   if (failure) return <p className="cv-note">{failure.message}</p>;
-  if (doors.isPending || pending) return <p className="cv-note">Finding you…</p>;
+  // `!fix` is the load-bearing half. useDriveFix starts at pending:false, so on the render right
+  // after Start — and again on the render after its effect sets pending — a cached door list with no
+  // fix yet would fall through to the card and flash "No more doors ahead in this turf." at a driver
+  // who has not moved a metre. `failure` is already returned above, so reaching here with no fix
+  // means the first position is still coming.
+  if (doors.isPending || pending || !fix) return <p className="cv-note">Finding you…</p>;
 
   return (
     <div className="drive-screen">
@@ -158,7 +195,14 @@ export function DrivePage() {
           type="button"
           className="btn btn--small"
           aria-pressed={prefs.speak}
-          onClick={() => togglePref('speak')}
+          onClick={() => {
+            // Same two reasons as the Start button: an audible confirmation that speech is working,
+            // and the user gesture iOS requires before it will speak on its own afterwards. Said
+            // here, synchronously, rather than from an effect — an effect runs after the gesture has
+            // ended and iOS has already closed the window.
+            if (!prefs.speak) announce('Speech on');
+            togglePref('speak');
+          }}
         >
           {prefs.speak ? 'Speech: on' : 'Speech: off'}
         </button>
