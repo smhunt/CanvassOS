@@ -49,6 +49,31 @@ Three things, none of them features. Released as **1.0.1**; `CHANGELOG.md` has t
   SSM instead of SSH. It must be **x86_64**: `postgis/postgis` publishes no arm64 image on any tag,
   and it only appears to work on Apple Silicon because Rosetta emulates amd64.
 
+### Drive mode — 2026-09-18
+
+**Not in any phase of the plan below, and not a phone-in-hand feature.** Middlesex Centre is rural:
+outside the settlements a turf is concession roads with a door every few hundred metres, and that is
+driven, not walked. `/canvass/:turfId/drive` is a glanceable screen for a phone in a car mount which
+names the next door *ahead* — how far, which side of the road, how many are on the list there — and
+moves on by itself as the vehicle passes. Released as **1.1.0**; `CHANGELOG.md` has the detail and
+`docs/README.md` §5 has the maths.
+
+- **Ahead, not nearest.** The closest door to a moving car is frequently the one just passed, so each
+  door is projected onto the vehicle's course into an along-track distance and a cross-track offset
+  rather than sorted by plain range. The door already on screen is held through a wider band than a
+  fresh one has to pass: one shared threshold is a flicker generator, not hysteresis. With no course
+  at all — parked, or a phone that reports none — it is nearest-first, still holding the door it had.
+- **It talks, and it is quiet when it should be.** Handling a phone while driving is an offence in
+  Ontario, so a solo canvasser has to be able to work this screen without touching it: the next door
+  is spoken, the screen is held awake, and a one-time notice asks the driver to mount the phone and
+  drive on a charger before the first door appears. Nothing is said while there is no heading, because
+  a stopped car flips between course and no course and would hear the same door over and over. **No
+  name is ever spoken**, whatever the on-screen Names toggle says — a voice carries outside the car,
+  and Chrome may synthesise through a remote voice, which would send the text to a third party.
+- **Nothing to record with.** Deliberately read-only: results are still entered at the door, on the
+  door screen. Drive mode answers "where next", which is the only question that can be answered
+  safely at the wheel.
+
 ### Phase 5 planned — 2026-09-06
 
 **SMS and email to electors who opted in.** SMS is the priority channel; email is the fallback; a
