@@ -52,7 +52,9 @@ export interface NearMeState {
   pending: boolean;
 }
 
-function describe(err: GeolocationPositionError): NearFailure {
+// Exported so drive mode shares this failure copy rather than writing it a third time — the copy
+// is the valuable part and must not fork.
+export function describeGeolocationFailure(err: GeolocationPositionError): NearFailure {
   switch (err.code) {
     case err.PERMISSION_DENIED:
       return {
@@ -78,8 +80,10 @@ function describe(err: GeolocationPositionError): NearFailure {
   }
 }
 
+// Exported so drive mode shares this failure copy rather than writing it a third time — the copy
+// is the valuable part and must not fork.
 /** Refuse before asking, when asking cannot possibly work. */
-function preflight(): NearFailure | null {
+export function preflightGeolocation(): NearFailure | null {
   // Browsers release geolocation on https only (localhost excepted); over plain http the prompt
   // never appears and the callback errors opaquely, so say so rather than spinning.
   if (typeof window !== 'undefined' && !window.isSecureContext) {
@@ -117,7 +121,7 @@ export function useNearMe(active: boolean): NearMeState {
       setState({ at: null, accuracy_m: null, failure: null, pending: false });
       return;
     }
-    const blocked = preflight();
+    const blocked = preflightGeolocation();
     if (blocked) {
       setState({ at: null, accuracy_m: null, failure: blocked, pending: false });
       return;
@@ -139,7 +143,7 @@ export function useNearMe(active: boolean): NearMeState {
           pending: false,
         });
       },
-      (err) => setState({ at: null, accuracy_m: null, failure: describe(err), pending: false }),
+      (err) => setState({ at: null, accuracy_m: null, failure: describeGeolocationFailure(err), pending: false }),
       {
         enableHighAccuracy: true,
         timeout: 20_000,
