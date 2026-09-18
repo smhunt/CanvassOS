@@ -31,6 +31,7 @@ below still disagrees with one of these, the ruling is the requirement.
 3. `DrivePage` filters open doors with `latestResult(d, queued)`, merging the offline outbox the way `DoorScreen` does — a door knocked in a dead zone must not be offered again.
 4. A held door is looked up outside the fresh-candidate filter and survives to `HELD_CROSS_LIMIT_M` (300 m); `AHEAD_MAX_M` does not apply to it. Task 2's code block below predates this — the committed `drive.ts` is authoritative.
 5. There is no `metres()`; distance formatting reuses the existing `formatDistance` from `nearMe.ts`.
+6. `DrivePage` imports `canvass.css` as well as `drive.css` — `.cv-note` lives there and that stylesheet is per-page, not global, so a reload on the drive route would otherwise lose it.
 
 ## File Structure
 
@@ -536,6 +537,9 @@ import { formatDistance } from '../canvass/nearMe';
 import { latestResult } from '../canvass/status';
 import { useDriveFix } from '../canvass/useDriveFix';
 import { useOutbox, useQueuedResults } from '../offline/useOutbox';
+// .cv-note lives in canvass.css, which is imported per page rather than globally. Without this a
+// reload or a deep link on this route — a PWA reopening mid-drive — renders the banner unstyled.
+import '../canvass/canvass.css';
 import '../canvass/drive.css';
 
 export function DrivePage() {
