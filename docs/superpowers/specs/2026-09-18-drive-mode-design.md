@@ -22,7 +22,8 @@ What is missing is direction. While driving, the useful question is not "what is
 2. It advances by itself as doors are passed. No tap is required to keep using it.
 3. It is stable — the card does not flicker between two doors.
 4. It works with no signal (rural dead zones are the normal case).
-5. It never puts an elector's name on a windshield-mounted screen.
+5. Names are visible at a glance, and can be hidden with one tap when the phone is left in a parked
+   car or handed to someone outside the campaign.
 
 ## Constraint that shapes the design: the driver
 
@@ -104,10 +105,14 @@ The card shows, in descending type size: **distance counting down**, **civic add
 the road**, and the door's status colour from the existing `map/palette.ts`. Below it, the next two
 or three doors in small type — useful to a passenger, ignorable by a driver.
 
-**No elector names on the card.** A phone on a windshield is readable from outside the car; at a gas
-station it is readable by anyone walking past. That is a disclosure of list data under *MEA*
-s. 23(7)–(8) for no operational gain, since the name is not what you need while driving. Names live
-behind the tap that opens the existing `DoorSheet`, which is the passenger/stopped path.
+**The card shows the elector name(s).** An earlier draft withheld them, on the argument that a
+windshield-mounted phone is readable from outside the car. The candidate judged that over-cautious
+and the name is what makes the card useful — you are about to knock on this person's door and want
+to arrive knowing who answers it. Recorded here because it was a deliberate call, not an oversight:
+the residual risk is a passer-by reading one name off a screen, which is materially smaller than the
+printed turf sheet already carried door to door. The same mute-style toggle that controls speech also
+hides names, for when the phone is handed to someone outside the campaign or left visible in a parked
+car. Full detail and history stay behind the tap into the existing `DoorSheet`.
 
 Supporting behaviour:
 
