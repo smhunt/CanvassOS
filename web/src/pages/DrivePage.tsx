@@ -4,9 +4,11 @@ import { isApiError } from '../api/client';
 import { useDoors, useOfflineSync } from '../api/hooks';
 import { DriveCard } from '../canvass/DriveCard';
 import { selectAhead } from '../canvass/drive';
+import { announce, readDrivePrefs, writeDrivePrefs } from '../canvass/driveSpeech';
 import { formatDistance } from '../canvass/nearMe';
 import { latestResult } from '../canvass/status';
 import { useDriveFix } from '../canvass/useDriveFix';
+import { useWakeLock } from '../canvass/useWakeLock';
 import { useOutbox, useQueuedResults } from '../offline/useOutbox';
 import { ErrorBox } from '../components/ui';
 // .cv-note lives in canvass.css, which is imported per page rather than globally. Without this a
@@ -18,7 +20,14 @@ export function DrivePage() {
   const { turfId } = useParams();
   const doors = useDoors(turfId);
   const { fix, failure, pending } = useDriveFix(true);
-  const [showNames, setShowNames] = useState(true);
+  useWakeLock(true);
+  const [prefs, setPrefs] = useState(readDrivePrefs);
+  const togglePref = (key: keyof typeof prefs) =>
+    setPrefs((p) => {
+      const next = { ...p, [key]: !p[key] };
+      writeDrivePrefs(next);
+      return next;
+    });
   const held = useRef<string | null>(null);
   // Doors recorded on this phone but not yet synced, merged in so a door already knocked in a dead
   // zone isn't offered again while it sits in the outbox. That alone only covers the wait: once the
@@ -44,6 +53,18 @@ export function DrivePage() {
   useEffect(() => {
     held.current = selection?.current?.door.household_id ?? null;
   }, [selection]);
+
+  // Announces only when the selected door changes, not on every GPS tick — spokenFor guards that.
+  // No name is ever spoken, regardless of the names toggle: a voice carries further than a screen.
+  const spokenFor = useRef<string | null>(null);
+  useEffect(() => {
+    const c = selection?.current;
+    if (!c || !prefs.speak) return;
+    if (spokenFor.current === c.door.household_id) return;
+    spokenFor.current = c.door.household_id;
+    const side = c.side && !selection?.fallback ? `, on your ${c.side}` : '';
+    announce(`Next door, ${Math.round(c.distance_m / 10) * 10} metres${side}`);
+  }, [selection, prefs.speak]);
 
   // A failed load is a definite answer about this turf — check it before GPS state, which is
   // irrelevant if there is no turf to drive.
@@ -72,12 +93,25 @@ export function DrivePage() {
     <div className="drive-screen">
       <div className="drive-bar">
         <Link to={`/canvass/${turfId}`}>Back to the list</Link>
-        <button type="button" onClick={() => setShowNames((v) => !v)}>
-          {showNames ? 'Hide names' : 'Show names'}
+        <button
+          type="button"
+          className="btn btn--small"
+          aria-pressed={prefs.speak}
+          onClick={() => togglePref('speak')}
+        >
+          {prefs.speak ? 'Speech: on' : 'Speech: off'}
+        </button>
+        <button
+          type="button"
+          className="btn btn--small"
+          aria-pressed={prefs.names}
+          onClick={() => togglePref('names')}
+        >
+          {prefs.names ? 'Names: on' : 'Names: off'}
         </button>
       </div>
       {selection?.current ? (
-        <DriveCard c={selection.current} showNames={showNames} fallback={selection.fallback} />
+        <DriveCard c={selection.current} showNames={prefs.names} fallback={selection.fallback} />
       ) : (
         <p className="cv-note">No more doors ahead in this turf.</p>
       )}
