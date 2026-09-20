@@ -29,6 +29,13 @@
 		-Server
 	}
 
+	# The service worker's filename never changes between builds, unlike the content-hashed files
+	# under /assets. Left cacheable, a browser — or any CDN later put in front of this mode — may
+	# keep a stale copy, and an installed phone then cannot learn that a new version exists.
+	# no-cache does not forbid keeping a copy — it only makes the holder ask first.
+	@sw path /sw.js
+	header @sw Cache-Control "no-cache"
+
 	log {
 		output stdout
 		format console

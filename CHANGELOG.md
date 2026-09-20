@@ -4,6 +4,17 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`/sw.js` is served with `Cache-Control: no-cache`.** Its filename never changes between builds,
+  unlike the content-hashed files under `/assets`, and Cloudflare was caching it at the edge and
+  handing browsers `max-age=14400`. For up to four hours after a deploy an installed phone could not
+  discover that a new version existed. Found while confirming the 1.1.0 deploy had reached a phone:
+  harmless that day, because navigations are network-first and assets are hashed, but it delays the
+  new precache — which is what makes a new screen work with no signal. Both Caddyfiles carry it.
+
 ## [1.2.0] - 2026-09-20
 
 ### Added
