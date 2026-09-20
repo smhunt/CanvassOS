@@ -4,13 +4,16 @@ import { isApiError } from '../api/client';
 import { useDoors, useOfflineSync } from '../api/hooks';
 import { DriveCard } from '../canvass/DriveCard';
 import { selectAhead } from '../canvass/drive';
-import { announce, readDrivePrefs, silence, writeDrivePrefs } from '../canvass/driveSpeech';
+import { DRIVE_HELP } from '../canvass/driveHelp';
+import { readDrivePrefs, writeDrivePrefs } from '../canvass/driveSpeech';
 import { formatDistance } from '../canvass/nearMe';
 import { latestResult } from '../canvass/status';
 import { useDriveFix } from '../canvass/useDriveFix';
 import { useWakeLock } from '../canvass/useWakeLock';
 import { useOutbox, useQueuedResults } from '../offline/useOutbox';
+import { HelpButton } from '../components/HelpButton';
 import { ErrorBox } from '../components/ui';
+import { announce, explain, silence } from '../speech';
 // .cv-note lives in canvass.css, which is imported per page rather than globally. Without this a
 // reload or a deep link on this route — a PWA reopening mid-drive — renders the banner unstyled.
 import '../canvass/canvass.css';
@@ -159,6 +162,11 @@ export function DrivePage() {
           touch it while the car is moving, and in Ontario handling a phone while driving is an
           offence. Drive on a charger: continuous GPS with the screen on is heavy on the battery.
         </p>
+        <p>
+          One large card shows the next door ahead of you, how far it is and which side of the road,
+          and moves on by itself as you pass. With your sound up, tapping Start explains it out loud
+          — once, now, while you are parked. The question mark on the next screen repeats it.
+        </p>
         <button
           type="button"
           className="btn btn--primary"
@@ -167,8 +175,12 @@ export function DrivePage() {
             // audible check that the phone will in fact talk to them, made while the car is still
             // parked and they can do something about it; and iOS only permits programmatic speech
             // after an utterance started inside a user gesture, so this is also what unlocks every
-            // later announcement.
-            if (prefs.speak) announce('Drive mode on');
+            // later announcement. This notice is shown once per device, so this tap IS the first time
+            // drive mode is used — which is why it gets the whole explanation rather than a phrase.
+            // Nothing needs to hold the door announcements back for it: parked, there is no heading
+            // and the speech effect says nothing, so the explanation plays out; once the car is
+            // really moving, announce() cancels it for the next door, which is the right priority.
+            if (prefs.speak) explain(DRIVE_HELP.spoken);
             writeSeen();
             setSeen(true);
           }}
@@ -214,6 +226,9 @@ export function DrivePage() {
         >
           {prefs.names ? 'Names: on' : 'Names: off'}
         </button>
+        {/* Follows the Speech toggle: someone who has silenced this screen has silenced its help too,
+            and the dialog still offers "Read it aloud" for the one time they want it. */}
+        <HelpButton topic={DRIVE_HELP} speak={prefs.speak} />
       </div>
       {selection?.current ? (
         <DriveCard c={selection.current} showNames={prefs.names} fallback={selection.fallback} />

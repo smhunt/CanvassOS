@@ -1,7 +1,7 @@
 /* Drive mode. Read from a phone in a windscreen mount, so everything is one size larger than the
    rest of the app and the card carries the whole message without scrolling. */
 .drive-screen { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-/* Three controls now (the link plus the speech and names toggles), and on a narrow phone the row is
+/* Four controls now (the link, the speech and names toggles, and the help button), and on a narrow phone the row is
    too tight for all three at once; without wrap the labels squeeze rather than the row growing a
    second line. Harmless in the landscape block below, where .drive-bar already gets the full row
    width as a flex item of .drive-screen — that's a different flex context from the wrapping here,
