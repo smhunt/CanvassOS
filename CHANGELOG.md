@@ -6,6 +6,15 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/cutover-aws.sh`** — production's move from the office Mac to the AWS box, scripted:
+  `preflight` (read-only), `prepare` (no production impact), `cutover` (the window), `finish` and
+  `rollback [--with-data]`. It refuses to start EC2's tunnel connector until the production tunnel
+  shows zero connectors, stops *every* writer to the Mac's database before dumping it — the API
+  container's five-minute subscriber sync and any dev API included — and gates the switch on an exact
+  per-table count comparison taken while both databases are quiescent.
+
 ### Fixed
 
 - **`/sw.js` is served with `Cache-Control: no-cache`.** Its filename never changes between builds,
