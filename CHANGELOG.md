@@ -4,6 +4,26 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`scripts/cutover-aws.sh`** — production's move from the office Mac to the AWS box, scripted:
+  `preflight` (read-only), `prepare` (no production impact), `cutover` (the window), `finish` and
+  `rollback [--with-data]`. It refuses to start EC2's tunnel connector until the production tunnel
+  shows zero connectors, stops *every* writer to the Mac's database before dumping it — the API
+  container's five-minute subscriber sync and any dev API included — and gates the switch on an exact
+  per-table count comparison taken while both databases are quiescent.
+
+### Fixed
+
+- **`/sw.js` is served with `Cache-Control: no-cache`.** Its filename never changes between builds,
+  unlike the content-hashed files under `/assets`, and Cloudflare was caching it at the edge and
+  handing browsers `max-age=14400`. For up to four hours after a deploy an installed phone could not
+  discover that a new version existed. Found while confirming the 1.1.0 deploy had reached a phone:
+  harmless that day, because navigations are network-first and assets are hashed, but it delays the
+  new precache — which is what makes a new screen work with no signal. Both Caddyfiles carry it.
+
 ## [1.3.0] - 2026-09-20
 
 ### Added
@@ -503,7 +523,11 @@ Phase 3 complete: the app works with no signal, on paper, and on a tablet.
   "no merging" rule was presented as law when it is this campaign's own policy, and the s. 23(8)
   duty to collect written acknowledgements of destruction was missing entirely.
 
-## [Unreleased]
+## Released between 0.3.0 and 0.4.0 — never given a version
+
+_This block was headed "Unreleased" when 0.4.0 was cut on 2026-09-06, and the heading was never
+renamed. Everything in it shipped then. It is relabelled rather than assigned a version number,
+because no release was ever tagged for it._
 
 ### Added
 

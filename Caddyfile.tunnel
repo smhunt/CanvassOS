@@ -30,6 +30,13 @@
 		-Server
 	}
 
+	# The service worker's filename never changes between builds, unlike the content-hashed files
+	# under /assets. Left cacheable, Cloudflare held it at the edge and told browsers max-age=14400,
+	# so for up to four hours after a deploy an installed phone could not learn a new version
+	# existed. no-cache does not forbid keeping a copy — it only makes both of them ask first.
+	@sw path /sw.js
+	header @sw Cache-Control "no-cache"
+
 	log {
 		output stdout
 		format console

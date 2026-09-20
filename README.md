@@ -391,6 +391,36 @@ the purge enumerate what must go. See "Purge, after the election".
 `docker-compose.devdb.yml` still never belongs on this host: it publishes Postgres on a host port.
 </details>
 
+### Cutting production over to AWS
+
+`scripts/cutover-aws.sh` moves production from the office Mac to the EC2 box — and back. Run it on the
+Mac, from the repo root; it drives EC2 over `ssh canvass-prod`.
+
+```bash
+./scripts/cutover-aws.sh preflight   # read-only checks on both machines — safe at any time
+./scripts/cutover-aws.sh prepare     # no production impact: refresh EC2's code, rebuild it, empty its database
+./scripts/cutover-aws.sh cutover     # THE WINDOW, ~15 min: freeze, dump, restore, compare, switch the tunnel
+./scripts/cutover-aws.sh finish      # once checked on a phone: the Mac can no longer resume by accident
+./scripts/cutover-aws.sh rollback    # back onto the Mac  (--with-data once AWS has taken real writes)
+```
+
+It exists to get four things right, each of which loses data quietly:
+
+- **Split brain.** Two `cloudflared` connectors on one tunnel are load-balanced, not failed over. EC2's
+  connector starts only after `cloudflared tunnel info` shows *zero* connectors — never on a timer.
+- **The freeze stops every writer, not just the tunnel.** The Mac's API container runs the subscriber
+  sync every five minutes and writes with no request at all, and a dev API on `:3130` may be
+  connected to the same database. Both are stopped, or the dump and the baseline drift apart.
+- **A 4xx in the window is worse than an outage.** The phone outbox retries a dead host or a 5xx for
+  about seventy minutes but *parks* an entry on any other 4xx. EC2 is never reachable on the real
+  hostname until its row counts match.
+- **The gate is a diff.** Exact per-table counts from both databases, taken while both are
+  quiescent — EC2's API stays stopped until after the comparison — and any difference aborts.
+
+`cutover` leaves `backups/cutover-<stamp>.log`, `.mac.counts` and `.ec2.counts` as the record of the
+move. `finish` deletes the production tunnel credentials from the Mac on purpose; EC2 keeps its copy
+and `rollback` fetches them back from there.
+
 ### Loading the list
 
 Copy the two pipeline outputs to `data/` (they are git-ignored) and load them:
