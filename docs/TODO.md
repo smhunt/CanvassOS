@@ -3,12 +3,23 @@
 Running list of what is asked for, in flight, and deliberately not being built. `CHANGELOG.md` is
 what shipped; `prompt_plan.md` is the phase plan; this is the working queue between them.
 
-Last updated **2026-09-15**.
+Last updated **2026-09-20**.
 
 ---
 
 ## Blocking / highest value
 
+- [ ] **Road-test drive mode.** Merged as 1.1.0 on 2026-09-20 with the selection maths unit-tested
+      (`cd web && npm test`) — and that is all that is proven. Drive a concession road with a known
+      turf and confirm three things: the card advances at the right moment, it names the correct
+      side of the road, and it does not flicker between two neighbouring doors. Also worth checking
+      on the actual iPhone: that speech starts after tapping Start, and that the screen stays awake.
+- [ ] **Deploy 1.1.0.** Merged is not deployed: production still serves the previous build until
+      `make restart-tunnel` is run on the host. Volunteers will not see the **Drive** link before then.
+- [ ] **AWS cutover.** The `ca-central-1` host (mode C) is built and rehearsed; the cutover itself
+      has not been done, so production is still the office Mac. Never run two tunnel connectors for
+      the same hostname at once — Cloudflare load-balances between them, and the two stacks have
+      different databases.
 - [ ] **Run the e2e suite.** `web/tools/e2e.py` had a stale hard-coded admin password and could not
       log in; it now takes `E2E_BASE` / `E2E_EMAIL` / `E2E_PASSWORD`. Point it at the demo stack and
       run it — nobody has yet, so the new UI checks in it are written but unproven.
@@ -42,6 +53,12 @@ Last updated **2026-09-15**.
 
 ## Recently shipped, worth a second look in the field
 
+- [x] **Drive mode (1.1.0).** The next door *ahead* of a vehicle rather than the nearest, which side
+      of the road, spoken aloud, screen kept awake; never speaks a name. Reached from **Drive** on a
+      turf's door screen. Design and plan in `docs/superpowers/`. See the road test above.
+- [x] **1.0.1:** `TRUST_PROXY` is a hop count, not a flag; backups were being encrypted with an
+      empty passphrase on macOS (`.ONESHELL` ignored by Make 3.81) — fixed, and `make backup-offsite`
+      added. Worth taking one backup and restoring it somewhere disposable to see it round-trip.
 - [x] **Diff-based list re-import (0.7.0).** `make import-diff` previews a newer list, `make
       import-apply` applies it in place, keeping every contact, sign, consent record, turf and
       sign-up. Not yet run against a real second export from the clerk — the first real one is

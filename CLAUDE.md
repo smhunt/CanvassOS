@@ -19,8 +19,10 @@ delivery lists, and a map of placed + requested), **doorstep phone/email with pe
 **optional street-level imagery of a door** (off unless `STREETVIEW_API_KEY` is set), **turf
 boundaries on the main map** (`GET /api/turfs/shapes`, scoped; street-picked turfs get an
 approximate hull drawn dotted), **the reachability report** (`GET /api/stats/reachability` +
-`/reports?tab=unreachable`) and **optional Claude-written advice** on it (off unless
-`ADVICE_API_KEY` is set).
+`/reports?tab=unreachable`), **optional Claude-written advice** on it (off unless
+`ADVICE_API_KEY` is set), the **website subscriber link** (phase 8, migrations 006–007) and, in
+1.1.0, **drive mode** (`/canvass/:turfId/drive`: the next door *ahead* of a vehicle, which side of the road,
+spoken aloud; web-only, no endpoint of its own).
 
 **Phase 4 is partly done.** The **diff-based re-import** shipped 2026-09-15 (`make import-diff`, then
 `make import-apply`): it updates the list in place and keeps every contact, sign, consent record,
@@ -93,6 +95,7 @@ npm run typecheck             # tsc --noEmit (also `npm run build`)
 
 cd web && npm install && npm run dev        # https://dev.ecoworks.ca:3030; /api proxied to 3130
 npm run typecheck && npm run build          # tsc then vite build (must emit /app/dist for the image)
+npm test                                    # tsx --test src/canvass/*.test.ts — pure maths, no DOM, no network
 python3 tools/e2e.py                        # Playwright smoke run against `vite preview` (4173) + API 3130
 
 # Migrations against a non-production database
@@ -117,6 +120,9 @@ migrated, and it derives expected counts from `../data/*.csv` (`CANVASS_DATA_DIR
 regression net for the role rules — assertions check that volunteer responses carry none of
 `mailing_address`, `mail_city`, `mail_postal`, `resident_class`, `n_nonresident`, `n_po_box`.
 `api/test/geo.test.ts` is a pure unit test for the point-in-polygon maths and needs no database.
+The web package's only tests are `web/src/canvass/*.test.ts` (`cd web && npm test`): the bearing
+and drive-mode selection maths, run with `tsx --test` to match the api package rather than bringing
+in a second test framework.
 
 Vite serves HTTPS from the shared mkcert cert at `~/Code/.traefik/certs/`, so dev is
 `https://dev.ecoworks.ca:3030` — never `localhost`. Production is unaffected: Caddy owns the edge and
@@ -181,8 +187,8 @@ genuinely needs a spatial operator.
 `/docker-entrypoint-initdb.d/` — it only ever runs against an empty database. Every change after that
 is a file in `db/migrations/`, applied with `make migrate` (`make migrate-status` to see what is
 pending) and recorded in `schema_migration`. **Never edit `db/schema.sql` to change a live stack**; it
-will not re-run, and the two will silently diverge. Applied so far: `001_signs.sql`,
-`002_voter_contact.sql`. Run new migrations against `canvass_test` as well, or the suite drifts out
+will not re-run, and the two will silently diverge. Applied so far: `001_signs.sql` through
+`007_subscriber_link.sql`, all seven (`make migrate-status` is the authority, not this sentence). Run new migrations against `canvass_test` as well, or the suite drifts out
 of shape; `make demo` already applies them to `canvass_demo` when it rebuilds it.
 
 **The test suite has rails; keep them.** `api/test/api.test.ts` throws at import time unless
@@ -313,6 +319,22 @@ mount and removes it on unmount; without that class on the rules, visiting the s
 silently break printing on every other page for the rest of the session. `@page` deliberately does
 not name a paper size — margins fit both A4 and Letter, and `size: A4` makes a Letter tray shrink the
 page. Nothing on the sheet may depend on colour: it comes off a mono laser printer.
+
+**Drive mode never speaks a name, and that is not a preference.** `web/src/pages/DrivePage.tsx`
+has a "Names" toggle for the *card*, and builds the spoken text without consulting it
+(`web/src/canvass/driveSpeech.ts` speaks whatever string it is handed, so that page is the one place
+the rule is kept). Two independent
+reasons: a voice carries outside the car in a way a screen does not, and Chrome/Android may
+synthesise through a *remote* voice, which sends the utterance text to a third party — list data
+"provided to another person" under MEA s. 23(8), the same rule that shapes `streetview.ts` and
+`advice.ts`. The selection maths lives in `web/src/canvass/drive.ts`, pure and tested: along-track
+distance picks the door, the cross-track sign gives the side of the road, and a held door releases
+on a *wider* band than it was acquired on (hysteresis) so GPS noise cannot flip two neighbours. With
+no heading — parked, or iOS reporting `-1` — it falls back to nearest-first, keeps the held door and
+says nothing. It also remembers every door it has seen queued, because between the outbox flushing
+an entry and the doors query refetching, that door has neither a queued result nor a saved one and
+would otherwise be offered again. Its preferences are UI state in `localStorage`
+(`mc-canvass.drive-prefs`); nothing about a door is stored there.
 
 **Four breakpoints, no fifth number.** The scale is documented at the top of `web/src/styles.css`:
 phone (unqualified), compact `max-width: 479.98px`, tablet `min-width: 720px`, desktop
