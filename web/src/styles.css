@@ -1706,6 +1706,40 @@ select {
   overflow-y: auto;
   padding: 0 1rem 1rem;
 }
+/* The footer of turfs/Dialog.tsx. Global, not in turfs.css where it began: a per-page stylesheet
+   only loads with its page, and this dialog now opens from Messaging and from the help button on
+   screens that never import it — where the footer rendered as bare inline buttons. */
+.modal__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+/* Help: a question mark that has to be findable at a glance, so unlike the other icon buttons it
+   keeps a visible ring (.btn--icon alone is borderless, and a bare "?" reads as a typo). */
+.help-btn {
+  border-color: var(--border);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.help {
+  padding-top: 0.75rem;
+}
+.help__section + .help__section {
+  margin-top: 0.85rem;
+}
+.help__heading {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+.help__section p {
+  margin: 0;
+}
 /* Outside the map page nothing positions the wrap, so pin it to the viewport instead.
    Above everything else on the page, including .topbar (30), the nav menu (40) and the install
    banner (60): a modal that the header paints over is a modal whose scrim is lying about what is

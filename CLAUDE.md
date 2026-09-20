@@ -22,7 +22,8 @@ approximate hull drawn dotted), **the reachability report** (`GET /api/stats/rea
 `/reports?tab=unreachable`), **optional Claude-written advice** on it (off unless
 `ADVICE_API_KEY` is set), the **website subscriber link** (phase 8, migrations 006–007) and, in
 1.1.0, **drive mode** (`/canvass/:turfId/drive`: the next door *ahead* of a vehicle, which side of the road,
-spoken aloud; web-only, no endpoint of its own).
+spoken aloud, and from 1.2.0 explaining itself aloud on first use with a help button that repeats
+it; web-only, no endpoint of its own).
 
 **Phase 4 is partly done.** The **diff-based re-import** shipped 2026-09-15 (`make import-diff`, then
 `make import-apply`): it updates the list in place and keeps every contact, sign, consent record,
@@ -322,8 +323,10 @@ page. Nothing on the sheet may depend on colour: it comes off a mono laser print
 
 **Drive mode never speaks a name, and that is not a preference.** `web/src/pages/DrivePage.tsx`
 has a "Names" toggle for the *card*, and builds the spoken text without consulting it
-(`web/src/canvass/driveSpeech.ts` speaks whatever string it is handed, so that page is the one place
-the rule is kept). Two independent
+(`web/src/speech.ts` speaks whatever string it is handed, so its callers are where the rule is
+kept: that page, and the fixed `HelpTopic` scripts such as `web/src/canvass/driveHelp.ts` that
+`components/HelpButton.tsx` reads aloud — a help script is written in advance and never assembled
+from a door). Two independent
 reasons: a voice carries outside the car in a way a screen does not, and Chrome/Android may
 synthesise through a *remote* voice, which sends the utterance text to a third party — list data
 "provided to another person" under MEA s. 23(8), the same rule that shapes `streetview.ts` and

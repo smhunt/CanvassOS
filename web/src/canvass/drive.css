@@ -1,12 +1,19 @@
 /* Drive mode. Read from a phone in a windscreen mount, so everything is one size larger than the
    rest of the app and the card carries the whole message without scrolling. */
 .drive-screen { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-/* Three controls now (the link plus the speech and names toggles), and on a narrow phone the row is
-   too tight for all three at once; without wrap the labels squeeze rather than the row growing a
+/* Four controls now (the link, the speech and names toggles, and the help button), and on a narrow phone the row is
+   too tight for all four at once; without wrap the labels squeeze rather than the row growing a
    second line. Harmless in the landscape block below, where .drive-bar already gets the full row
    width as a flex item of .drive-screen — that's a different flex context from the wrapping here,
    which only governs .drive-bar's own children. */
 .drive-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* On a phone the four add up to about 370px in a 358px row, so the help button wrapped onto a line
+   of its own and pushed the card — the one thing this screen is for — 90px down. The link is the
+   control that can give: at this basis "Back to the list" breaks over two lines and all four share
+   a row. No tap target shrinks; on a narrower phone still, the row wraps as before. */
+@media (max-width: 479.98px) {
+  .drive-bar > a { flex: 0 1 4.5rem; }
+}
 .drive-card { border: 3px solid; border-radius: 12px; padding: 20px; }
 .drive-distance { font-size: 3rem; font-weight: 700; line-height: 1; }
 .drive-address { font-size: 1.5rem; margin-top: 8px; }

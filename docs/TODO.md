@@ -29,6 +29,11 @@ Last updated **2026-09-20**.
 
 ## Asked for, not started
 
+- [ ] **Help button and spoken explanation on the other screens.** The concept shipped on drive mode
+      in 1.2.0 (`components/HelpButton.tsx`, a `HelpTopic` of fixed strings per screen). Rolling it
+      out is mostly writing: one topic each for the door screen, the map, signs, turfs and messaging.
+      Decide per screen whether opening help should speak by default — at a doorstep it should not.
+
 - [ ] **Meta advertising authorization — underway.** Identity confirmation went through on
       2026-09-15; the next step is the confirmation code that arrives by post (3–10 business days
       per the research), then a day or two of disclaimer review. Watch the mail for it.
