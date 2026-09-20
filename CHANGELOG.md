@@ -4,6 +4,36 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-20
+
+### Added
+
+- **Drive mode explains itself aloud on first use.** The once-per-device "Before you drive" notice
+  already had the right moment — parked, phone in hand, about to tap Start — so that tap now speaks
+  the whole explanation instead of "Drive mode on": what the card shows, that it moves on by itself,
+  that a name is never spoken, and to leave the phone in its mount. It needs nothing to hold the door
+  announcements back: parked, there is no heading and drive mode says nothing, so the explanation
+  plays out; once the car is really moving, the next door cuts it off, which is the right priority.
+- **A help button on the drive screen.** A question mark opens a plain explanation of every control
+  on the screen and reads a separate, shorter script aloud. It follows the Speech toggle — someone
+  who has silenced the screen has silenced its help — and the dialog still offers "Read it aloud".
+  Closing the dialog stops the voice. `HelpButton` + a `HelpTopic` are the reusable pieces; drive
+  mode is the first screen to use them, and the other screens are next.
+- **`src/speech.ts` is now the one place the app talks**, with the rule every caller keeps at the
+  top: nothing from the voters list is passed in, because Chrome/Android may synthesise through a
+  remote voice and that is the list "provided to another person" (*MEA* s. 23(8)). Help scripts are
+  fixed strings. `explain()` queues one utterance per sentence, since Chrome silently stops a single
+  long utterance after about fifteen seconds.
+
+### Fixed
+
+- **Dialog footers were unstyled outside the Turfs page.** `.modal__foot` lived in `turfs.css`, a
+  per-page stylesheet, while `Dialog` was also used by Messaging — so the approve and confirm
+  dialogs showed bare inline buttons unless Turfs had been visited earlier in the session. The rule
+  is global now.
+- The drive bar keeps its four controls on one row on a phone, so adding the help button did not
+  push the card down the screen.
+
 ## [1.1.0] - 2026-09-18
 
 ### Added

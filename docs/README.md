@@ -301,8 +301,8 @@ mc-canvass/
 │   │   │                        (nearest-first ordering), useBreakpoint.ts (the tablet stop in TS),
 │   │   │                        SyncStatus.tsx (the queue pill and its panel); drive mode's own files
 │   │   │                        sit alongside it: drive.ts (the along/cross-track selection maths —
-│   │   │                        see below), DriveCard.tsx, driveSpeech.ts (the speech prefs + the
-│   │   │                        announcement), useDriveFix.ts (the GPS feed), useWakeLock.ts
+│   │   │                        see below), DriveCard.tsx, driveSpeech.ts (the speech prefs), driveHelp.ts
+│   │   │                        (its fixed help script), useDriveFix.ts (the GPS feed), useWakeLock.ts
 │   │   ├── signs/               PlaceSignPanel, PhotoCapture/PhotoStrip, PickupPanel,
 │   │   │                        SignRequestsPanel, SignsMap (lazy), geolocation.ts, downscale.ts
 │   │   ├── reports/             follow-up queue and volunteer activity panels
@@ -737,11 +737,23 @@ gesture. While there is no heading nothing is announced at all — a phone stopp
 between course and no course several times, and each flip would re-announce the same door — and the
 door is left unmarked, so it is still spoken once when a real heading arrives. Leaving the screen
 cancels anything still queued (`silence()`), because the utterance queue belongs to the document
-rather than to the component. And the announcement (`driveSpeech.ts`) never includes a name, whatever
+rather than to the component. And the announcement (built in `DrivePage.tsx`, spoken by `src/speech.ts`) never includes a name, whatever
 the on-screen "Names" toggle is set to, for two independent reasons: a voice carries outside the car
 in a way a screen does not, and Chrome/Android may synthesise through a **remote** voice, which sends
 the utterance text to a third party — that would be list data "provided to another person" under
 *MEA* s. 23(8), the rule that also shapes `streetview.ts` and `advice.ts`.
+
+**Help that talks.** `src/speech.ts` is the one module that touches `speechSynthesis`: `announce()`
+for a phrase, `explain()` for a script (one utterance per sentence — Chrome silently stops a single
+long utterance after about fifteen seconds and never fires its end event), `silence()`. The same
+s. 23(8) rule is stated at the top of that file as a rule for every caller. `components/HelpButton.tsx`
+takes a `HelpTopic` — on-screen `sections` plus a separate `spoken` script, both fixed strings
+declared beside the screen they describe — opens it in `turfs/Dialog.tsx`, and starts reading
+**inside the click handler**, because iOS refuses speech that does not begin in a user gesture and an
+effect runs after the gesture has ended. Closing the dialog calls `silence()`. Drive mode is the
+first user: its once-per-device Start tap speaks `DRIVE_HELP.spoken`, and the drive bar's question
+mark repeats it. Nothing gates the door announcements while it plays, deliberately — parked there is
+no heading and so no announcement to collide with; moving, the next door *should* win.
 
 Drive mode is entered from the **Drive** link in the door screen's header, among the list view's own
 controls. It is gated on `view === 'list'` although it is not a way of ordering the list, because in
