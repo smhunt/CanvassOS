@@ -270,13 +270,19 @@ export const HOW_IT_WORKS: HowItWorksStep[] = [
   {
     title: 'Check the numbers on Stats',
     description:
-      'Stats holds the shape of the municipality: totals, doors and voters by ward and by community, voters per door, and record quality. The canvass figures stay at zero until door-knocking starts in Phase 2.',
+      'Stats holds the shape of the municipality: totals, doors and voters by ward and by community, voters per door, and record quality. The canvass figures fill in as doors are knocked.',
     icon: '📊',
+  },
+  {
+    title: 'Driving a rural turf',
+    description:
+      'Open a turf and tap Drive. One large card shows the next door ahead of you, how far it is and which side of the road, and it moves on by itself as you pass. It reads the door aloud so you never touch the phone while moving, and it keeps the screen awake. It never says a name out loud. Mount the phone, plug it in, and let a passenger do the tapping if you have one.',
+    icon: '🚗',
   },
   {
     title: 'Install it on your phone',
     description:
-      'Open the site in your phone browser and choose "Add to Home Screen". It then launches like an app. The screens load without a signal, but the voter data still needs one — offline turfs come in Phase 3.',
+      'Open the site in your phone browser and choose "Add to Home Screen". It then launches like an app. A turf you have opened keeps working with no signal: results wait on the phone and send themselves when it comes back.',
     icon: '📲',
   },
   {
@@ -343,6 +349,16 @@ export const ROADMAP: RoadmapGroup[] = [
       { label: 'Printable paper turf sheet, for a dead battery or no signal at all', priority: 'medium', done: true },
       { label: 'Add to home screen, so it opens like an app', priority: 'medium', done: true },
       { label: 'Street-level image of a door — optional, off unless a key is configured', priority: 'low', done: true },
+    ],
+  },
+  {
+    category: 'Shipped — drive mode, for the concession roads',
+    icon: '✅',
+    items: [
+      { label: 'The next door ahead of the vehicle, not the nearest — with distance and side of the road', priority: 'high', done: true },
+      { label: 'Reads the next door aloud and keeps the screen awake, so the phone is never touched while moving', priority: 'high', done: true },
+      { label: 'Never speaks a name, whatever the on-screen toggle says', priority: 'high', done: true },
+      { label: 'Road test on a real concession road', priority: 'high' },
     ],
   },
   {
