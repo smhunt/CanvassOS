@@ -59,6 +59,12 @@ touched while the car is moving. Nearest-first is the wrong question at the whee
 is often the one just gone by. It never speaks a name, whatever the on-screen toggle says: a voice
 carries outside the car, and some phones synthesise speech on someone else's server.
 
+The first time someone taps Start it explains itself out loud — parked, phone in hand, the one
+moment it is safe to listen — and a question mark on the screen repeats that, with the same words
+written out. The voice it speaks in is each volunteer's choice, under **Account → Voice**; voices that
+are synthesised by an outside service are labelled as such. That help button is built to be reused:
+one fixed script per screen, and the other screens are next.
+
 **Organisers, on a laptop.** The whole municipality on a map with clustered doors, coloured by ward,
 community, electors per door, record quality, non-resident owners or latest canvass result. Cut a
 turf by picking streets or by drawing a polygon, with the door and elector counts updating live and
@@ -802,7 +808,7 @@ as `resident_class = 'non-resident'`, which is 390.
 
 ## Status
 
-Honest version, as of v1.1.0:
+Honest version, as of v1.3.0:
 
 | Phase | State |
 |---|---|
@@ -810,7 +816,7 @@ Honest version, as of v1.1.0:
 | **2 — Canvassing core** | **Shipped.** Turfs from streets or a drawn polygon, assignments, the phone door screen, volunteers scoped to their turfs, latest-status colouring, follow-up queue, volunteer activity. |
 | **Lawn signs** (not in the original plan) | **Shipped.** GPS placement with accuracy and photo, boundary check, pickup list, delivery list from `contact.wants_sign`. |
 | **3 — Field hardening** | **Shipped.** Offline write queue and turf cache, sign photos held until they can upload, nearest-first ordering, the printable paper turf sheet, add-to-home-screen, and a proper tablet layout. |
-| **Drive mode** (not in the original plan) | **Shipped in 1.1.0, not yet road-tested.** The next door ahead of a vehicle rather than the nearest, side of the road, hands-free speech, screen kept awake. The selection maths is unit-tested; the test that counts is a real concession road, and that has not happened yet. |
+| **Drive mode** (not in the original plan) | **Shipped in 1.1.0, not yet road-tested.** The next door ahead of a vehicle rather than the nearest, side of the road, hands-free speech, screen kept awake. 1.2.0 made it explain itself aloud on first use, with a help button that repeats it; 1.3.0 lets each volunteer choose the voice, under Account. The selection maths is unit-tested; the test that counts is a real concession road, and that has not happened yet. |
 | **4 — Reporting and admin** | **Partly shipped.** The diff-based re-import is done (`make import-diff`, then `make import-apply`): a newer list is applied in place and every contact, sign, consent record, turf and sign-up is kept. **Still planned:** coverage and support reports by ward / community / turf / day, and CSV export with an audit entry per download. |
 | **5 — Opt-in messaging** | **Shipped, sending switched off by default.** SMS with email fallback to electors who said yes, consent per purpose, STOP honoured before the next send, CRTC hours enforced in code, a test-send and a typed-word approval before anything goes out, a drip across the day. `MESSAGING_PROVIDER=log` until a provider is configured. |
 | **6 — Advertising**, **7 — Notifications** | **Planned.** Designs in [`docs/phase-6-advertising-plan.md`](docs/phase-6-advertising-plan.md) and [`docs/phase-7-notifications-plan.md`](docs/phase-7-notifications-plan.md). |

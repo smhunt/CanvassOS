@@ -14,10 +14,13 @@ Last updated **2026-09-20**.
       turf and confirm three things: the card advances at the right moment, it names the correct
       side of the road, and it does not flicker between two neighbouring doors. Also worth checking
       on the actual iPhone: that speech starts after tapping Start, and that the screen stays awake.
-- [ ] **Deploy 1.2.0.** Production serves **1.1.0** (checked 2026-09-20: the live bundle carries the
-      drive route), so volunteers already have the **Drive** link. What they do not have is 1.2.0 —
-      the spoken explanation and the help button — until `make restart-tunnel` is run on the host.
-      Merged is not deployed.
+- [ ] **Deploy 1.3.0.** Production serves **1.1.0** (checked 2026-09-20: the live bundle carries the
+      drive route), so volunteers already have the **Drive** link. What they do not have is 1.2.0
+      (the spoken explanation and the help button) and 1.3.0 (the voice picker under Account) —
+      until `make restart-tunnel` is run on the host. Merged is not deployed.
+- [ ] **Listen to it on the actual iPhone.** Speech starts inside a tap everywhere, which is what iOS
+      requires, but that has been reasoned and stub-tested, not heard. Check: Start speaks, the
+      question mark speaks, and Account → Voice lists voices and the sample plays in the chosen one.
 - [ ] **AWS cutover.** The `ca-central-1` host (mode C) is built and rehearsed; the cutover itself
       has not been done, so production is still the office Mac. Never run two tunnel connectors for
       the same hostname at once — Cloudflare load-balances between them, and the two stacks have
