@@ -4,6 +4,22 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-20
+
+### Added
+
+- **A voice picker in Account settings.** Whichever voice is chosen is used everywhere the app
+  talks — drive mode's announcements and every help script — because it is applied inside
+  `src/speech.ts`, to every utterance, rather than by each caller. Choosing a voice plays a fixed
+  sample from inside the change event, so choosing *is* hearing, and iOS (which only speaks from a
+  user gesture) allows it. English voices by default, every language on request, and a saved voice
+  the browser no longer lists falls back to the default rather than to silence. It is a per-device
+  UI preference in `localStorage` (`mc-canvass.voice`): a voice URI means nothing to another browser.
+- **Online voices are labelled, and explained when picked.** A voice with `localService: false` is
+  synthesised by its provider, so the text leaves the device. That is acceptable only because of the
+  rule at the top of `src/speech.ts` — nothing from the voters list is ever spoken — and the picker
+  says so in plain words rather than hiding those voices.
+
 ## [1.2.0] - 2026-09-20
 
 ### Added

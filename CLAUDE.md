@@ -337,7 +337,11 @@ no heading — parked, or iOS reporting `-1` — it falls back to nearest-first,
 says nothing. It also remembers every door it has seen queued, because between the outbox flushing
 an entry and the doors query refetching, that door has neither a queued result nor a saved one and
 would otherwise be offered again. Its preferences are UI state in `localStorage`
-(`mc-canvass.drive-prefs`); nothing about a door is stored there.
+(`mc-canvass.drive-prefs`); nothing about a door is stored there. The **voice** is chosen under
+Account (`components/VoiceSettings.tsx`, `mc-canvass.voice`) and applied inside `speech.ts` to every
+utterance. The picker offers *online* voices, which send the text to a third party — that is only
+tolerable because of the rule above, so anything that ever wants to speak list data must not go
+through `speech.ts` at all.
 
 **Four breakpoints, no fifth number.** The scale is documented at the top of `web/src/styles.css`:
 phone (unqualified), compact `max-width: 479.98px`, tablet `min-width: 720px`, desktop

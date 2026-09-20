@@ -755,6 +755,13 @@ first user: its once-per-device Start tap speaks `DRIVE_HELP.spoken`, and the dr
 mark repeats it. Nothing gates the door announcements while it plays, deliberately — parked there is
 no heading and so no announcement to collide with; moving, the next door *should* win.
 
+**The voice** is a per-device preference (`mc-canvass.voice`, a `voiceURI`) set under Account by
+`components/VoiceSettings.tsx` and applied in one place, `utter()` in `speech.ts`, so no caller knows
+it exists. `getVoices()` is empty on Chrome until it has been asked once, hence the call at module
+load and the `voiceschanged` subscription in the picker. A stored URI the browser no longer lists
+falls back to the default voice. Voices with `localService: false` are labelled "online" and explained
+when chosen: they are synthesised off-device, which the never-speak-list-data rule is what permits.
+
 Drive mode is entered from the **Drive** link in the door screen's header, among the list view's own
 controls. It is gated on `view === 'list'` although it is not a way of ordering the list, because in
 map view the Map toggle has to be the only child of `.cv-head__controls`: that is what the
