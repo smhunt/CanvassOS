@@ -51,6 +51,14 @@ the order you pass them. Eight one-thumb result buttons; seven of them record in
 Volunteers see voter names at doors inside their own turfs, because you need a name to knock, and
 never mailing addresses, resident status, or anything outside their turfs.
 
+**Volunteers, in a car.** Most of this municipality is concession roads, where the next door is a
+kilometre on and nobody walks it. **Drive mode** (the **Drive** link on a turf's door screen) is one
+glanceable card: the next door *ahead* of the vehicle, how far, and which side of the road. It moves
+on by itself as you pass, keeps the screen awake, and reads the door aloud so the phone is never
+touched while the car is moving. Nearest-first is the wrong question at the wheel — the closest door
+is often the one just gone by. It never speaks a name, whatever the on-screen toggle says: a voice
+carries outside the car, and some phones synthesise speech on someone else's server.
+
 **Organisers, on a laptop.** The whole municipality on a map with clustered doors, coloured by ward,
 community, electors per door, record quality, non-resident owners or latest canvass result. Cut a
 turf by picking streets or by drawing a polygon, with the door and elector counts updating live and
@@ -110,7 +118,8 @@ retried must not become two knocks at the same door.
 So **every write carries a client-generated idempotency key**. `contact.client_id` and
 `sign.client_id` are `UNIQUE`; the insert is `ON CONFLICT (client_id) DO NOTHING` plus a re-select
 in one transaction, and a replay returns `200` with the stored row instead of `201` and a duplicate.
-It is not audited twice either. That seam is what the Phase 3 offline queue will drain into.
+It is not audited twice either. That seam is what the offline queue drains into: results recorded with
+no signal wait on the phone and replay when it comes back, and a replay cannot double-count.
 
 And when the phone dies entirely, there is a **printable turf sheet** — doors in walking order, on
 paper, in a pocket.
@@ -712,6 +721,12 @@ of a running system. Keep it. The suite is also the regression net for the role 
 that volunteer responses carry none of `mailing_address`, `mail_city`, `mail_postal`,
 `resident_class`, `n_nonresident`, `n_po_box`.
 
+The web package has a much smaller, safe one — pure maths, no database, no DOM, no network:
+
+```bash
+cd web && npm test      # tsx --test src/canvass/*.test.ts: bearings and drive mode's door selection
+```
+
 <details>
 <summary><b>web/Dockerfile contract — easy to break, so read before touching that image</b></summary>
 
@@ -787,7 +802,7 @@ as `resident_class = 'non-resident'`, which is 390.
 
 ## Status
 
-Honest version, as of v0.6.0:
+Honest version, as of v1.1.0:
 
 | Phase | State |
 |---|---|
@@ -795,8 +810,11 @@ Honest version, as of v0.6.0:
 | **2 — Canvassing core** | **Shipped.** Turfs from streets or a drawn polygon, assignments, the phone door screen, volunteers scoped to their turfs, latest-status colouring, follow-up queue, volunteer activity. |
 | **Lawn signs** (not in the original plan) | **Shipped.** GPS placement with accuracy and photo, boundary check, pickup list, delivery list from `contact.wants_sign`. |
 | **3 — Field hardening** | **Shipped.** Offline write queue and turf cache, sign photos held until they can upload, nearest-first ordering, the printable paper turf sheet, add-to-home-screen, and a proper tablet layout. |
-| **4 — Reporting and admin** | **Planned.** Coverage and support reports by ward / community / turf / day, CSV export with an audit entry per download, diff-based re-import that preserves contacts. |
-| **8 — Website subscriber link** (5–7 tracked in `docs/TODO.md`) | **Shipped.** Five-minute pull sync from the campaign website, local exact + fuzzy voter matching, the organiser Sign-ups queue with one-click confirmation, and a decision ledger that survives re-imports. |
+| **Drive mode** (not in the original plan) | **Shipped in 1.1.0, not yet road-tested.** The next door ahead of a vehicle rather than the nearest, side of the road, hands-free speech, screen kept awake. The selection maths is unit-tested; the test that counts is a real concession road, and that has not happened yet. |
+| **4 — Reporting and admin** | **Partly shipped.** The diff-based re-import is done (`make import-diff`, then `make import-apply`): a newer list is applied in place and every contact, sign, consent record, turf and sign-up is kept. **Still planned:** coverage and support reports by ward / community / turf / day, and CSV export with an audit entry per download. |
+| **5 — Opt-in messaging** | **Shipped, sending switched off by default.** SMS with email fallback to electors who said yes, consent per purpose, STOP honoured before the next send, CRTC hours enforced in code, a test-send and a typed-word approval before anything goes out, a drip across the day. `MESSAGING_PROVIDER=log` until a provider is configured. |
+| **6 — Advertising**, **7 — Notifications** | **Planned.** Designs in [`docs/phase-6-advertising-plan.md`](docs/phase-6-advertising-plan.md) and [`docs/phase-7-notifications-plan.md`](docs/phase-7-notifications-plan.md). |
+| **8 — Website subscriber link** | **Shipped.** Five-minute pull sync from the campaign website, local exact + fuzzy voter matching, the organiser Sign-ups queue with one-click confirmation, and a decision ledger that survives re-imports. |
 
 Full history is in [`CHANGELOG.md`](CHANGELOG.md), and the same changelog, roadmap and a
 "how it works" guide are readable inside the app from the account page.
@@ -810,6 +828,8 @@ Full history is in [`CHANGELOG.md`](CHANGELOG.md), and the same changelog, roadm
 | [`CLAUDE.md`](CLAUDE.md) | Working conventions for changing this codebase |
 | [`prompt_plan.md`](prompt_plan.md) | The four phases and what is deliberately deferred |
 | [`CHANGELOG.md`](CHANGELOG.md) | Version history |
+| [`docs/TODO.md`](docs/TODO.md) | What is blocking, what was asked for and not started, and what is deliberately not being built |
+| [`docs/superpowers/`](docs/superpowers/) | Design specs and implementation plans for individual features (drive mode so far) |
 
 ## Licence
 
