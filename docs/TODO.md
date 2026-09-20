@@ -9,13 +9,15 @@ Last updated **2026-09-20**.
 
 ## Blocking / highest value
 
-- [ ] **Road-test drive mode.** Merged as 1.1.0 on 2026-09-20 with the selection maths unit-tested
+- [ ] **Road-test drive mode.** Live in production as 1.1.0, with the selection maths unit-tested
       (`cd web && npm test`) — and that is all that is proven. Drive a concession road with a known
       turf and confirm three things: the card advances at the right moment, it names the correct
       side of the road, and it does not flicker between two neighbouring doors. Also worth checking
       on the actual iPhone: that speech starts after tapping Start, and that the screen stays awake.
-- [ ] **Deploy 1.1.0.** Merged is not deployed: production still serves the previous build until
-      `make restart-tunnel` is run on the host. Volunteers will not see the **Drive** link before then.
+- [ ] **Deploy 1.2.0.** Production serves **1.1.0** (checked 2026-09-20: the live bundle carries the
+      drive route), so volunteers already have the **Drive** link. What they do not have is 1.2.0 —
+      the spoken explanation and the help button — until `make restart-tunnel` is run on the host.
+      Merged is not deployed.
 - [ ] **AWS cutover.** The `ca-central-1` host (mode C) is built and rehearsed; the cutover itself
       has not been done, so production is still the office Mac. Never run two tunnel connectors for
       the same hostname at once — Cloudflare load-balances between them, and the two stacks have
