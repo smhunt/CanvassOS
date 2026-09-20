@@ -487,7 +487,11 @@ Phase 3 complete: the app works with no signal, on paper, and on a tablet.
   "no merging" rule was presented as law when it is this campaign's own policy, and the s. 23(8)
   duty to collect written acknowledgements of destruction was missing entirely.
 
-## [Unreleased]
+## Released between 0.3.0 and 0.4.0 — never given a version
+
+_This block was headed "Unreleased" when 0.4.0 was cut on 2026-09-06, and the heading was never
+renamed. Everything in it shipped then. It is relabelled rather than assigned a version number,
+because no release was ever tagged for it._
 
 ### Added
 
