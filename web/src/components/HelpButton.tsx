@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Dialog } from '../turfs/Dialog';
 import { canSpeak, explain, silence } from '../speech';
 
@@ -19,6 +19,9 @@ interface Props {
   /** Whether opening the dialog also reads it aloud. The screen decides: drive mode passes its own
    *  Speech toggle, so somebody who has silenced the screen is not surprised by the help. */
   speak: boolean;
+  /** Called after the dialog has closed and the voice has been stopped. For a screen that speaks on
+   *  its own account and needs to know that whatever it was saying has just been cut off. */
+  onClose?: () => void;
 }
 
 /**
@@ -27,13 +30,24 @@ interface Props {
  * and an effect runs after the gesture has ended. Closing the dialog stops the voice — someone who
  * has dismissed the explanation has finished listening to it.
  */
-export function HelpButton({ topic, speak }: Props) {
+export function HelpButton({ topic, speak, onClose }: Props) {
   const [open, setOpen] = useState(false);
   const titleId = useId();
   const close = () => {
     silence();
     setOpen(false);
+    onClose?.();
   };
+
+  // A route change while the dialog is open unmounts this without ever calling close(), and the
+  // utterance queue belongs to the document: the script would carry on for twenty seconds over
+  // whatever screen came next. Gated on `open`, not unconditional — on the drive screen this button
+  // unmounts whenever the bar does (a GPS failure, a refetch), and a cleanup that always ran would
+  // cut off a door announcement that had nothing to do with help.
+  useEffect(() => {
+    if (!open) return;
+    return () => silence();
+  }, [open]);
 
   return (
     <>

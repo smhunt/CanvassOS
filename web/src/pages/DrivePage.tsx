@@ -228,7 +228,17 @@ export function DrivePage() {
         </button>
         {/* Follows the Speech toggle: someone who has silenced this screen has silenced its help too,
             and the dialog still offers "Read it aloud" for the one time they want it. */}
-        <HelpButton topic={DRIVE_HELP} speak={prefs.speak} />
+        {/* Opening help while moving — a passenger's tap — cancels the door being announced, and
+            closing it cancels the rest; spokenFor would still name that door, so it would never be
+            said again and the driver could pass it in silence. Forgetting it here costs one repeat
+            at worst. Parked, this changes nothing: with no heading spokenFor is never written. */}
+        <HelpButton
+          topic={DRIVE_HELP}
+          speak={prefs.speak}
+          onClose={() => {
+            spokenFor.current = null;
+          }}
+        />
       </div>
       {selection?.current ? (
         <DriveCard c={selection.current} showNames={prefs.names} fallback={selection.fallback} />
