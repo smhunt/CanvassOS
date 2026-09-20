@@ -213,7 +213,13 @@ mc-canvass/
 │   │                            ONLY on the first boot of an empty pgdata volume. It never re-runs.
 │   ├── migrations/              every change since then, in filename order
 │   │   ├── 001_signs.sql        sign, sign_photo, sign_status
-│   │   └── 002_voter_contact.sql voter_contact, contact_channel
+│   │   ├── 002_voter_contact.sql voter_contact, contact_channel
+│   │   ├── 003_messaging.sql    message_campaign, message_send, message_inbound, sender_number,
+│   │   │                        subscribe_pending (everything downstream of consent)
+│   │   ├── 004_subscriber_contacts.sql  voter_contact.source; a contact need not be a door on the list
+│   │   ├── 005_sign_request_address.sql sign_address: where the sign was actually asked for
+│   │   ├── 006_public_requests.sql      public_request: website sign-ups, never merged into the list
+│   │   └── 007_subscriber_link.sql      subscriber_link, match_candidate (the phase 8 matcher)
 │   └── migrate.sh               applies pending migrations, records them in schema_migration
 │
 ├── importer/                    one-shot loader: import.py (stdlib + psycopg), diff.py (the pure re-import
@@ -320,7 +326,8 @@ recorded in the `schema_migration` table that `db/migrate.sh` creates on demand
 together, so a failure leaves nothing half-applied, and "pending" is simply "a file in
 `db/migrations/` whose basename is not a row in that table".
 
-Two migrations have been applied: `001_signs.sql` and `002_voter_contact.sql`. They have to be
+Seven migrations have been applied, `001_signs.sql` through `007_subscriber_link.sql`, and none is
+pending (`make migrate-status` is the authority; this sentence goes stale). They have to be
 applied to `canvass_test` and `canvass_demo` as well, or the test suite and the demo drift out of
 shape — `make demo` does exactly that (`schema.sql` into a fresh database, then `migrate.sh`).
 
