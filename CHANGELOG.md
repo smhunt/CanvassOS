@@ -23,6 +23,12 @@ All notable changes to CanvassOS are recorded here. The format follows
   discover that a new version existed. Found while confirming the 1.1.0 deploy had reached a phone:
   harmless that day, because navigations are network-first and assets are hashed, but it delays the
   new precache — which is what makes a new screen work with no signal. Both Caddyfiles carry it.
+- **The `/sw.js` no-cache rule was committed but never live.** `make restart-tunnel` does not
+  restart Caddy when only the bind-mounted Caddyfile has changed, so production kept serving the
+  old config. Reloaded in place on 2026-09-21 during the 1.3.0 deploy, and the stale edge copy of
+  `/sw.js` purged by URL. `CLAUDE.md` has the landmine and the reload command. Still open:
+  Cloudflare's zone-wide Browser Cache TTL rewrites the header to four hours on the way to the
+  browser (`docs/TODO.md`).
 
 ## [1.3.0] - 2026-09-20
 
