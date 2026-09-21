@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,14 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.4.0',
+    date: '2026-09-21',
+    changes: [
+      'Every screen now has a question mark in the top bar. Tap it for a plain explanation of what is on that screen and what each button does.',
+      'It stays quiet when it opens — a phone should not start talking at someone\u2019s door. Tap "Read it aloud" in the explanation to hear it in your chosen voice.',
+    ],
+  },
   {
     version: '1.3.0',
     date: '2026-09-20',
@@ -377,7 +385,7 @@ export const ROADMAP: RoadmapGroup[] = [
       { label: 'Never speaks a name, whatever the on-screen toggle says', priority: 'high', done: true },
       { label: 'Explains itself aloud on first use, with a help button that repeats it', priority: 'medium', done: true },
       { label: 'Choose the voice it speaks in, from Account', priority: 'low', done: true },
-      { label: 'The same help button and spoken explanation on the other screens', priority: 'medium' },
+      { label: 'The same help button and spoken explanation on every other screen', priority: 'medium', done: true },
       { label: 'Road test on a real concession road', priority: 'high' },
     ],
   },

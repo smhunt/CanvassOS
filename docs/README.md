@@ -755,6 +755,15 @@ first user: its once-per-device Start tap speaks `DRIVE_HELP.spoken`, and the dr
 mark repeats it. Nothing gates the door announcements while it plays, deliberately — parked there is
 no heading and so no announcement to collide with; moving, the next door *should* win.
 
+**Help on every screen (1.4.0).** The shell renders one `HelpButton` in the top bar with
+`helpFor(location.pathname)` from `src/help/route.ts` — a pure function over the route table, so a
+new screen means a new `HelpTopic` in `src/help/topics.ts` and one line there, and the tests fail
+until it is reachable. It opens **silently** (`speak={false}`); drive mode's own button, on the
+drive bar, is the one that speaks on open, and the top bar shows nothing on `/canvass/:id/drive` so
+the two never sit together. It is keyed by title, so a route change with the dialog open remounts it
+and stops the old script. The dialog is portalled to `<body>` because `.topbar` is a stacking
+context (z-index 30) and sets `color: var(--brand-ink)`.
+
 **The voice** is a per-device preference (`mc-canvass.voice`, a `voiceURI`) set under Account by
 `components/VoiceSettings.tsx` and applied in one place, `utter()` in `speech.ts`, so no caller knows
 it exists. `getVoices()` is empty on Chrome until it has been asked once, hence the call at module

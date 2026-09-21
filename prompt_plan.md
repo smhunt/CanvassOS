@@ -100,6 +100,10 @@ screen has to be able to explain itself by ear. Released as **1.2.0** and **1.3.
 Proven in a headless browser with a stubbed speech engine; **not yet heard on an iPhone**, where the
 user-gesture rule is respected by construction rather than by test.
 
+- **Every screen (1.4.0, 2026-09-21).** The `?` moved into the top bar, chosen by route, with a
+  topic for each of the twelve screens. It opens silently everywhere but drive mode, because the
+  rest of the app is used at doorsteps and desks; "Read it aloud" is one tap away in each dialog.
+
 ### Phase 5 planned — 2026-09-06
 
 **SMS and email to electors who opted in.** SMS is the priority channel; email is the fallback; a

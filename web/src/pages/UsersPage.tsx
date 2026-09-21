@@ -200,8 +200,8 @@ export function UsersPage() {
           </div>
         )}
         <p className="muted small">
-          Roles: <RoleChip role="volunteer" /> map points only · <RoleChip role="organizer" /> cards, search, stats ·{' '}
-          <RoleChip role="admin" /> + users and audit.
+          Roles: <RoleChip role="volunteer" /> the doors in their own turfs · <RoleChip role="organizer" /> every door,
+          turfs, search, reports and messaging · <RoleChip role="admin" /> + users and audit.
         </p>
       </section>
     </div>

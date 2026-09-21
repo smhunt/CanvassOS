@@ -3,6 +3,8 @@ import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom
 import { useMeta } from '../api/hooks';
 import type { User } from '../api/types';
 import { isAdmin, isOrganizer } from '../auth';
+import { helpFor } from '../help/route';
+import { HelpButton } from './HelpButton';
 import { RoleChip } from './ui';
 
 export function useUser(): User {
@@ -22,6 +24,7 @@ export function Shell() {
   const user = useUser();
   const loc = useLocation();
   const isMap = loc.pathname.startsWith('/map');
+  const help = helpFor(loc.pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +79,11 @@ export function Shell() {
           </span>
           <RoleChip role={user.role} />
         </div>
+        {/* Silent on open (speak={false}), unlike drive mode's: this one is used at a doorstep, in a
+            meeting, on a laptop in an office — places a phone should not start talking unasked. The
+            dialog's "Read it aloud" is one tap away. Keyed by title so moving to another screen with
+            the dialog open (the back button) remounts it: the old script stops, the new one is closed. */}
+        {help && <HelpButton key={help.title} topic={help} speak={false} className="topbar__help" />}
         <div className="topbar__menu" ref={menuRef}>
           <button
             type="button"

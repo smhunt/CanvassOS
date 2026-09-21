@@ -36,10 +36,11 @@ Last updated **2026-09-21**.
 
 ## Asked for, not started
 
-- [ ] **Help button and spoken explanation on the other screens.** The concept shipped on drive mode
-      in 1.2.0 (`components/HelpButton.tsx`, a `HelpTopic` of fixed strings per screen). Rolling it
-      out is mostly writing: one topic each for the door screen, the map, signs, turfs and messaging.
-      Decide per screen whether opening help should speak by default — at a doorstep it should not.
+- [x] **Help on every screen (1.4.0).** A `?` in the top bar, chosen by route (`help/route.ts`),
+      one fixed `HelpTopic` per screen in `help/topics.ts`. Silent on open everywhere except drive
+      mode, which keeps its own speaking button; "Read it aloud" is in every dialog. Worth a read
+      by someone who has not seen the app: the copy was written from the code, not from watching a
+      volunteer use it.
 
 - [ ] **Meta advertising authorization — underway.** Identity confirmation went through on
       2026-09-15; the next step is the confirmation code that arrives by post (3–10 business days

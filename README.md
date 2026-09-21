@@ -62,8 +62,11 @@ carries outside the car, and some phones synthesise speech on someone else's ser
 The first time someone taps Start it explains itself out loud — parked, phone in hand, the one
 moment it is safe to listen — and a question mark on the screen repeats that, with the same words
 written out. The voice it speaks in is each volunteer's choice, under **Account → Voice**; voices that
-are synthesised by an outside service are labelled as such. That help button is built to be reused:
-one fixed script per screen, and the other screens are next.
+are synthesised by an outside service are labelled as such.
+
+**Help on every screen.** A question mark in the top bar explains the screen you are on — its real
+buttons and what they do — and reads it aloud on request, in the voice you chose. It stays quiet
+when it opens, because most screens are used at a doorstep or a desk; only drive mode talks unasked.
 
 **Organisers, on a laptop.** The whole municipality on a map with clustered doors, coloured by ward,
 community, electors per door, record quality, non-resident owners or latest canvass result. Cut a
@@ -838,7 +841,7 @@ as `resident_class = 'non-resident'`, which is 390.
 
 ## Status
 
-Honest version, as of v1.3.0:
+Honest version, as of v1.4.0:
 
 | Phase | State |
 |---|---|

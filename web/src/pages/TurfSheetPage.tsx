@@ -46,6 +46,7 @@ function VolunteerSheet({ turfId, name }: { turfId: string | undefined; name: st
 }
 
 function Sheet({ turfId, assignedTo, dueDate }: { turfId: string | undefined; assignedTo: string[]; dueDate: string | null }) {
+  const user = useUser();
   const doors = useDoors(turfId);
 
   if (doors.isPending) return <LoadingList rows={10} label="Building the sheet…" />;
@@ -71,7 +72,8 @@ function Sheet({ turfId, assignedTo, dueDate }: { turfId: string | undefined; as
       <div className="ts-toolbar">
         <div className="ts-toolbar__links">
           <Link to={`/canvass/${turf.id}`}>← Door screen</Link>
-          <Link to="/turfs">All turfs</Link>
+          {/* Shared by both roles; /turfs is organizer-only. */}
+          {isOrganizer(user) ? <Link to="/turfs">All turfs</Link> : <Link to="/canvass?list=1">My turfs</Link>}
         </div>
         {/* iOS ignores window.print() in an installed web app — silently, which is worse than an
             error: the button looks broken. window.open() from a standalone PWA hands the URL to

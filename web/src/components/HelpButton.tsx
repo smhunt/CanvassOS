@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Dialog } from '../turfs/Dialog';
 import { canSpeak, explain, silence } from '../speech';
 
@@ -22,6 +23,8 @@ interface Props {
   /** Called after the dialog has closed and the voice has been stopped. For a screen that speaks on
    *  its own account and needs to know that whatever it was saying has just been cut off. */
   onClose?: () => void;
+  /** Extra class on the button, for where it sits (the top bar recolours it). */
+  className?: string;
 }
 
 /**
@@ -30,7 +33,7 @@ interface Props {
  * and an effect runs after the gesture has ended. Closing the dialog stops the voice — someone who
  * has dismissed the explanation has finished listening to it.
  */
-export function HelpButton({ topic, speak, onClose }: Props) {
+export function HelpButton({ topic, speak, onClose, className }: Props) {
   const [open, setOpen] = useState(false);
   const titleId = useId();
   const close = () => {
@@ -53,7 +56,7 @@ export function HelpButton({ topic, speak, onClose }: Props) {
     <>
       <button
         type="button"
-        className="btn btn--icon help-btn"
+        className={`btn btn--icon help-btn${className ? ` ${className}` : ''}`}
         aria-label={topic.title}
         aria-haspopup="dialog"
         onClick={() => {
@@ -63,34 +66,39 @@ export function HelpButton({ topic, speak, onClose }: Props) {
       >
         <span aria-hidden="true">?</span>
       </button>
-      {open && (
-        <Dialog
-          title={topic.title}
-          titleId={titleId}
-          onClose={close}
-          footer={
-            <>
-              {canSpeak() && (
-                <button type="button" className="btn" onClick={() => explain(topic.spoken)}>
-                  Read it aloud
+      {/* Portalled to <body>: the top bar is its own stacking context (z-index 30, below the install
+          banner) and sets a white text colour, and a dialog rendered inside it would inherit both —
+          painted under the banner, in white on a white card. Same escape as DrawPolygon's dialog. */}
+      {open &&
+        createPortal(
+          <Dialog
+            title={topic.title}
+            titleId={titleId}
+            onClose={close}
+            footer={
+              <>
+                {canSpeak() && (
+                  <button type="button" className="btn" onClick={() => explain(topic.spoken)}>
+                    Read it aloud
+                  </button>
+                )}
+                <button type="button" className="btn btn--primary" onClick={close}>
+                  Got it
                 </button>
-              )}
-              <button type="button" className="btn btn--primary" onClick={close}>
-                Got it
-              </button>
-            </>
-          }
-        >
-          <div className="modal__body help">
-            {topic.sections.map((s) => (
-              <section key={s.heading} className="help__section">
-                <h3 className="help__heading">{s.heading}</h3>
-                <p>{s.body}</p>
-              </section>
-            ))}
-          </div>
-        </Dialog>
-      )}
+              </>
+            }
+          >
+            <div className="modal__body help">
+              {topic.sections.map((s) => (
+                <section key={s.heading} className="help__section">
+                  <h3 className="help__heading">{s.heading}</h3>
+                  <p>{s.body}</p>
+                </section>
+              ))}
+            </div>
+          </Dialog>,
+          document.body,
+        )}
     </>
   );
 }

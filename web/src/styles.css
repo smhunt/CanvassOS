@@ -319,6 +319,20 @@ table.visually-hidden {
     background: rgba(255, 255, 255, 0.15);
   }
 }
+/* The help button on the brand-coloured bar: white "?" in a translucent ring, where .help-btn's
+   default ring (var(--border)) is drawn for a light page. Scoped under .topbar for specificity:
+   .btn, .btn--icon and .help-btn are all declared further down, and at one class each they would
+   win on source order. */
+.topbar .topbar__help {
+  color: inherit;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+@media (hover: hover) {
+  .topbar .topbar__help:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+  }
+}
 .menu {
   position: absolute;
   right: 0;
@@ -389,6 +403,15 @@ table.visually-hidden {
   }
   .topbar__menu {
     display: block;
+  }
+  /* With the name hidden, the auto margin that pushes things right has to move to whichever of
+     help/menu comes first, or the "?" sits against the wordmark with the menu alone on the right.
+     Screens with no help (drive, the print sheet) keep the menu's own auto margin. */
+  .topbar__help {
+    margin-left: auto;
+  }
+  .topbar__help + .topbar__menu {
+    margin-left: 0;
   }
 }
 
@@ -923,9 +946,6 @@ select {
   border-radius: var(--radius);
   padding: 1rem 1.1rem;
 }
-.card--phase2 {
-  border-style: dashed;
-}
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -974,7 +994,12 @@ select {
 .dl dd {
   margin: 0;
 }
+/* position: relative makes this the containing block for anything absolutely positioned inside the
+   table. Without it, a .visually-hidden column header ("Actions" on Users) escaped the scroll box,
+   anchored to the page at its static x, and widened a 390px phone to 465px — so the browser zoomed
+   the whole page out, and every fixed dialog on it spilled off the right edge. */
 .table-wrap {
+  position: relative;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
