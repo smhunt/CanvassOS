@@ -194,7 +194,10 @@ sat undeployed through a deploy that everyone believed had shipped it. After any
 `docker exec canvass-caddy-1 caddy reload --config /etc/caddy/Caddyfile` (in place, no dropped
 connections), then prove it at the origin — `curl -sI http://127.0.0.1:3031/sw.js` — not at the
 edge, which may be answering from cache. A stale edge copy of one file is purged by URL in
-Cloudflare; it does not need a full purge.
+Cloudflare; it does not need a full purge. The browser side depends on a **Cloudflare Cache Rule**
+(zone `webarchitecture.ca`, host `canvass.webarchitecture.ca`, path `/sw.js`, Browser TTL "respect
+origin") — without it the zone's 4-hour Browser Cache TTL silently replaces `no-cache`. It lives in
+Cloudflare, not in this repo, so a move to another hostname or zone must bring it along.
 
 **Schema is applied once, on first boot**, via `db/schema.sql` mounted into
 `/docker-entrypoint-initdb.d/` — it only ever runs against an empty database. Every change after that
