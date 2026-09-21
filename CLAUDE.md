@@ -67,6 +67,7 @@ make up                       # mode A: Caddy binds 80/443, Let's Encrypt for $D
 make up-tunnel                # mode B (CURRENT): Caddy on 127.0.0.1:3031 behind a Cloudflare Tunnel
 make devdb                    # tunnel mode + database published on 127.0.0.1:5443 (never on a public host)
 make restart-tunnel           # rebuild api/web/caddy in tunnel mode, leaving db alone (--no-deps: see the Makefile)
+                              # does NOT reload a changed Caddyfile — see the landmine below
 make tunnel-status            # curl the loopback origin's /api/health
 
 make demo                     # drop + rebuild canvass_demo (schema.sql, migrations, fabricated seed)
@@ -185,6 +186,15 @@ then point-in-polygon'd in TypeScript (`api/src/lib/geo.ts`), so the schema stil
 genuinely needs a spatial operator.
 
 ### Landmines
+
+**A changed Caddyfile is not live until Caddy is told.** The Caddyfile is a bind mount, so editing
+it changes nothing about the `caddy` image; `make restart-tunnel` therefore reports the container as
+`Running` and leaves it alone, still serving the old config. This is how the `/sw.js` no-cache fix
+sat undeployed through a deploy that everyone believed had shipped it. After any Caddyfile change:
+`docker exec canvass-caddy-1 caddy reload --config /etc/caddy/Caddyfile` (in place, no dropped
+connections), then prove it at the origin — `curl -sI http://127.0.0.1:3031/sw.js` — not at the
+edge, which may be answering from cache. A stale edge copy of one file is purged by URL in
+Cloudflare; it does not need a full purge.
 
 **Schema is applied once, on first boot**, via `db/schema.sql` mounted into
 `/docker-entrypoint-initdb.d/` — it only ever runs against an empty database. Every change after that

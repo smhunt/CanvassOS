@@ -3,7 +3,7 @@
 Running list of what is asked for, in flight, and deliberately not being built. `CHANGELOG.md` is
 what shipped; `prompt_plan.md` is the phase plan; this is the working queue between them.
 
-Last updated **2026-09-20**.
+Last updated **2026-09-21**.
 
 ---
 
@@ -14,10 +14,15 @@ Last updated **2026-09-20**.
       turf and confirm three things: the card advances at the right moment, it names the correct
       side of the road, and it does not flicker between two neighbouring doors. Also worth checking
       on the actual iPhone: that speech starts after tapping Start, and that the screen stays awake.
-- [ ] **Deploy 1.3.0.** Production serves **1.1.0** (checked 2026-09-20: the live bundle carries the
-      drive route), so volunteers already have the **Drive** link. What they do not have is 1.2.0
-      (the spoken explanation and the help button) and 1.3.0 (the voice picker under Account) —
-      until `make restart-tunnel` is run on the host. Merged is not deployed.
+- [x] **Deploy 1.3.0.** Done 2026-09-21 with `make restart-tunnel`; the live bundle reports 1.3.0,
+      health is green, no migration was pending.
+- [ ] **Cloudflare still tells browsers to cache `/sw.js` for four hours.** The origin sends
+      `Cache-Control: no-cache` and the edge now revalidates on every request (`cf-cache-status:
+      REVALIDATED`), so a deploy reaches the edge at once. But the zone's **Browser Cache TTL is
+      14400** and it overwrites the origin header on the way out, so a phone may still sit on an old
+      service worker for up to four hours. Fix: one Cache Rule on `webarchitecture.ca` — host
+      `canvass.webarchitecture.ca`, path `/sw.js`, Browser TTL "respect origin". The zone has no
+      cache rules today. It is a shared zone, so scope it to that one URL.
 - [ ] **Listen to it on the actual iPhone.** Speech starts inside a tap everywhere, which is what iOS
       requires, but that has been reasoned and stub-tested, not heard. Check: Start speaks, the
       question mark speaks, and Account → Voice lists voices and the sample plays in the chosen one.
