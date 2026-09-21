@@ -16,13 +16,10 @@ Last updated **2026-09-21**.
       on the actual iPhone: that speech starts after tapping Start, and that the screen stays awake.
 - [x] **Deploy 1.3.0.** Done 2026-09-21 with `make restart-tunnel`; the live bundle reports 1.3.0,
       health is green, no migration was pending.
-- [ ] **Cloudflare still tells browsers to cache `/sw.js` for four hours.** The origin sends
-      `Cache-Control: no-cache` and the edge now revalidates on every request (`cf-cache-status:
-      REVALIDATED`), so a deploy reaches the edge at once. But the zone's **Browser Cache TTL is
-      14400** and it overwrites the origin header on the way out, so a phone may still sit on an old
-      service worker for up to four hours. Fix: one Cache Rule on `webarchitecture.ca` — host
-      `canvass.webarchitecture.ca`, path `/sw.js`, Browser TTL "respect origin". The zone has no
-      cache rules today. It is a shared zone, so scope it to that one URL.
+- [x] **Cloudflare told browsers to cache `/sw.js` for four hours** — fixed 2026-09-21 with one Cache
+      Rule on `webarchitecture.ca` (the zone's only one): host `canvass.webarchitecture.ca`, path
+      `/sw.js`, Browser TTL "respect origin". Verified live: `cache-control: no-cache`,
+      `cf-cache-status: REVALIDATED`; hashed `/assets/*` still get the zone's 4-hour TTL.
 - [ ] **Listen to it on the actual iPhone.** Speech starts inside a tap everywhere, which is what iOS
       requires, but that has been reasoned and stub-tested, not heard. Check: Start speaks, the
       question mark speaks, and Account → Voice lists voices and the sample plays in the chosen one.

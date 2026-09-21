@@ -26,9 +26,9 @@ All notable changes to CanvassOS are recorded here. The format follows
 - **The `/sw.js` no-cache rule was committed but never live.** `make restart-tunnel` does not
   restart Caddy when only the bind-mounted Caddyfile has changed, so production kept serving the
   old config. Reloaded in place on 2026-09-21 during the 1.3.0 deploy, and the stale edge copy of
-  `/sw.js` purged by URL. `CLAUDE.md` has the landmine and the reload command. Still open:
-  Cloudflare's zone-wide Browser Cache TTL rewrites the header to four hours on the way to the
-  browser (`docs/TODO.md`).
+  `/sw.js` purged by URL. `CLAUDE.md` has the landmine and the reload command. The zone-wide
+  Browser Cache TTL was also rewriting the header to four hours on the way to the browser; a Cache
+  Rule scoped to `canvass.webarchitecture.ca/sw.js` now makes Cloudflare respect the origin.
 
 ## [1.3.0] - 2026-09-20
 
