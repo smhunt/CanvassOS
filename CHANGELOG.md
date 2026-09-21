@@ -35,6 +35,11 @@ All notable changes to CanvassOS are recorded here. The format follows
   user gesture) allows it. English voices by default, every language on request, and a saved voice
   the browser no longer lists falls back to the default rather than to silence. It is a per-device
   UI preference in `localStorage` (`mc-canvass.voice`): a voice URI means nothing to another browser.
+- **Unit tests for the speech module** (`web/src/speech.test.ts`, 12 of them): one utterance per
+  sentence after a single cancel, the chosen voice and its language on every utterance, a saved
+  voice the browser no longer lists falling back to the default rather than to silence, blocked
+  storage and a throwing speech engine both swallowed, and the drive help script held to a fixed
+  list of short sentences with no figures. `npm test` now runs `src/*.test.ts` as well.
 - **Online voices are labelled, and explained when picked.** A voice with `localService: false` is
   synthesised by its provider, so the text leaves the device. That is acceptable only because of the
   rule at the top of `src/speech.ts` — nothing from the voters list is ever spoken — and the picker

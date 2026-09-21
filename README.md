@@ -760,7 +760,7 @@ that volunteer responses carry none of `mailing_address`, `mail_city`, `mail_pos
 The web package has a much smaller, safe one — pure maths, no database, no DOM, no network:
 
 ```bash
-cd web && npm test      # tsx --test src/canvass/*.test.ts: bearings and drive mode's door selection
+cd web && npm test      # bearings, drive mode's door selection, and the speech module (voice choice, fallbacks)
 ```
 
 <details>
