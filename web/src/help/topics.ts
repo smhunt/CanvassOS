@@ -409,9 +409,13 @@ export const ACCOUNT_HELP: HelpTopic = {
     'You can change your password here, which signs you out on every other device.',
     'You can choose the voice the app speaks with, and test it.',
     'The data section shows when the voters list was imported, and reminds you it is confidential.',
-    'Sign out is at the top when you are finished.',
+    'You can sign out at the top or bottom of this page, or from your name in the top bar.',
   ],
   sections: [
+    {
+      heading: 'Signing out',
+      body: 'Sign out is at the top and the bottom of this page, and in the menu under your name. If this phone still has results or photos waiting to send, you are warned first, because they would be sent under whoever signs in next.',
+    },
     {
       heading: 'Change password',
       body: 'Enter your current password and a new one of at least 10 characters, twice. Changing it signs out every other device you are signed in on.',

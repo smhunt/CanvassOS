@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog } from '../turfs/Dialog';
-import { canSpeak, explain, silence } from '../speech';
+import { canSpeak, explain, isSpeaking, silence } from '../speech';
 
 /**
  * One screen's explanation, in two forms. `sections` is what the dialog shows; `spoken` is a
@@ -35,12 +35,44 @@ interface Props {
  */
 export function HelpButton({ topic, speak, onClose, className }: Props) {
   const [open, setOpen] = useState(false);
+  // Whether the script is being read, so the footer can offer Stop. Before this, the only way to
+  // stop the voice was to close the explanation you were reading along with.
+  const [reading, setReading] = useState(false);
   const titleId = useId();
-  const close = () => {
+  const read = () => {
+    explain(topic.spoken);
+    setReading(true);
+  };
+  const stop = () => {
     silence();
+    setReading(false);
+  };
+  const close = () => {
+    stop();
     setOpen(false);
     onClose?.();
   };
+
+  // Polled, not event-driven — see isSpeaking(). The first check is a beat after starting because
+  // `speaking` is still false in the instant after speak() on some engines, which would flip the
+  // button straight back to "Read it aloud" before a word was said.
+  useEffect(() => {
+    if (!reading) return;
+    let started = false;
+    const id = window.setInterval(() => {
+      const now = isSpeaking();
+      if (now) started = true;
+      else if (started) setReading(false);
+    }, 300);
+    // An engine that never reports speaking at all must not leave the button stuck on Stop.
+    const giveUp = window.setTimeout(() => {
+      if (!started) setReading(false);
+    }, 3000);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(giveUp);
+    };
+  }, [reading]);
 
   // A route change while the dialog is open unmounts this without ever calling close(), and the
   // utterance queue belongs to the document: the script would carry on for twenty seconds over
@@ -60,7 +92,7 @@ export function HelpButton({ topic, speak, onClose, className }: Props) {
         aria-label={topic.title}
         aria-haspopup="dialog"
         onClick={() => {
-          if (speak) explain(topic.spoken);
+          if (speak) read();
           setOpen(true);
         }}
       >
@@ -77,11 +109,16 @@ export function HelpButton({ topic, speak, onClose, className }: Props) {
             onClose={close}
             footer={
               <>
-                {canSpeak() && (
-                  <button type="button" className="btn" onClick={() => explain(topic.spoken)}>
-                    Read it aloud
-                  </button>
-                )}
+                {canSpeak() &&
+                  (reading ? (
+                    <button type="button" className="btn" onClick={stop}>
+                      Stop reading
+                    </button>
+                  ) : (
+                    <button type="button" className="btn" onClick={read}>
+                      Read it aloud
+                    </button>
+                  ))}
                 <button type="button" className="btn btn--primary" onClick={close}>
                   Got it
                 </button>

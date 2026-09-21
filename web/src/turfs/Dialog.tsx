@@ -40,8 +40,17 @@ export function Dialog({ title, titleId, onClose, wide, focusKey, children, foot
     headRef.current?.focus();
   }, [focusKey]);
 
+  // Capture phase, and only the topmost modal acts. The page underneath has its own Escape listeners
+  // on `document` (a door sheet, the household card, the turf draw tool), registered earlier, so in
+  // the bubble phase they ran FIRST and stopPropagation() came too late: Escape in the help dialog
+  // also closed the open door or threw away a half-drawn turf. A capture listener on `document` runs
+  // before every bubble listener, and stopPropagation() then keeps it from reaching them. The
+  // topmost check is what makes capture safe if two dialogs are ever open: without it the outer one,
+  // registered first, would take the key.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const modals = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (modals[modals.length - 1] !== panelRef.current) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         onClose();
@@ -63,8 +72,8 @@ export function Dialog({ title, titleId, onClose, wide, focusKey, children, foot
         first.focus();
       }
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
   return (

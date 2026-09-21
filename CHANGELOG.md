@@ -51,8 +51,26 @@ All notable changes to CanvassOS are recorded here. The format follows
   help rather than the wrong help. The scripts are fixed text because `speech.ts` may hand them to
   a remote voice.
 
+- **Stop reading.** While help is being read aloud its button reads "Stop reading", and stops the
+  voice without closing the explanation. Before this the only way to stop it was to close the
+  dialog. Drive mode's help, which speaks the moment it opens, gets it too. Whether the voice is
+  still going is polled (`isSpeaking()` in `speech.ts`), because Chrome does not reliably fire `end`
+  after a cancel, and a flag driven by that event could stick on "Stop" for good.
+- **Sign out from more places.** Your name in the top bar is now a button that opens Account and
+  Sign out; the phone menu ends with Sign out; and the Account page has it at the bottom as well as
+  the top. All four are one component, `SignOutButton`.
+- **Sign out warns when the phone still has work to send.** A queued result or sign photo carries
+  no user — it replays under whoever holds the session when signal returns — so on a shared phone a
+  door recorded by one volunteer could be credited to the next. With anything waiting, the first
+  tap says how much and why; a second, relabelled "Sign out anyway", goes ahead.
+
 ### Fixed
 
+- **Escape in a dialog also acted on the page behind it.** `Dialog` listened for Escape on
+  `document` in the bubble phase, after the page's own listeners had already run: pressing Escape in
+  the new help dialog threw away a half-drawn turf on the map (and would have closed the household
+  card). It now listens in the capture phase, and only the topmost modal acts, so two stacked
+  dialogs can never both take one key.
 - The help dialog is now portalled to `<body>`. Inside the top bar it would have inherited the
   bar's white text and its stacking context, under the install banner.
 - **Text that still described the app as it was in Phase 1**, found while writing the help and

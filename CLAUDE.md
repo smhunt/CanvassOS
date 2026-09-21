@@ -275,6 +275,12 @@ claim it was recorded: `usePlaceSign` returns a locally-built row with `queued: 
 the response body *is* read for is a sign's real id, handed to the photo queue — below. Full contract
 in `docs/README.md` §6.
 
+**Signing out does not empty either queue, and a queued entry carries no user** — it replays
+under whoever holds the session when signal returns. On a phone passed between canvassers, that
+credits one volunteer's doors to the next. `components/SignOutButton.tsx` is therefore the only
+sign-out control (Account top and bottom, both top-bar menus), and it warns with the counts before
+signing out while anything is waiting. Do not add a bare `useLogout()` button anywhere else.
+
 **Sign photos are a second, separate queue and must stay one.** `web/src/offline/photoQueue.ts` holds
 image blobs in their own IndexedDB store, keyed by the sign's `client_id` — the only identifier that
 exists when the shutter is pressed. It is deliberately *not* an outbox entry type: the outbox is a

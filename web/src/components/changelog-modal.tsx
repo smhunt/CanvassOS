@@ -16,7 +16,8 @@ export const CHANGELOG: Release[] = [
     date: '2026-09-21',
     changes: [
       'Every screen now has a question mark in the top bar. Tap it for a plain explanation of what is on that screen and what each button does.',
-      'It stays quiet when it opens — a phone should not start talking at someone\u2019s door. Tap "Read it aloud" in the explanation to hear it in your chosen voice.',
+      'It stays quiet when it opens — a phone should not start talking at someone\u2019s door. Tap "Read it aloud" in the explanation to hear it in your chosen voice, and "Stop reading" to stop.',
+      'Sign out from your name in the top bar, from the bottom of the Account page, or from the foot of the phone menu. If results are still waiting to send, you are warned first.',
     ],
   },
   {

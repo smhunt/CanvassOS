@@ -297,6 +297,28 @@ table.visually-hidden {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.9rem;
+  /* Anchors the user menu, which is .menu (absolute, right: 0, just below). */
+  position: relative;
+}
+/* The name and role chip, as one button that opens Account / Sign out. It keeps the look of the
+   plain text it replaced; only the hover tint says it can be pressed. */
+.topbar__userbtn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: var(--tap);
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .topbar__userbtn:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
 }
 .topbar__name {
   max-width: 14rem;
@@ -379,6 +401,20 @@ table.visually-hidden {
 .menu__item--active {
   background: var(--brand-soft);
   font-weight: 600;
+}
+.menu__sep {
+  height: 1px;
+  margin: 0.3rem 0;
+  background: var(--border);
+}
+/* Sign out's "results still on this phone" warning — in a menu or on the Account page. */
+.signout-warn {
+  margin: 0.4rem 0 0;
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--text);
+  max-width: 34rem;
 }
 .footer {
   padding: 0.75rem 1rem;
