@@ -96,7 +96,7 @@ npm run typecheck             # tsc --noEmit (also `npm run build`)
 
 cd web && npm install && npm run dev        # https://dev.ecoworks.ca:3030; /api proxied to 3130
 npm run typecheck && npm run build          # tsc then vite build (must emit /app/dist for the image)
-npm test                                    # tsx --test src/canvass/*.test.ts — pure maths, no DOM, no network
+npm test                                    # tsx --test src/*.test.ts src/canvass/*.test.ts — no DOM, no network
 python3 tools/e2e.py                        # Playwright smoke run against `vite preview` (4173) + API 3130
 
 # Migrations against a non-production database
@@ -121,9 +121,11 @@ migrated, and it derives expected counts from `../data/*.csv` (`CANVASS_DATA_DIR
 regression net for the role rules — assertions check that volunteer responses carry none of
 `mailing_address`, `mail_city`, `mail_postal`, `resident_class`, `n_nonresident`, `n_po_box`.
 `api/test/geo.test.ts` is a pure unit test for the point-in-polygon maths and needs no database.
-The web package's only tests are `web/src/canvass/*.test.ts` (`cd web && npm test`): the bearing
-and drive-mode selection maths, run with `tsx --test` to match the api package rather than bringing
-in a second test framework.
+The web package's tests are `web/src/canvass/*.test.ts` (the bearing and drive-mode selection
+maths) and `web/src/speech.test.ts` (announce/explain, the voice preference and its fallbacks, and
+that the help script stays a fixed list of plain sentences) — `cd web && npm test`, run with
+`tsx --test` to match the api package rather than bringing in a second test framework. They fake
+`window.speechSynthesis` and `localStorage` by hand; there is no DOM library.
 
 Vite serves HTTPS from the shared mkcert cert at `~/Code/.traefik/certs/`, so dev is
 `https://dev.ecoworks.ca:3030` — never `localhost`. Production is unaffected: Caddy owns the edge and
@@ -337,7 +339,11 @@ no heading — parked, or iOS reporting `-1` — it falls back to nearest-first,
 says nothing. It also remembers every door it has seen queued, because between the outbox flushing
 an entry and the doors query refetching, that door has neither a queued result nor a saved one and
 would otherwise be offered again. Its preferences are UI state in `localStorage`
-(`mc-canvass.drive-prefs`); nothing about a door is stored there.
+(`mc-canvass.drive-prefs`); nothing about a door is stored there. The **voice** is chosen under
+Account (`components/VoiceSettings.tsx`, `mc-canvass.voice`) and applied inside `speech.ts` to every
+utterance. The picker offers *online* voices, which send the text to a third party — that is only
+tolerable because of the rule above, so anything that ever wants to speak list data must not go
+through `speech.ts` at all.
 
 **Four breakpoints, no fifth number.** The scale is documented at the top of `web/src/styles.css`:
 phone (unqualified), compact `max-width: 479.98px`, tablet `min-width: 720px`, desktop

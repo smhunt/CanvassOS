@@ -17,13 +17,67 @@ function synth(): SpeechSynthesis | null {
   return window.speechSynthesis;
 }
 
+// Which voice speaks is a UI preference like the base layer or the door order: localStorage, in
+// try/catch, per device — a voice is identified by a URI that only means something to the browser
+// that listed it, so there is nothing here worth syncing to an account.
+const VOICE_KEY = 'mc-canvass.voice';
+
+/** The chosen voice's URI, or null for "whatever the browser would pick". */
+export function readVoicePref(): string | null {
+  try {
+    return localStorage.getItem(VOICE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function writeVoicePref(uri: string | null): void {
+  try {
+    if (uri) localStorage.setItem(VOICE_KEY, uri);
+    else localStorage.removeItem(VOICE_KEY);
+  } catch {
+    // Private mode refuses to store; the browser's default voice is a fine fallback.
+  }
+}
+
+/** Every voice this browser offers. Empty until `voiceschanged` on Chrome — see useVoices. */
+export function listVoices(): SpeechSynthesisVoice[] {
+  const s = synth();
+  if (!s) return [];
+  try {
+    return s.getVoices();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Applied to every utterance, here, so no caller has to know the preference exists. A stored URI
+ * that no longer matches anything — a voice uninstalled, a different browser profile — quietly falls
+ * back to the default rather than failing: a driver who hears the wrong voice has lost nothing, one
+ * who hears none has lost the feature. `lang` is set with it because some engines ignore a voice
+ * whose language disagrees with the utterance's.
+ */
+function utter(text: string): SpeechSynthesisUtterance {
+  const u = new SpeechSynthesisUtterance(text);
+  const uri = readVoicePref();
+  if (uri) {
+    const v = listVoices().find((x) => x.voiceURI === uri);
+    if (v) {
+      u.voice = v;
+      u.lang = v.lang;
+    }
+  }
+  return u;
+}
+
 /** Speak once. Cancels anything still queued so a stale door is never announced after a new one. */
 export function announce(text: string): void {
   const s = synth();
   if (!s) return;
   try {
     s.cancel();
-    s.speak(new SpeechSynthesisUtterance(text));
+    s.speak(utter(text));
   } catch {
     // Some browsers throw without a prior user gesture; silence is an acceptable failure here.
   }
@@ -41,7 +95,7 @@ export function explain(sentences: readonly string[]): void {
   if (!s) return;
   try {
     s.cancel();
-    for (const sentence of sentences) s.speak(new SpeechSynthesisUtterance(sentence));
+    for (const sentence of sentences) s.speak(utter(sentence));
   } catch {
     // Same failure mode as announce: the words are on screen as well, so silence loses nothing.
   }
@@ -62,3 +116,8 @@ export function silence(): void {
 export function canSpeak(): boolean {
   return synth() !== null;
 }
+
+// Chrome returns [] from the first getVoices() and only then starts loading the list. Asking once at
+// import means that by the time anything is spoken the chosen voice can actually be found; without
+// it the first announcement of a session would always come out in the default voice.
+listVoices();

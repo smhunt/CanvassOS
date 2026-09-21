@@ -74,6 +74,32 @@ moves on by itself as the vehicle passes. Released as **1.1.0**; `CHANGELOG.md` 
   door screen. Drive mode answers "where next", which is the only question that can be answered
   safely at the wheel.
 
+### Help that talks, and a choice of voice — 2026-09-20
+
+**Also outside the plan, and it grew out of drive mode.** A driver cannot read instructions, so the
+screen has to be able to explain itself by ear. Released as **1.2.0** and **1.3.0**.
+
+- **First use speaks (1.2.0).** The once-per-device "Before you drive" notice already had the right
+  moment, so its Start tap now reads the whole explanation aloud. A question mark on the drive bar
+  repeats it and shows the same thing written out. Nothing holds the door announcements back while
+  it plays: parked there is no heading and so nothing to collide with; moving, the next door wins.
+- **Built once, for every screen.** `components/HelpButton.tsx` takes a `HelpTopic` — on-screen
+  sections plus a separate spoken script, both fixed strings declared beside the screen. Drive mode
+  is the only screen using it so far; rolling it out is mostly writing, and is in `docs/TODO.md`.
+  Whether help should *speak by default* is a per-screen decision — at a doorstep it should not.
+- **`src/speech.ts` is the one place the app talks**, and carries the rule for every caller: nothing
+  from the voters list is ever spoken, because a browser may hand the text to a remote voice and that
+  is the list "provided to another person" (*MEA* s. 23(8)).
+- **The voice is the volunteer's choice (1.3.0).** Account → Voice, stored on the device, applied
+  inside `speech.ts` so every utterance gets it. Online voices are offered but labelled and explained
+  — which is only defensible because of the rule above. Anything that ever needs to speak list data
+  must therefore not go through `speech.ts` at all.
+- **Found on the way:** dialog footers were unstyled everywhere except the Turfs page, because
+  `.modal__foot` lived in a per-page stylesheet while Messaging used the same dialog.
+
+Proven in a headless browser with a stubbed speech engine; **not yet heard on an iPhone**, where the
+user-gesture rule is respected by construction rather than by test.
+
 ### Phase 5 planned — 2026-09-06
 
 **SMS and email to electors who opted in.** SMS is the priority channel; email is the fallback; a

@@ -5,6 +5,7 @@ import { useChangePassword, useLogout, useMeta } from '../api/hooks';
 import { PasswordField } from '../components/PasswordField';
 import { APP_VERSION, ChangelogModal, REPO_URL, type AboutTab } from '../components/changelog-modal';
 import { useUser } from '../components/Shell';
+import { VoiceSettings } from '../components/VoiceSettings';
 import { LoadingRows, RoleChip, fmtDate, n } from '../components/ui';
 
 const MIN_PASSWORD = 10;
@@ -122,6 +123,11 @@ export function AccountPage() {
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="card" aria-labelledby="voice-h">
+        <h2 id="voice-h">Voice</h2>
+        <VoiceSettings />
       </section>
 
       <section className="card" aria-labelledby="data-h">

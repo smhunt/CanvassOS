@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,14 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.3.0',
+    date: '2026-09-20',
+    changes: [
+      'Choose the voice the app speaks in: Account, then Voice. It applies to drive mode and to the spoken help, and picking one plays a sample straight away.',
+      'Voices marked "online" are spoken by an outside service. That is safe here because the app never says a name or an address out loud.',
+    ],
+  },
   {
     version: '1.2.0',
     date: '2026-09-20',
@@ -285,7 +293,7 @@ export const HOW_IT_WORKS: HowItWorksStep[] = [
   {
     title: 'Driving a rural turf',
     description:
-      'Open a turf and tap Drive. One large card shows the next door ahead of you, how far it is and which side of the road, and it moves on by itself as you pass. It reads the door aloud so you never touch the phone while moving, and it keeps the screen awake. It never says a name out loud. The first time you tap Start it explains itself aloud, and the question mark repeats that whenever you are parked. Mount the phone, plug it in, and let a passenger do the tapping if you have one.',
+      'Open a turf and tap Drive. One large card shows the next door ahead of you, how far it is and which side of the road, and it moves on by itself as you pass. It reads the door aloud so you never touch the phone while moving, and it keeps the screen awake. It never says a name out loud. The first time you tap Start it explains itself aloud, and the question mark repeats that whenever you are parked. You can change the voice under Account. Mount the phone, plug it in, and let a passenger do the tapping if you have one.',
     icon: '🚗',
   },
   {
@@ -368,6 +376,7 @@ export const ROADMAP: RoadmapGroup[] = [
       { label: 'Reads the next door aloud and keeps the screen awake, so the phone is never touched while moving', priority: 'high', done: true },
       { label: 'Never speaks a name, whatever the on-screen toggle says', priority: 'high', done: true },
       { label: 'Explains itself aloud on first use, with a help button that repeats it', priority: 'medium', done: true },
+      { label: 'Choose the voice it speaks in, from Account', priority: 'low', done: true },
       { label: 'The same help button and spoken explanation on the other screens', priority: 'medium' },
       { label: 'Road test on a real concession road', priority: 'high' },
     ],
