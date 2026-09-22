@@ -275,6 +275,12 @@ claim it was recorded: `usePlaceSign` returns a locally-built row with `queued: 
 the response body *is* read for is a sign's real id, handed to the photo queue — below. Full contract
 in `docs/README.md` §6.
 
+**Signing out does not empty either queue, and a queued entry carries no user** — it replays
+under whoever holds the session when signal returns. On a phone passed between canvassers, that
+credits one volunteer's doors to the next. `components/SignOutButton.tsx` is therefore the only
+sign-out control (Account top and bottom, both top-bar menus), and it warns with the counts before
+signing out while anything is waiting. Do not add a bare `useLogout()` button anywhere else.
+
 **Sign photos are a second, separate queue and must stay one.** `web/src/offline/photoQueue.ts` holds
 image blobs in their own IndexedDB store, keyed by the sign's `client_id` — the only identifier that
 exists when the shutter is pressed. It is deliberately *not* an outbox entry type: the outbox is a
@@ -339,9 +345,11 @@ page. Nothing on the sheet may depend on colour: it comes off a mono laser print
 **Drive mode never speaks a name, and that is not a preference.** `web/src/pages/DrivePage.tsx`
 has a "Names" toggle for the *card*, and builds the spoken text without consulting it
 (`web/src/speech.ts` speaks whatever string it is handed, so its callers are where the rule is
-kept: that page, and the fixed `HelpTopic` scripts such as `web/src/canvass/driveHelp.ts` that
-`components/HelpButton.tsx` reads aloud — a help script is written in advance and never assembled
-from a door). Two independent
+kept: that page, and the fixed `HelpTopic` scripts — `web/src/canvass/driveHelp.ts` and one per
+screen in `web/src/help/topics.ts` — that `components/HelpButton.tsx` reads aloud; a help script is
+written in advance and never assembled from a door, and `web/src/help/help.test.ts` holds every one
+to that shape). A new screen gets its help by adding a topic and a line in `web/src/help/route.ts`;
+the top-bar button is silent on open, and only drive mode's own button speaks unasked. Two independent
 reasons: a voice carries outside the car in a way a screen does not, and Chrome/Android may
 synthesise through a *remote* voice, which sends the utterance text to a third party — list data
 "provided to another person" under MEA s. 23(8), the same rule that shapes `streetview.ts` and

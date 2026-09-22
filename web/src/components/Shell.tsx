@@ -3,6 +3,9 @@ import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom
 import { useMeta } from '../api/hooks';
 import type { User } from '../api/types';
 import { isAdmin, isOrganizer } from '../auth';
+import { helpFor } from '../help/route';
+import { HelpButton } from './HelpButton';
+import { SignOutButton } from './SignOutButton';
 import { RoleChip } from './ui';
 
 export function useUser(): User {
@@ -22,18 +25,31 @@ export function Shell() {
   const user = useUser();
   const loc = useLocation();
   const isMap = loc.pathname.startsWith('/map');
+  const help = helpFor(loc.pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Desktop only: the name in the top bar opens Account and Sign out. Below DESKTOP the name is
+  // hidden and the same two live in the phone menu, so the two menus are never on screen together.
+  const [userOpen, setUserOpen] = useState(false);
+  const userRef = useRef<HTMLDivElement>(null);
 
-  // Close the phone menu on navigation and on outside click / Escape.
-  useEffect(() => setMenuOpen(false), [loc.pathname]);
+  // Close either menu on navigation and on outside click / Escape.
   useEffect(() => {
-    if (!menuOpen) return;
+    setMenuOpen(false);
+    setUserOpen(false);
+  }, [loc.pathname]);
+  useEffect(() => {
+    if (!menuOpen && !userOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      const t = e.target as Node;
+      if (menuRef.current && !menuRef.current.contains(t)) setMenuOpen(false);
+      if (userRef.current && !userRef.current.contains(t)) setUserOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false);
+      if (e.key === 'Escape') {
+        setMenuOpen(false);
+        setUserOpen(false);
+      }
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -41,7 +57,7 @@ export function Shell() {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [menuOpen]);
+  }, [menuOpen, userOpen]);
 
   const links = [
     { to: '/map', label: 'Map', show: true },
@@ -70,12 +86,37 @@ export function Shell() {
             </NavLink>
           ))}
         </nav>
-        <div className="topbar__user">
-          <span className="topbar__name" title={user.email}>
-            {user.name}
-          </span>
-          <RoleChip role={user.role} />
+        <div className="topbar__user" ref={userRef}>
+          <button
+            type="button"
+            className="topbar__userbtn"
+            aria-haspopup="menu"
+            aria-expanded={userOpen}
+            aria-controls="user-menu"
+            onClick={() => setUserOpen((o) => !o)}
+          >
+            <span className="topbar__name" title={user.email}>
+              {user.name}
+            </span>
+            <RoleChip role={user.role} />
+          </button>
+          {userOpen && (
+            <div className="menu" id="user-menu" role="menu">
+              <div className="menu__user">
+                <div className="muted small">{user.email}</div>
+              </div>
+              <NavLink to="/account" role="menuitem" className="menu__item">
+                Account
+              </NavLink>
+              <SignOutButton role="menuitem" className="menu__item" />
+            </div>
+          )}
         </div>
+        {/* Silent on open (speak={false}), unlike drive mode's: this one is used at a doorstep, in a
+            meeting, on a laptop in an office — places a phone should not start talking unasked. The
+            dialog's "Read it aloud" is one tap away. Keyed by title so moving to another screen with
+            the dialog open (the back button) remounts it: the old script stops, the new one is closed. */}
+        {help && <HelpButton key={help.title} topic={help} speak={false} className="topbar__help" />}
         <div className="topbar__menu" ref={menuRef}>
           <button
             type="button"
@@ -101,6 +142,8 @@ export function Shell() {
                   {l.label}
                 </NavLink>
               ))}
+              <div className="menu__sep" role="separator" />
+              <SignOutButton role="menuitem" className="menu__item" />
             </div>
           )}
         </div>

@@ -30,6 +30,64 @@ All notable changes to CanvassOS are recorded here. The format follows
   Browser Cache TTL was also rewriting the header to four hours on the way to the browser; a Cache
   Rule scoped to `canvass.webarchitecture.ca/sw.js` now makes Cloudflare respect the origin.
 
+## [1.4.0] - 2026-09-21
+
+### Added
+
+- **Help on every screen.** A question mark in the top bar opens a plain explanation of the screen
+  you are on — the map, your turfs, the door screen, turfs, signs, sign-ups, messaging, reports,
+  stats, users, the audit log and your account — naming the real buttons and what they do, with a
+  separate short script that "Read it aloud" speaks in the chosen voice. One button in the shell,
+  chosen by route (`web/src/help/route.ts`, pure and tested), rather than one per page: every
+  screen gets it and none can be missed. Drive mode and the print sheet get none from the top bar —
+  drive keeps its own speaking button, and a second, silent one above it would be the same words
+  behaving differently; the sheet is for a printer.
+- **Silent on open, on purpose.** Drive mode's help speaks when opened because the driver cannot
+  read. Everywhere else the app is used at a doorstep, in a meeting or at a desk, where a phone that
+  starts talking unasked is a problem, so the top-bar help opens silently and speaks only when asked.
+- **Every script held to the same rules by test** (`web/src/help/help.test.ts`): three to seven
+  sentences, each whole and at most 160 characters, no figures, no markup; three to eight sections
+  with unique headings; unique titles; every topic reachable from a route; unknown routes get no
+  help rather than the wrong help. The scripts are fixed text because `speech.ts` may hand them to
+  a remote voice.
+
+- **Stop reading.** While help is being read aloud its button reads "Stop reading", and stops the
+  voice without closing the explanation. Before this the only way to stop it was to close the
+  dialog. Drive mode's help, which speaks the moment it opens, gets it too. Whether the voice is
+  still going is polled (`isSpeaking()` in `speech.ts`), because Chrome does not reliably fire `end`
+  after a cancel, and a flag driven by that event could stick on "Stop" for good.
+- **Sign out from more places.** Your name in the top bar is now a button that opens Account and
+  Sign out; the phone menu ends with Sign out; and the Account page has it at the bottom as well as
+  the top. All four are one component, `SignOutButton`.
+- **Sign out warns when the phone still has work to send.** A queued result or sign photo carries
+  no user — it replays under whoever holds the session when signal returns — so on a shared phone a
+  door recorded by one volunteer could be credited to the next. With anything waiting, the first
+  tap says how much and why; a second, relabelled "Sign out anyway", goes ahead.
+
+### Fixed
+
+- **Escape in a dialog also acted on the page behind it.** `Dialog` listened for Escape on
+  `document` in the bubble phase, after the page's own listeners had already run: pressing Escape in
+  the new help dialog threw away a half-drawn turf on the map (and would have closed the household
+  card). It now listens in the capture phase, and only the topmost modal acts, so two stacked
+  dialogs can never both take one key.
+- The help dialog is now portalled to `<body>`. Inside the top bar it would have inherited the
+  bar's white text and its stacking context, under the install banner.
+- **Text that still described the app as it was in Phase 1**, found while writing the help and
+  contradicting it: a volunteer's household card said names "arrive in Phase 2"; Stats and the map
+  card wore "Phase 2" tags and said canvass figures would "fill in once door-knocking starts"; the
+  Account page's About line said "Canvassing itself lands in Phase 2"; the Users page described a
+  volunteer as seeing "map points only". All rewritten to what is true now, and the unused dashed
+  `.card--phase2` style removed. "organiser" on the empty Canvass page is now "organizer".
+- **The Users page was wider than a phone** (465px on a 390px screen), so the browser zoomed the
+  whole page out and any dialog on it spilled off the right edge. The cause was a visually hidden
+  "Actions" column header: absolutely positioned, it escaped its table's scroll box because
+  `.table-wrap` was not positioned, and anchored to the page instead. `.table-wrap` is now
+  `position: relative`. Every screen was re-measured at 390px afterwards; none is wider.
+- **Volunteers were sent to a page they cannot open.** The map's turf banner and the print sheet
+  both linked "All turfs" to `/turfs`, which is organizer-only. A volunteer now gets "My turfs",
+  pointing at their own list (`/canvass?list=1`, so it does not bounce back into the same turf).
+
 ## [1.3.0] - 2026-09-20
 
 ### Added

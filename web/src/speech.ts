@@ -112,6 +112,21 @@ export function silence(): void {
   }
 }
 
+/**
+ * Whether anything is being said or is queued to be. Polled rather than tracked through utterance
+ * events: Chrome does not always fire `end` after cancel(), and on some engines never fires it for
+ * an utterance it silently dropped, so an event-driven flag could stick on "reading" for good.
+ */
+export function isSpeaking(): boolean {
+  const s = synth();
+  if (!s) return false;
+  try {
+    return s.speaking || s.pending;
+  } catch {
+    return false;
+  }
+}
+
 /** False where the browser cannot speak at all, so a "read aloud" control is not offered in vain. */
 export function canSpeak(): boolean {
   return synth() !== null;

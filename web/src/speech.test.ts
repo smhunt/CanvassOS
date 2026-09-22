@@ -1,7 +1,6 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { announce, canSpeak, explain, listVoices, readVoicePref, silence, writeVoicePref } from './speech';
-import { DRIVE_HELP } from './canvass/driveHelp';
 
 // speech.ts reads `window` and `localStorage` at call time, never at import, so a fake of each can
 // be swapped in per test. No DOM library: the module touches four members of speechSynthesis.
@@ -149,30 +148,5 @@ test('a speech engine that throws (no user gesture yet) is swallowed, not surfac
   });
 });
 
-// The rule that lets online voices be offered at all: a help script is fixed text, written in
-// advance. These cannot prove nobody ever interpolates a name, but they do fail the moment the
-// script stops being a list of plain, short, ear-friendly sentences.
-test('the drive help script is a fixed list of short plain sentences', () => {
-  assert.ok(DRIVE_HELP.spoken.length >= 3);
-  for (const s of DRIVE_HELP.spoken) {
-    assert.equal(typeof s, 'string');
-    assert.ok(s.length > 0 && s.length <= 160, `short enough to take in by ear: "${s}"`);
-    assert.doesNotMatch(s, /\d/, 'no figures for a synthesiser to stumble over');
-    assert.doesNotMatch(s, /[{}$<>]/, 'no template or markup residue');
-    assert.match(s, /[.?!]$/, 'a whole sentence, so the queue pauses between them');
-  }
-  assert.ok(
-    DRIVE_HELP.spoken.some((s) => /never say a name/i.test(s)),
-    'the script tells the driver that names are never spoken',
-  );
-});
-
-test('every on-screen help section has a heading and a body', () => {
-  assert.ok(DRIVE_HELP.sections.length > 0);
-  for (const sec of DRIVE_HELP.sections) {
-    assert.ok(sec.heading.trim().length > 0);
-    assert.ok(sec.body.trim().length > 0);
-  }
-  const headings = DRIVE_HELP.sections.map((s) => s.heading);
-  assert.equal(new Set(headings).size, headings.length, 'headings are used as React keys');
-});
+// The help scripts' own rules (fixed short sentences, no figures) are in src/help/help.test.ts,
+// which holds every topic to them, drive mode's included.

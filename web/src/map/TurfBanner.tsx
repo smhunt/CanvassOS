@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom';
+import { isOrganizer } from '../auth';
+import { useUser } from '../components/Shell';
 import { Spinner, n } from '../components/ui';
 import './turf.css';
 
@@ -23,6 +25,7 @@ interface Props {
  * a bare glyph.
  */
 export function TurfBanner({ doors, unmapped, name, loading, error, onDismiss }: Props) {
+  const organizer = isOrganizer(useUser());
   return (
     <div className="turf-banner card" role="status" aria-live="polite">
       <div className="turf-banner__body">
@@ -48,8 +51,10 @@ export function TurfBanner({ doors, unmapped, name, loading, error, onDismiss }:
           </>
         )}
       </div>
-      <Link className="linkbtn turf-banner__link" to="/turfs">
-        All turfs
+      {/* /turfs is organizer-only: a volunteer following this link used to land on a page that turned
+          them away. ?list=1 stops /canvass from reopening the turf they were just in. */}
+      <Link className="linkbtn turf-banner__link" to={organizer ? '/turfs' : '/canvass?list=1'}>
+        {organizer ? 'All turfs' : 'My turfs'}
       </Link>
       <button type="button" className="btn btn--small turf-banner__close" onClick={onDismiss}>
         Clear

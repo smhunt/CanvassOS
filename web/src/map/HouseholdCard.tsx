@@ -102,8 +102,8 @@ function VolunteerView({ props }: { props: PointProps | undefined }) {
       {props?.inst && <p className="tag tag--neutral">Institution / multi-unit</p>}
       <div className="alert alert--info">
         <div>
-          <strong>Volunteer view</strong> — turf details (names and the door screen) arrive in Phase 2. Until then the map shows
-          household points only.
+          <strong>Volunteer view</strong> — the map shows how many voters live at each door. Names, and what happened
+          at each door, are on the door screen for your own turfs (Canvass).
         </div>
       </div>
     </div>
@@ -284,7 +284,7 @@ function OrganizerView({ hh, onFly }: { hh: Household; onFly: (lon: number, lat:
           </p>
         ) : (
           <p className="muted">
-            Not yet contacted. <span className="tag tag--neutral tag--mini">Phase 2</span>
+            Not yet contacted.
           </p>
         )}
       </section>

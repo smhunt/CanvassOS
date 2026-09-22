@@ -297,6 +297,28 @@ table.visually-hidden {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.9rem;
+  /* Anchors the user menu, which is .menu (absolute, right: 0, just below). */
+  position: relative;
+}
+/* The name and role chip, as one button that opens Account / Sign out. It keeps the look of the
+   plain text it replaced; only the hover tint says it can be pressed. */
+.topbar__userbtn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: var(--tap);
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .topbar__userbtn:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
 }
 .topbar__name {
   max-width: 14rem;
@@ -316,6 +338,20 @@ table.visually-hidden {
 }
 @media (hover: hover) {
   .topbar__menubtn:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+}
+/* The help button on the brand-coloured bar: white "?" in a translucent ring, where .help-btn's
+   default ring (var(--border)) is drawn for a light page. Scoped under .topbar for specificity:
+   .btn, .btn--icon and .help-btn are all declared further down, and at one class each they would
+   win on source order. */
+.topbar .topbar__help {
+  color: inherit;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+@media (hover: hover) {
+  .topbar .topbar__help:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.15);
   }
 }
@@ -366,6 +402,20 @@ table.visually-hidden {
   background: var(--brand-soft);
   font-weight: 600;
 }
+.menu__sep {
+  height: 1px;
+  margin: 0.3rem 0;
+  background: var(--border);
+}
+/* Sign out's "results still on this phone" warning — in a menu or on the Account page. */
+.signout-warn {
+  margin: 0.4rem 0 0;
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--text);
+  max-width: 34rem;
+}
 .footer {
   padding: 0.75rem 1rem;
   color: var(--muted);
@@ -389,6 +439,15 @@ table.visually-hidden {
   }
   .topbar__menu {
     display: block;
+  }
+  /* With the name hidden, the auto margin that pushes things right has to move to whichever of
+     help/menu comes first, or the "?" sits against the wordmark with the menu alone on the right.
+     Screens with no help (drive, the print sheet) keep the menu's own auto margin. */
+  .topbar__help {
+    margin-left: auto;
+  }
+  .topbar__help + .topbar__menu {
+    margin-left: 0;
   }
 }
 
@@ -923,9 +982,6 @@ select {
   border-radius: var(--radius);
   padding: 1rem 1.1rem;
 }
-.card--phase2 {
-  border-style: dashed;
-}
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -974,7 +1030,12 @@ select {
 .dl dd {
   margin: 0;
 }
+/* position: relative makes this the containing block for anything absolutely positioned inside the
+   table. Without it, a .visually-hidden column header ("Actions" on Users) escaped the scroll box,
+   anchored to the page at its static x, and widened a 390px phone to 465px — so the browser zoomed
+   the whole page out, and every fixed dialog on it spilled off the right edge. */
 .table-wrap {
+  position: relative;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }

@@ -91,7 +91,7 @@ export function CanvassPage() {
       {mine.data && assignments.length === 0 && (
         <div className="card">
           <EmptyState title="No turfs assigned yet">
-            <p>An organiser assigns you a turf and it shows up here — no need to check back manually, just reload this page.</p>
+            <p>An organizer assigns you a turf and it shows up here — no need to check back manually, just reload this page.</p>
             {isOrganizer(user) && (
               <p>
                 <Link to="/turfs">Build a turf</Link> and assign it to yourself or a volunteer.

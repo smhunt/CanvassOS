@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { errorMessage, isApiError } from '../api/client';
-import { useChangePassword, useLogout, useMeta } from '../api/hooks';
+import { useChangePassword, useMeta } from '../api/hooks';
 import { PasswordField } from '../components/PasswordField';
+import { SignOutButton } from '../components/SignOutButton';
 import { APP_VERSION, ChangelogModal, REPO_URL, type AboutTab } from '../components/changelog-modal';
 import { useUser } from '../components/Shell';
 import { VoiceSettings } from '../components/VoiceSettings';
@@ -13,9 +13,7 @@ const MIN_PASSWORD = 10;
 export function AccountPage() {
   const user = useUser();
   const meta = useMeta();
-  const logout = useLogout();
   const change = useChangePassword();
-  const nav = useNavigate();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -64,14 +62,7 @@ export function AccountPage() {
           </div>
           <RoleChip role={user.role} />
         </div>
-        <button
-          type="button"
-          className="btn"
-          disabled={logout.isPending}
-          onClick={() => logout.mutate(undefined, { onSettled: () => nav('/login', { replace: true }) })}
-        >
-          {logout.isPending ? 'Signing out…' : 'Sign out'}
-        </button>
+        <SignOutButton />
       </section>
 
       <section className="card" aria-labelledby="pw-h">
@@ -159,7 +150,7 @@ export function AccountPage() {
           <h2 id="about-app-h">About this app</h2>
           <span className="tag tag--neutral mono">v{APP_VERSION}</span>
         </div>
-        <p className="muted small">CanvassOS — Phase 1: the voters list, the map and the numbers. Canvassing itself lands in Phase 2.</p>
+        <p className="muted small">CanvassOS — the voters list and map, turfs, canvassing on foot and by car, lawn signs and opt-in messaging.</p>
         <div className="row">
           <button type="button" className="btn btn--small" onClick={() => setAbout('changelog')}>
             Changelog
@@ -173,6 +164,18 @@ export function AccountPage() {
           <a className="btn btn--small" href={REPO_URL} target="_blank" rel="noreferrer">
             GitHub
           </a>
+        </div>
+      </section>
+
+      {/* A second way out at the bottom, where a phone user who has scrolled through the page ends up. */}
+      <section className="card" aria-labelledby="signout-h">
+        <h2 id="signout-h">Sign out</h2>
+        <p className="muted small">
+          Sign out when you are done, especially on a phone someone else will use. Anything this phone is still waiting to send is
+          kept, and you will be warned about it first.
+        </p>
+        <div>
+          <SignOutButton />
         </div>
       </section>
 

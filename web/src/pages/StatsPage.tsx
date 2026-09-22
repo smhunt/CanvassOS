@@ -10,7 +10,7 @@ export function StatsPage() {
     <div className="page">
       <header className="page__head">
         <h1>Stats</h1>
-        <p className="muted">Voters list overview for Middlesex Centre. Canvass figures fill in once door-knocking starts (Phase 2).</p>
+        <p className="muted">Voters list overview for Middlesex Centre. Canvass figures update as doors are knocked.</p>
       </header>
 
       {/* The page is eight tiles over four charts, so that is what waits here — one announcement
@@ -98,10 +98,9 @@ export function StatsPage() {
             </section>
           </div>
 
-          <section className="card card--phase2" aria-labelledby="canvass-h">
+          <section className="card" aria-labelledby="canvass-h">
             <div className="row row--between">
               <h2 id="canvass-h">Canvass</h2>
-              <span className="tag tag--neutral">Phase 2</span>
             </div>
             <div className="tiles tiles--inline">
               <Tile label="Doors contacted" value={stats.data.canvass.contacted_households} />
