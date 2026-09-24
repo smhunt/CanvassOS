@@ -18,6 +18,14 @@ Everything below this section is the **original plan, unedited**: a record of wh
 what happened. This section is the difference between the two. `CHANGELOG.md` has the release-by-release
 detail; `docs/README.md` describes what the code actually does now.
 
+**Where it runs, as of 2026-09-24 (1.5.0):** the EC2 box, `/srv/canvass`, reached as
+`ssh canvass-prod`. Production left the office Mac that day and the Mac's containers are stopped, so
+operator commands only reach production through that alias — see README "Cutting production over to
+AWS", which is now a record of something done rather than a plan. The lawn-sign delivery list also
+stopped being derived from `contact.wants_sign` alone: a request can be raised from any door card
+with no visit behind it, typed in by hand from a phone call, or arrive off the website, and all four
+origins merge into one list that can be corrected, cancelled with a reason, and restored.
+
 | Phase | State | Notes |
 |---|---|---|
 | 1. Foundation + read-only viewer | **shipped** | Compose stack, `db/schema.sql`, the Python importer, login/roles/invites, full-municipality map with filters and search, household card, stats dashboard. 7,140 households / 16,892 voters loaded; 7,067 mapped, 70 legal descriptions, 11 institutions. |

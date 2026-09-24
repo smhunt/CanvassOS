@@ -396,6 +396,15 @@ the purge enumerate what must go. See "Purge, after the election".
 
 ### Cutting production over to AWS
 
+> **This has been done.** Production moved on **2026-09-24** and now runs on the EC2 box in
+> `/srv/canvass`, reached as `ssh canvass-prod`. The Mac's containers are stopped and it runs no
+> `cloudflared`, so the tunnel has one connector and `make restart-tunnel` on the Mac restarts
+> nothing the public can see. Operate production over the ssh alias — `ssh canvass-prod 'cd
+> /srv/canvass && make logs SERVICE=api'` and so on. The Mac still holds the repo and a database
+> snapshot taken at the cutover: useful for development, misleading if mistaken for production.
+> Going back is `./scripts/cutover-aws.sh rollback --with-data` — the flag is not optional now,
+> because AWS has taken real writes since.
+
 `scripts/cutover-aws.sh` moves production from the office Mac to the EC2 box — and back. Run it on the
 Mac, from the repo root; it drives EC2 over `ssh canvass-prod`.
 
@@ -671,6 +680,13 @@ while this was broken are gone: they were refused at the door and never written.
 answers this case with `500 { code: "photo_storage_unwritable" }` and a message that tells the
 volunteer the picture was fine and the server was not, rather than letting them retake it in the
 rain to the same result.
+
+**Current state (2026-09-24):** production on EC2 has `/photos` owned by `100:101`, because the
+cutover brought the stack up from an image that already had the fix and the volume was seeded from
+it — no hand chown was needed there. The volume is still empty, so the fix is correct by
+construction and **has not yet been proved by a real upload**: the next photo anybody takes is the
+test. If it fails, read the API log before assuming this cause, since the new error code names it
+explicitly.
 </details>
 
 <details>
@@ -873,13 +889,13 @@ as `resident_class = 'non-resident'`, which is 390.
 
 ## Status
 
-Honest version, as of v1.4.0:
+Honest version, as of v1.5.0, running on EC2 since 2026-09-24:
 
 | Phase | State |
 |---|---|
 | **1 — Foundation and read-only viewer** | **Shipped.** Compose stack, schema, importer, sign-in with roles and invite links, municipality-wide map with filters and search, household card, stats, audit log, encrypted backups, purge. |
 | **2 — Canvassing core** | **Shipped.** Turfs from streets or a drawn polygon, assignments, the phone door screen, volunteers scoped to their turfs, latest-status colouring, follow-up queue, volunteer activity. |
-| **Lawn signs** (not in the original plan) | **Shipped.** GPS placement with accuracy and photo, boundary check, pickup list, delivery list from `contact.wants_sign`. |
+| **Lawn signs** (not in the original plan) | **Shipped.** GPS placement with accuracy and photo, boundary check, pickup list, and one delivery list covering all four ways a request arrives — ticked at the door, raised from a door card with no visit behind it, typed in by hand from a phone call, or off the website. Requests can be corrected, and cancelled with a reason and restored, without deleting anything. Photo upload was broken from the day it shipped until 1.5.0: see the changelog. |
 | **3 — Field hardening** | **Shipped.** Offline write queue and turf cache, sign photos held until they can upload, nearest-first ordering, the printable paper turf sheet, add-to-home-screen, and a proper tablet layout. |
 | **Drive mode** (not in the original plan) | **Shipped in 1.1.0, not yet road-tested.** The next door ahead of a vehicle rather than the nearest, side of the road, hands-free speech, screen kept awake. 1.2.0 made it explain itself aloud on first use, with a help button that repeats it; 1.3.0 lets each volunteer choose the voice, under Account. The selection maths is unit-tested; the test that counts is a real concession road, and that has not happened yet. |
 | **4 — Reporting and admin** | **Partly shipped.** The diff-based re-import is done (`make import-diff`, then `make import-apply`): a newer list is applied in place and every contact, sign, consent record, turf and sign-up is kept. **Still planned:** coverage and support reports by ward / community / turf / day, and CSV export with an audit entry per download. |

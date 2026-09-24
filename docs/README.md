@@ -37,7 +37,7 @@ The same five-service compose stack runs in **two Caddy modes across three hosts
 only in what Caddy does: terminate TLS itself, or serve plain HTTP on loopback behind a Cloudflare
 Tunnel. Mode B is that second shape on the office Mac and **mode C is the identical configuration on
 an AWS EC2 host** — same `make up-tunnel`, same `Caddyfile.tunnel`, same hostname, different hardware
-— so only two diagrams are needed. See `../README.md` "Deploying for real" for the host-level
+— so only two diagrams are needed. **Production has been mode C since 2026-09-24.** See `../README.md` "Deploying for real" for the host-level
 differences (and the x86_64-not-Graviton landmine, which is about the `db` image, not about Caddy).
 
 ### Mode A — public host (`make up`)
@@ -70,8 +70,9 @@ flowchart LR
 
 ### Mode B / C — Cloudflare Tunnel (`make up-tunnel`, the current setup)
 
-The stack runs on a host with no public address — the office Mac (mode B), or the EC2 instance it is
-moving to (mode C, whose security group has no inbound rule at all, because the tunnel dials out).
+The stack runs on a host with no public address — since 2026-09-24 the EC2 instance (mode C, whose
+security group has no inbound rule at all, because the tunnel dials out), and before that the office
+Mac (mode B, now a development copy).
 `docker-compose.tunnel.yml` overrides Caddy's ports (`!override`, so 80/443 stay unbound) and swaps
 in `Caddyfile.tunnel`. The diagram is the same for both; only the box the tunnel runs on changes,
 and with it where `cloudflared`'s config lives (`~/.cloudflared/` under a LaunchAgent, or
@@ -1096,9 +1097,11 @@ serves TLS, the session cookie keeps its `Secure` flag in development too (no `C
 needed), which is how production behaves.
 
 **Production:** **https://canvass.webarchitecture.ca** — not `sean-hunt.com`, for the DNS reason in
-`../README.md` "DNS — what is actually deployed". Currently mode B: Caddy on `127.0.0.1:3031`, TLS at
-the Cloudflare edge, the stack on the office Mac; mode C is the same thing on an EC2 host in
-`ca-central-1` and does not change the hostname or any port below. In mode A, Caddy owns 80/443 with
+`../README.md` "DNS — what is actually deployed". **Mode C since 2026-09-24**: Caddy on
+`127.0.0.1:3031`, TLS at the Cloudflare edge, and the stack on the EC2 host in `ca-central-1`
+(`/srv/canvass`, `ssh canvass-prod`). Mode B is the identical configuration on the office Mac, which
+is where this ran until that date and is now a development copy; neither mode changes the hostname
+or any port below. In mode A, Caddy owns 80/443 with
 an automatic Let's Encrypt certificate for `$DOMAIN` and port 80 must stay open for the ACME
 challenge and the HTTP→HTTPS redirect. In every mode the API listens on 3000 inside the compose
 network and is never published.

@@ -15,7 +15,9 @@ tablet layout) and Phase 5 (opt-in SMS with email fallback, per-purpose consent,
 test-send and typed-word approval, a drip scheduler; `MESSAGING_PROVIDER=log` by default).
 
 Also shipped, none of it in the original plan: **lawn signs** (GPS, accuracy, photos, pickup and
-delivery lists, and a map of placed + requested), **doorstep phone/email with per-purpose consent**,
+delivery lists, and a map of placed + requested; since 1.5.0 a request can also be typed in by hand,
+raised from any door card without a visit behind it, corrected, and cancelled with a reason and
+restored — one merged delivery list across all four origins), **doorstep phone/email with per-purpose consent**,
 **optional street-level imagery of a door** (off unless `STREETVIEW_API_KEY` is set), **turf
 boundaries on the main map** (`GET /api/turfs/shapes`, scoped; street-picked turfs get an
 approximate hull drawn dotted), **the reachability report** (`GET /api/stats/reachability` +
@@ -69,7 +71,9 @@ it into anything that exports the voters list.
 
 ## Commands
 
-Operator/production (run from the repo root on the Docker host — see the `Makefile`):
+Operator/production (run from the repo root on the Docker host — see the `Makefile`). **Since
+2026-09-24 that host is EC2, so prefix them:** `ssh canvass-prod 'cd /srv/canvass && make ps'`.
+Run bare on the Mac they act on the stopped local stack, which is a development copy:
 
 ```bash
 make up                       # mode A: Caddy binds 80/443, Let's Encrypt for $DOMAIN

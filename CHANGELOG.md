@@ -53,6 +53,15 @@ All notable changes to CanvassOS are recorded here. The format follows
   waiting have nothing on file to stamp. Those get the row written for them, already cancelled and
   filled in the way the door screen would have filled it. Unmapped legal-description doors included
   — `sign.lat`/`lon` are nullable, so they are cancellable too.
+- **Production moved to AWS on 2026-09-24.** The stack now runs on the EC2 box in `/srv/canvass`
+  (`ssh canvass-prod`); the office Mac's containers are stopped and it runs no `cloudflared`, so the
+  tunnel has exactly one connector and `make restart-tunnel` on the Mac restarts nothing the public
+  can see. Operate production over the ssh alias. The Mac keeps the repo and a database snapshot
+  taken at the cutover — good for development, misleading if mistaken for production. Rolling back
+  now needs `./scripts/cutover-aws.sh rollback --with-data`, because AWS has taken real writes
+  since. One useful side effect: the cutover brought the stack up from a freshly built image, so the
+  `signphotos` volume was seeded with the `/photos` ownership fix already in place and never needed
+  the hand chown in README "Sign photos fail with EACCES".
 - **`scripts/cutover-aws.sh sync`** copies the Mac's data to EC2 while the Mac stays production —
   no freeze, so the list tables must match exactly and the tables volunteers write to are reported
   with their drift. Run before a cutover, and whenever the nightly S3 backup (taken from EC2) should
