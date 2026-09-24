@@ -8,7 +8,7 @@
  */
 import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { usePlaceSign } from '../api/hooks';
+import { useHandleRequest, usePlaceSign } from '../api/hooks';
 import type { Sign, SignInput } from '../api/types';
 import { useOutbox, usePhotoQueue } from '../offline/useOutbox';
 import { ErrorBox, Spinner, n } from '../components/ui';
@@ -25,6 +25,14 @@ import { PhotoCapture } from './PhotoCapture';
 interface Props {
   /** Prefilled from `?household=` when the volunteer came from the delivery run list. */
   household: { id: string; address: string | null } | null;
+  /**
+   * From `?request=`: the phoned-in or website request this placement answers.
+   *
+   * A door off the voters list drops off the delivery list by itself — the query behind it excludes
+   * any household that has a sign. A `public_request` has no such derivation, so this id is the one
+   * thing that closes it, and without it the list would fill with signs already in the ground.
+   */
+  requestId: string | null;
   onClearHousehold: () => void;
 }
 
@@ -44,9 +52,10 @@ interface Placed {
   clientId: string;
 }
 
-export function PlaceSignPanel({ household, onClearHousehold }: Props) {
+export function PlaceSignPanel({ household, requestId, onClearHousehold }: Props) {
   const geo = useGeoFix();
   const place = usePlaceSign();
+  const handleRequest = useHandleRequest();
   // Subscribing starts the outbox on this screen too. A volunteer who reopens the app here with a
   // sign still queued needs it flushing: a photo held on the phone is waiting on that sign's id.
   const outbox = useOutbox();
@@ -82,6 +91,19 @@ export function PlaceSignPanel({ household, onClearHousehold }: Props) {
   /** `queued` comes straight from the mutation, so the card can only ever say what actually happened. */
   function keep(r: { sign: Sign; queued: boolean }, sent: SignInput) {
     setCreated({ sign: r.sign, queued: r.queued, clientId: sent.client_id ?? r.sign.client_id ?? '' });
+
+    // Close the request this placement answers — but only once the sign really exists. A queued
+    // sign has no server id to point the request at, and the PATCH would need the same connection
+    // the placement just failed to get. Leaving it open is the safe failure: a request shown twice
+    // costs a wasted stop, a request closed against a sign nobody can see costs the sign.
+    if (requestId && !r.queued) {
+      handleRequest.mutate({
+        requestId,
+        handled: true,
+        sign_id: r.sign.id,
+        ...(household ? { household_id: household.id } : {}),
+      });
+    }
   }
 
   function retry() {

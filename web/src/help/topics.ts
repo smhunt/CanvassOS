@@ -203,6 +203,10 @@ export const SIGNS_HELP: HelpTopic = {
       body: 'Doors where a canvasser ticked “Wants a lawn sign”. Tap “Place a sign here” to record the delivery against that door, and it drops off the list. Volunteers see only requests in their own turfs.',
     },
     {
+      heading: 'Requests that came another way',
+      body: 'Organizers get a second list below that one: requests phoned in, texted or asked for in person, plus website sign-ups that wanted a sign. “Add a request” takes a name, a phone or email, and where the sign goes — start typing the address to link a real door. Ones you typed can be edited or deleted; a website sign-up opens in Sign-ups instead.',
+    },
+    {
       heading: 'Map and pickup list',
       body: 'Map shows signs as Requested, Placed, Missing or damaged, and Removed; tap a type to show or hide it. The Pickup list is every sign still standing, with Directions and a “Picked up” button, and can be filtered by ward.',
     },

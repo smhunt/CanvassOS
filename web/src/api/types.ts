@@ -604,3 +604,29 @@ export interface PublicRequest {
   website_status: 'pending' | 'confirmed' | 'unsubscribed' | null;
   candidates: MatchCandidate[];
 }
+
+/**
+ * A request somebody phoned, texted or asked for in person, typed in by an organiser.
+ *
+ * Stored as an ordinary `public_request` with `source = 'manual'`: the same row a website sign-up
+ * produces, so it reaches the matcher, the sign-ups queue and the sign delivery flow without a
+ * second code path. It is deliberately not a `sign` row with status `requested` — placing a sign
+ * demands a real GPS fix inside the municipality, and a request taken over the phone has no
+ * coordinates at all.
+ *
+ * `consent_text` is absent from this shape on purpose. The server writes it from who was signed in
+ * and when; a client able to supply it would be a client able to put words in somebody's mouth.
+ */
+export interface ManualRequestInput {
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  note?: string | null;
+  wants?: string[];
+  /** Set when the organiser picked a real door out of the search instead of typing an address. */
+  household_id?: string | null;
+}
+
+/** Every field of a manual request is editable. A website sign-up's are not — the API refuses. */
+export type ManualRequestPatch = Partial<ManualRequestInput>;

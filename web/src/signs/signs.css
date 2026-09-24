@@ -459,3 +459,96 @@
 .sgmap__hint {
   margin: 0;
 }
+
+/* ------------------------------------------------------------------ requests taken by hand */
+
+/* The two halves of the Sign requests tab are separate sections with their own headings, so the
+   space between them has to read as a break rather than as one long list. */
+.sg-asked {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+.sg-asked__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.sg-asked__head .sheet__h3 {
+  margin: 0;
+}
+
+/* A request that is not a door on the list has no ward, so this row carries no --ward stripe. */
+.sg-row--asked {
+  border-left-color: var(--border);
+}
+
+.sg-manual {
+  margin: 1rem 0;
+}
+.sg-manual .sheet__h3 {
+  margin-top: 0;
+}
+/* Phone and email side by side on anything wider than a phone; stacked below, because two
+   half-width inputs on a 390px screen are two inputs nobody can type in. */
+.sg-manual__pair {
+  display: grid;
+  gap: 0 1rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 30em) {
+  .sg-manual__pair {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* The door search results. Capped and scrollable: this opens under the thumb while somebody is on
+   the phone, and a list that pushes the Save button off the screen is worse than no list. */
+.sg-manual__hits {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.4rem;
+  max-height: 13rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.sg-manual__hits p {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+}
+.sg-manual__hit {
+  min-height: var(--tap);
+  padding: 0.55rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sg-manual__hit:last-child {
+  border-bottom: 0;
+}
+.sg-manual__hit:hover,
+.sg-manual__hit:focus-visible {
+  background: var(--surface-3);
+}
+
+.sg-manual__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.sg-manual__actions .btn {
+  min-height: var(--tap);
+}
+.sg-manual__need,
+.sg-manual__consent {
+  margin-top: 0.75rem;
+}

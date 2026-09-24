@@ -37,6 +37,10 @@ export function SignsPage() {
   const householdId = params.get('household');
   const household = householdId ? { id: householdId, address: params.get('address') } : null;
 
+  // A phoned-in request has no `wants_sign` contact for a placement to satisfy, so it only leaves
+  // the list when the placing form reports back against this id. See AskedRequestsPanel.
+  const requestId = params.get('request');
+
   // A tab switch pushes, so Back returns to the tab you came from.
   const setTab = (next: TabId) => {
     const p = new URLSearchParams(params);
@@ -45,10 +49,13 @@ export function SignsPage() {
   };
 
   // Unlinking the door is a correction, not a place — it replaces so Back still leaves the page.
+  // The request goes with it: a sign no longer being placed at that door is no longer closing the
+  // request that named it.
   const clearHousehold = () => {
     const p = new URLSearchParams(params);
     p.delete('household');
     p.delete('address');
+    p.delete('request');
     setParams(p, { replace: true });
   };
 
@@ -97,7 +104,9 @@ export function SignsPage() {
       </div>
 
       <div className="stack" id={`signs-panel-${tab}`} role="tabpanel" aria-labelledby={`signs-tab-${tab}`} tabIndex={0}>
-        {tab === 'place' && <PlaceSignPanel household={household} onClearHousehold={clearHousehold} />}
+        {tab === 'place' && (
+          <PlaceSignPanel household={household} requestId={requestId} onClearHousehold={clearHousehold} />
+        )}
         {tab === 'requests' && <SignRequestsPanel />}
         {tab === 'map' && (
           <Suspense

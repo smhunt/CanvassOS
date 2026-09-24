@@ -17,6 +17,8 @@ import type {
   Household,
   LegalHousehold,
   Meta,
+  ManualRequestInput,
+  ManualRequestPatch,
   PointsCollection,
   PublicRequest,
   Quality,
@@ -510,12 +512,61 @@ export function useDecideMatch() {
   });
 }
 
-/** Mark a request handled (or reopen it). */
+/**
+ * Mark a request handled (or reopen it).
+ *
+ * `sign_id` and `household_id` ride along when a sign was actually placed against the request: that
+ * pointer is the only thing that drains a phoned-in request from the list, since — unlike a door
+ * off the voters list — there is no `wants_sign` contact for a placement to satisfy.
+ */
 export function useHandleRequest() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { requestId: string; handled: boolean }) =>
-      api.patch<{ ok: boolean }>(`/public/requests/${input.requestId}`, { handled: input.handled }),
+    mutationFn: (input: { requestId: string; handled: boolean; sign_id?: string; household_id?: string }) =>
+      api.patch<{ ok: boolean }>(`/public/requests/${input.requestId}`, {
+        handled: input.handled,
+        ...(input.sign_id ? { sign_id: input.sign_id } : {}),
+        ...(input.household_id ? { household_id: input.household_id } : {}),
+      }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['public-requests'] }),
+  });
+}
+
+/**
+ * Type in a request that arrived by phone, text or in person.
+ *
+ * It lands in the same queue as a website sign-up, so the matcher gets a look at it and the
+ * sign-ups screen shows it beside the rest, rather than a second private list nobody else can see.
+ */
+export function useCreateManualRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ManualRequestInput) =>
+      api.post<{ request: PublicRequest }>('/public/requests/manual', input).then((r) => r.request),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['public-requests'] }),
+  });
+}
+
+/** Correct a manual request. The API refuses this outright for a website sign-up. */
+export function useUpdateManualRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, ...patch }: ManualRequestPatch & { requestId: string }) =>
+      api.patch<{ request: PublicRequest }>(`/public/requests/${requestId}/fields`, patch).then((r) => r.request),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['public-requests'] }),
+  });
+}
+
+/**
+ * Delete a manual request outright — a wrong number, a duplicate, somebody who changed their mind.
+ *
+ * Manual rows only, enforced server-side: a website sign-up is the record of a consent somebody
+ * actually gave, and the five-minute website sync would re-insert a deleted one by morning anyway.
+ */
+export function useDeleteManualRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (requestId: string) => api.del<void>(`/public/requests/${requestId}`),
     onSettled: () => qc.invalidateQueries({ queryKey: ['public-requests'] }),
   });
 }

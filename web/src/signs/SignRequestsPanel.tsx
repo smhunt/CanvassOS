@@ -1,22 +1,41 @@
 /**
- * The delivery run: doors that asked for a sign at the door and have not had one yet.
+ * The delivery run, in two halves.
  *
+ * The first is doors that asked at the door: derived from the last canvass contact's `wants_sign`.
  * Unlike the rest of the signs screens this IS voter data — addresses off the list, with what the
  * resident said — so it is scoped server-side (a volunteer sees only their own turfs) and every
  * load is audited. Nothing here is exported or copyable in bulk on purpose.
  *
- * A door drops off this list the moment a sign is recorded against it, which is why "Place a sign
- * here" carries the household id through to the placing tab.
+ * The second half (`AskedRequestsPanel`, organizer/admin only) is everything that arrived some
+ * other way: phoned in, texted, or signed up on the website. Those are `public_request` rows and
+ * carry contact details, which is why a volunteer never sees that half.
+ *
+ * A door drops off the first list the moment a sign is recorded against it, which is why "Place a
+ * sign here" carries the household id through to the placing tab.
  */
 import { useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
-import { useSignRequests } from '../api/hooks';
+import { useMe, useSignRequests } from '../api/hooks';
 import { EmptyState, ErrorBox, LoadingCards, fmtDate, n, titleCase, wardLabel } from '../components/ui';
 import { wardColour } from '../map/palette';
 import { relativeDay } from '../reports/relative';
+import { AskedRequestsPanel } from './AskedRequestsPanel';
 import { toDeliveryRequests, type DeliveryRequest } from './rows';
 
 export function SignRequestsPanel() {
+  const me = useMe();
+  const organizer = me.data?.role === 'organizer' || me.data?.role === 'admin';
+
+  return (
+    <>
+      <DoorRequests />
+      {organizer && <AskedRequestsPanel />}
+    </>
+  );
+}
+
+/** Doors off the voters list whose last contact ticked "wants a lawn sign". */
+function DoorRequests() {
   const requests = useSignRequests();
   const [ward, setWard] = useState('');
 
@@ -32,7 +51,10 @@ export function SignRequestsPanel() {
   }
 
   return (
-    <>
+    <section aria-labelledby="sg-doors-h">
+      <h2 id="sg-doors-h" className="sheet__h3">
+        Asked at the door
+      </h2>
       <div className="sg-toolbar">
         {wards.length > 1 && (
           <label className="select-pill">
@@ -66,7 +88,7 @@ export function SignRequestsPanel() {
           ))}
         </ul>
       )}
-    </>
+    </section>
   );
 }
 
