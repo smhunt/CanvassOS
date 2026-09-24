@@ -36,6 +36,10 @@
 # and hostnames — never a row of the voters list.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# Confirmations read the script's ORIGINAL stdin on fd 3; every child process gets /dev/null.
+# `docker compose exec` attaches stdin even with -T, and ssh does unless told -n, and either one
+# swallows the typed or piped answer to the next prompt — two runs ended as "not confirmed" that way.
+exec 3<&0 0</dev/null
 
 TUNNEL=406862e6-5c64-434b-a377-3a5b544a883a          # the production tunnel (named "middle-manager")
 STAGING_TUNNEL=canvass-aws
@@ -72,7 +76,7 @@ remote() { ssh -n -o BatchMode=yes -o ConnectTimeout=40 "$EC2" "cd $EC2_DIR && $
 
 confirm() { # confirm WORD "what is about to happen"
   printf '\n%s\n' "$2"
-  local ans; read -r -p "Type $1 to continue: " ans
+  local ans; printf 'Type %s to continue: ' "$1"; read -r -u 3 ans || ans=""; printf '\n'
   [ "$ans" = "$1" ] || die "not confirmed"
 }
 
@@ -222,7 +226,7 @@ IN_WINDOW=0
 # `die` exits rather than erroring, so an ERR trap would miss most mid-window failures. EXIT sees them all.
 # The trailing sleep lets the tee logger drain before the shell exits; without it the last lines
 # (an ABORT message, typically) can be lost from the terminal even though the log file has them.
-trap 'rc=$?; if [ "$IN_WINDOW" = 1 ] && [ "$rc" -ne 0 ]; then mid_cutover_banner; fi; sleep 0.3' EXIT
+trap 'rc=$?; if [ "$IN_WINDOW" = 1 ] && [ "$rc" -ne 0 ]; then mid_cutover_banner; fi; sleep 1' EXIT
 
 mid_cutover_banner() {
   printf '\n!!! FAILED MID-CUTOVER. Production is FROZEN: nothing is serving %s. !!!\n' "$PUBLIC_HOST"
