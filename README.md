@@ -402,6 +402,7 @@ Mac, from the repo root; it drives EC2 over `ssh canvass-prod`.
 ```bash
 ./scripts/cutover-aws.sh preflight   # read-only checks on both machines — safe at any time
 ./scripts/cutover-aws.sh prepare     # no production impact: refresh EC2's code, rebuild it, empty its database
+./scripts/cutover-aws.sh sync        # no production impact: copy the Mac's data to EC2; the Mac stays production
 ./scripts/cutover-aws.sh cutover     # THE WINDOW, ~15 min: freeze, dump, restore, compare, switch the tunnel
 ./scripts/cutover-aws.sh finish      # once checked on a phone: the Mac can no longer resume by accident
 ./scripts/cutover-aws.sh rollback    # back onto the Mac  (--with-data once AWS has taken real writes)

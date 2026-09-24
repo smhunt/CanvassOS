@@ -3,6 +3,7 @@
 #
 #   ./scripts/cutover-aws.sh preflight              read-only checks on both machines; safe at any time
 #   ./scripts/cutover-aws.sh prepare                no production impact: refresh EC2's code, rebuild it, empty its database
+#   ./scripts/cutover-aws.sh sync                   no production impact: copy the Mac's data to EC2 (the Mac stays production)
 #   ./scripts/cutover-aws.sh cutover                THE WINDOW (~15 min): freeze, dump, restore, verify, switch the tunnel
 #   ./scripts/cutover-aws.sh finish                 once you have checked it on a phone: make the Mac unable to resume by accident
 #   ./scripts/cutover-aws.sh rollback [--with-data] put production back on the Mac
@@ -65,7 +66,9 @@ warn() { printf '  WARN  %s\n' "$*"; WARNS=$((WARNS+1)); }
 bad()  { printf '  FAIL  %s\n' "$*"; FAILS=$((FAILS+1)); }
 die()  { printf '\nABORT: %s\n' "$*" >&2; exit 1; }
 
-remote() { ssh -o BatchMode=yes -o ConnectTimeout=40 "$EC2" "cd $EC2_DIR && $1"; }
+# -n: never read this script's stdin. Without it ssh swallows the typed (or piped) answer to the
+# next confirmation prompt, and the script aborts as "not confirmed".
+remote() { ssh -n -o BatchMode=yes -o ConnectTimeout=40 "$EC2" "cd $EC2_DIR && $1"; }
 
 confirm() { # confirm WORD "what is about to happen"
   printf '\n%s\n' "$2"
@@ -107,7 +110,7 @@ REMOTE
 }
 
 photos_local()  { docker run --rm -v canvass_signphotos:/p:ro alpine sh -c 'find /p -type f | wc -l' | tr -d '[:space:]'; }
-photos_remote() { ssh -o BatchMode=yes "$EC2" "docker run --rm -v canvass_signphotos:/p:ro alpine sh -c 'find /p -type f | wc -l'" | tr -d '[:space:]'; }
+photos_remote() { ssh -n -o BatchMode=yes "$EC2" "docker run --rm -v canvass_signphotos:/p:ro alpine sh -c 'find /p -type f | wc -l'" | tr -d '[:space:]'; }
 
 # ------------------------------------------------------------------------------------------------
 # preflight: read-only. `strict` is what cutover demands; without it, things prepare will fix are
@@ -217,7 +220,9 @@ unfreeze_mac() { # put the Mac back exactly as it was before the freeze
 
 IN_WINDOW=0
 # `die` exits rather than erroring, so an ERR trap would miss most mid-window failures. EXIT sees them all.
-trap 'rc=$?; if [ "$IN_WINDOW" = 1 ] && [ "$rc" -ne 0 ]; then mid_cutover_banner; fi' EXIT
+# The trailing sleep lets the tee logger drain before the shell exits; without it the last lines
+# (an ABORT message, typically) can be lost from the terminal even though the log file has them.
+trap 'rc=$?; if [ "$IN_WINDOW" = 1 ] && [ "$rc" -ne 0 ]; then mid_cutover_banner; fi; sleep 0.3' EXIT
 
 mid_cutover_banner() {
   printf '\n!!! FAILED MID-CUTOVER. Production is FROZEN: nothing is serving %s. !!!\n' "$PUBLIC_HOST"
@@ -335,6 +340,58 @@ NEXT
 }
 
 # ------------------------------------------------------------------------------------------------
+# sync: copy the Mac's data to EC2 while the Mac stays production. No freeze, so the Mac keeps
+# writing during the dump and an exact gate is impossible; instead the static tables (the list
+# itself) must match, and the tables volunteers write to are reported with their drift.
+# Useful before a cutover, and it makes tonight's S3 backup — taken from EC2 — a backup of the
+# real data rather than of a stale rehearsal copy.
+# ------------------------------------------------------------------------------------------------
+sync() {
+  say "sync — the Mac stays production; EC2's copy is replaced"
+  remote 'true' || die "cannot reach $EC2"
+  [ "$(remote 'systemctl is-active cloudflared 2>/dev/null || true')" = active ] && die "EC2's PRODUCTION connector is active — EC2 is not a copy any more; use rollback --with-data logic, not sync"
+  [ "$(photos_local)" = 0 ] || die "sign photos exist on the Mac — pg_dump does not carry them and this script does not move the volume yet"
+  confirm SYNC "This dumps the Mac's database now, copies it to EC2, and REPLACES EC2's database with it.
+Production on the Mac is not touched. The staging URL keeps serving, with the new data."
+
+  say "dump on the Mac (production keeps running)"
+  counts_local > "backups/sync-$STAMP.mac.counts"
+  make backup >/dev/null
+  local dump; dump=$( { ls -t backups/canvass-*.sql.gz.gpg 2>/dev/null || true; } | head -1); [ -n "$dump" ] || die "make backup produced no file"
+  local sha; sha=$(shasum -a 256 "$dump" | cut -d' ' -f1); ok "$dump  sha256 ${sha:0:16}…"
+
+  say "copy"
+  remote 'mkdir -p backups'; scp -q "$dump" "$EC2:$EC2_DIR/backups/"
+  [ "$(remote "sha256sum backups/$(basename "$dump") | cut -d' ' -f1")" = "$sha" ] && ok "checksum matches on EC2" || die "checksum mismatch after copy"
+
+  say "restore on EC2 (its API stopped for the duration)"
+  remote "docker stop $API >/dev/null && make restore FILE=backups/$(basename "$dump") >/dev/null 2>&1" || { remote "docker start $API >/dev/null" || true; die "restore failed on EC2 — its API has been restarted"; }
+  counts_remote > "backups/sync-$STAMP.ec2.counts"
+  remote "docker start $API >/dev/null"
+  wait_until "EC2 API healthy on the new data" 40 3 remote 'curl -fsS --max-time 5 http://127.0.0.1:3031/api/health' || die "EC2 API did not come back"
+
+  say "compare"
+  # The list itself never changes between the baseline and the dump unless an import ran: exact.
+  local t bad_static=0
+  for t in household voter import_run schema_migration; do
+    local m e; m=$(grep "^$t|" "backups/sync-$STAMP.mac.counts" | cut -d'|' -f2); e=$(grep "^$t|" "backups/sync-$STAMP.ec2.counts" | cut -d'|' -f2)
+    if [ "$m" = "$e" ]; then ok "$t: $e"; else bad "$t: Mac $m vs EC2 $e"; bad_static=1; fi
+  done
+  [ "$bad_static" = 0 ] || die "the voters list itself differs after the restore — do not trust this copy"
+  # Everything volunteers write to keeps moving on the Mac; report it rather than gate on it.
+  printf '  %-16s %8s %8s   %s\n' table mac ec2 note
+  for t in contact sign sign_photo voter_contact turf turf_household app_user session audit_log public_request; do
+    local m e; m=$(grep "^$t|" "backups/sync-$STAMP.mac.counts" | cut -d'|' -f2); e=$(grep "^$t|" "backups/sync-$STAMP.ec2.counts" | cut -d'|' -f2)
+    [ -z "$m" ] && continue
+    local note=""; [ "$m" != "$e" ] && note="(Mac moved on by $((m - e)) since the dump)"
+    printf '  %-16s %8s %8s   %s\n' "$t" "$m" "$e" "$note"
+  done
+  say "synced"
+  printf '  EC2 holds the Mac'"'"'s data as of %s. The Mac is still production; anything entered there from now on is not on EC2 until the next sync or the cutover.\n' "$(grep '^contact.latest|' "backups/sync-$STAMP.ec2.counts" | cut -d'|' -f2)"
+  printf '  evidence: backups/sync-%s.{mac,ec2}.counts, log %s\n' "$STAMP" "$LOG"
+}
+
+# ------------------------------------------------------------------------------------------------
 finish() {
   say "finish — only after production on AWS has been checked on a phone"
   local c; c=$(connectors)
@@ -406,7 +463,7 @@ If real canvassing has happened on AWS, stop and run:  ./scripts/cutover-aws.sh 
 
   if [ ! -f "$CREDS" ]; then
     # finish deleted them from here on purpose; EC2 has kept its copy for exactly this.
-    ssh -o BatchMode=yes "$EC2" "sudo cat /etc/cloudflared/$TUNNEL.json" > "$CREDS" && chmod 600 "$CREDS" && ok "tunnel credentials fetched back from EC2" || die "no tunnel credentials on this Mac and could not fetch them from EC2"
+    ssh -n -o BatchMode=yes "$EC2" "sudo cat /etc/cloudflared/$TUNNEL.json" > "$CREDS" && chmod 600 "$CREDS" && ok "tunnel credentials fetched back from EC2" || die "no tunnel credentials on this Mac and could not fetch them from EC2"
   fi
   unfreeze_mac
   wait_until "Mac API healthy" 40 3 curl -fsS --max-time 5 http://127.0.0.1:3031/api/health || die "the Mac's stack did not come up — try: make devdb"
@@ -421,8 +478,9 @@ If real canvassing has happened on AWS, stop and run:  ./scripts/cutover-aws.sh 
 case "${1:-}" in
   preflight) preflight ;;
   prepare)   prepare ;;
+  sync)      sync ;;
   cutover)   cutover ;;
   finish)    finish ;;
   rollback)  rollback "${2:-}" ;;
-  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

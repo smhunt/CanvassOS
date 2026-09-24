@@ -8,6 +8,12 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ### Added
 
+- **`scripts/cutover-aws.sh sync`** copies the Mac's data to EC2 while the Mac stays production —
+  no freeze, so the list tables must match exactly and the tables volunteers write to are reported
+  with their drift. Run before a cutover, and whenever the nightly S3 backup (taken from EC2) should
+  be a backup of the real data rather than of a stale copy. The remote helpers now pass `-n` to
+  `ssh`: without it, `ssh` swallowed the typed answer to the next confirmation and the script aborted
+  as "not confirmed".
 - **`scripts/cutover-aws.sh`** — production's move from the office Mac to the AWS box, scripted:
   `preflight` (read-only), `prepare` (no production impact), `cutover` (the window), `finish` and
   `rollback [--with-data]`. It refuses to start EC2's tunnel connector until the production tunnel
