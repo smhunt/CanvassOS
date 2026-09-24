@@ -580,6 +580,22 @@ export function serializePickup(row: PickupRow): PickupRow {
  * projection is narrow on purpose: household fields limited to what `HouseholdPublic` allows, and
  * the only voter field is `display_name`, which volunteers already get on their own turf's doors.
  */
+/**
+ * How the door came to be waiting for a sign.
+ *
+ * `door` — the last canvass contact ticked "wants a sign"; a person said it on a doorstep.
+ * `direct` — somebody raised the request against the door without a visit behind it (the map's
+ *   door card, the follow-up queue). `POST /api/signs` stamps no requester on a `requested` row,
+ *   so these carry no contact, no result and no user; who raised it is in `audit_log` only.
+ *
+ * Deliberately NOT a third value for `public_request` rows. Those carry a name, an email and a
+ * phone under CASL consent, and a volunteer may see this list. Merging them into this shape would
+ * put those fields into a type a volunteer receives, which is exactly what this allow-list exists
+ * to prevent — so they stay on `GET /api/public/requests` (organizer-only, at the route) and the
+ * web app joins the two lists for the organizers who may see both.
+ */
+export type SignRequestSource = 'door' | 'direct';
+
 export interface SignRequestRow {
   household_id: string;
   address: string;
@@ -589,12 +605,14 @@ export interface SignRequestRow {
   lon: number | null;
   /** Where the resident asked for the sign, when it is not the door. Null = never captured. */
   sign_address: string | null;
-  contact_id: string;
+  source: SignRequestSource;
+  /** Null on a `direct` row: there is no visit behind it. Same for the four fields below. */
+  contact_id: string | null;
   last_contact_at: Date | string;
-  last_result: string;
+  last_result: string | null;
   note: string | null;
-  user_id: string;
-  user_name: string;
+  user_id: string | null;
+  user_name: string | null;
   voter_id: string | null;
   voter_name: string | null;
 }
@@ -608,6 +626,7 @@ export function serializeSignRequest(row: SignRequestRow): SignRequestRow {
     lat: row.lat,
     lon: row.lon,
     sign_address: row.sign_address,
+    source: row.source,
     contact_id: row.contact_id,
     last_contact_at: row.last_contact_at,
     last_result: row.last_result,

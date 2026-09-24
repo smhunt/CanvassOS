@@ -23,6 +23,17 @@ All notable changes to CanvassOS are recorded here. The format follows
   five-second cleanup and a volunteer on a porch who cannot record a request is a lost sign.
   Drive mode is deliberately excluded — that screen is built never to be touched while the car is
   moving.
+- **One delivery list instead of two.** The signs screen used to stack "asked at the door" above
+  "asked by phone, text or in person", and a volunteer loading a truck had to read both and merge
+  them in their head. They are now a single list, newest first, with the origin on a chip —
+  *asked at the door*, *requested on a door card*, *taken by hand*, *from the website* — because a
+  person who said it on a doorstep and a row off a web form still want different handling. Every
+  row offers the same actions. `GET /api/signs/requests` grew a `source` field and a second branch
+  so a sign requested with no visit behind it reaches the list at all; **that branch carries the
+  same turf scope as the first**, so a volunteer still sees only doors in their own turfs.
+  The phoned-in half stays on `GET /api/public/requests`, which refuses a volunteer at the route:
+  those rows carry a name, an email and a phone under CASL consent, and the merge happens in the
+  browser precisely so there is no response shape in which a volunteer could be handed one.
 - **`scripts/cutover-aws.sh sync`** copies the Mac's data to EC2 while the Mac stays production —
   no freeze, so the list tables must match exactly and the tables volunteers write to are reported
   with their drift. Run before a cutover, and whenever the nightly S3 backup (taken from EC2) should

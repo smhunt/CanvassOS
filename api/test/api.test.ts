@@ -2300,6 +2300,7 @@ describe('lawn signs', () => {
     assert.ok(wanted.address, 'with the address needed to deliver it');
     assert.equal(wanted.last_result, 'spoke');
     assert.equal(wanted.user_name, 'volunteer accepted');
+    assert.equal(wanted.source, 'door', 'a door that asked at the door is a `door` row');
     for (const k of [...RESTRICTED_VOTER_KEYS, ...RESTRICTED_HH_KEYS]) {
       assert.equal(k in wanted, false, `sign requests must not carry ${k}`);
     }
@@ -2334,6 +2335,88 @@ describe('lawn signs', () => {
       [EMAIL_PATTERN],
     );
     assert.equal(naud.rows[0].n, 3, 'every read of the request list is audited');
+  });
+
+  it('lists a sign requested with no visit behind it, and keeps that branch inside the turf scope', async () => {
+    // A door in the volunteer's own turf that nobody has canvassed and that has no sign yet — so
+    // the only thing that can put it on the delivery list is the `direct` branch.
+    const inTurf = await db.query<{ id: string }>(
+      `SELECT h.id FROM household h
+       WHERE h.id = ANY($1::text[]) AND h.lat IS NOT NULL AND h.lon IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id)
+         AND NOT EXISTS (SELECT 1 FROM contact c WHERE c.household_id = h.id)
+       LIMIT 1`,
+      [ctx.streetHouseholdIds],
+    );
+    const nearId = inTurf.rows[0]!.id;
+    const farId = ctx.outsideHouseholdId;
+
+    // Raised the way the map's door card raises one: status 'requested', no contact, no visit.
+    for (const [hh, key] of [
+      [nearId, `test-direct-near-${RUN}`],
+      [farId, `test-direct-far-${RUN}`],
+    ] as const) {
+      const res = await call('POST', '/api/signs', organizerCookie, {
+        household_id: hh,
+        lat: SIGN_LAT,
+        lon: SIGN_LON,
+        status: 'requested',
+        client_id: key,
+      });
+      assert.equal(res.statusCode, 201, res.body);
+      const s = (res.json() as { sign: Record<string, unknown> }).sign;
+      track(s.id as string);
+      assert.equal(s.status, 'requested');
+      assert.equal(s.placed_at, null, 'a request is not a placement');
+      assert.ok(s.requested_at, 'requested_at is stamped instead');
+    }
+
+    const org = await call('GET', '/api/signs/requests', organizerCookie);
+    assert.equal(org.statusCode, 200);
+    const orgRows = (org.json() as { requests: Array<Record<string, unknown>> }).requests;
+
+    for (const hh of [nearId, farId]) {
+      const row = orgRows.find((r) => r.household_id === hh);
+      assert.ok(row, `a sign requested with no visit reaches the delivery list (${hh})`);
+      assert.equal(row!.source, 'direct');
+      assert.ok(row!.address, 'with the address needed to deliver it');
+      // POST /api/signs stamps no requester on a request, so these are null by contract, not by
+      // accident — who raised it lives in audit_log (`place_sign`) and nowhere on the row.
+      assert.equal(row!.contact_id, null);
+      assert.equal(row!.last_result, null);
+      assert.equal(row!.user_id, null);
+      assert.equal(row!.user_name, null);
+      assert.equal(row!.voter_id, null);
+      assert.equal(row!.voter_name, null);
+      assert.ok(row!.last_contact_at, 'the sign’s requested_at stands in for a contact time');
+    }
+    assert.equal(orgRows.filter((r) => r.household_id === nearId).length, 1, 'a door appears once');
+
+    // THE assertion this test exists for. The `direct` branch is a second way into a query that
+    // reads addresses off the voters list, and a union branch that forgot the turf scope would hand
+    // a volunteer doors they have no business seeing — MEA s. 23(7)-(8), the same rule as every
+    // other door read. The near door is theirs; the far one is not, and must be invisible.
+    const vol = await call('GET', '/api/signs/requests', volunteerCookie);
+    assert.equal(vol.statusCode, 200);
+    const volRows = (vol.json() as { requests: Array<Record<string, unknown>> }).requests;
+    assert.ok(
+      volRows.some((r) => r.household_id === nearId),
+      'a volunteer sees a direct request inside their own turf',
+    );
+    assert.ok(
+      !volRows.some((r) => r.household_id === farId),
+      'a volunteer must NOT see a direct request outside their turfs',
+    );
+
+    // The delivery list is merged with the phoned-in requests in the BROWSER, never on the wire,
+    // precisely so a volunteer can never be handed a CASL contact field. Both halves of that.
+    for (const row of volRows) {
+      for (const k of ['name', 'email', 'phone', 'consent_text', 'wants']) {
+        assert.equal(k in row, false, `sign requests must not carry ${k}`);
+      }
+    }
+    const volPublic = await call('GET', '/api/public/requests?open=true', volunteerCookie);
+    assert.equal(volPublic.statusCode, 403, 'the phoned-in half refuses a volunteer at the route');
   });
 
   it('deletes signs and photos for organizers only, and takes the file with them', async () => {

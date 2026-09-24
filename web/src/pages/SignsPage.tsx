@@ -38,7 +38,7 @@ export function SignsPage() {
   const household = householdId ? { id: householdId, address: params.get('address') } : null;
 
   // A phoned-in request has no `wants_sign` contact for a placement to satisfy, so it only leaves
-  // the list when the placing form reports back against this id. See AskedRequestsPanel.
+  // the list when the placing form reports back against this id. See SignRequestsPanel.
   const requestId = params.get('request');
 
   // A tab switch pushes, so Back returns to the tab you came from.

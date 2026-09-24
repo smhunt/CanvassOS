@@ -366,10 +366,16 @@ export interface SignRequest {
   lon: number | null;
   /** Where they asked for the sign, when it is not the door. Null = never captured. */
   sign_address: string | null;
-  contact_id: string;
-  /** When the door asked — this is the contact's timestamp, there is no separate requested_at. */
+  /**
+   * How the door came to be waiting. `door` = the last contact ticked "wants a sign"; `direct` = a
+   * `requested` sign raised from a door card with no visit behind it. Everything below is null on a
+   * `direct` row — there is no contact, and `POST /api/signs` stamps no requester on a request.
+   */
+  source: 'door' | 'direct';
+  contact_id: string | null;
+  /** When the door asked — the contact's timestamp, or the sign's `requested_at` on a `direct` row. */
   last_contact_at: string;
-  last_result: ContactResult;
+  last_result: ContactResult | null;
   note: string | null;
   user_id: string | null;
   user_name: string | null;

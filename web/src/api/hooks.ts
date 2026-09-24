@@ -490,11 +490,15 @@ export function usePickupList() {
 // ------------------------------------------------------------------ phase 8 — subscriber link
 
 /** The public-request queue, matcher candidates riding along. Organizer-only server-side. */
-export function usePublicRequests(open: boolean) {
+export function usePublicRequests(open: boolean, enabled = true) {
   return useQuery({
     queryKey: ['public-requests', open],
     queryFn: () =>
       api.get<{ requests: PublicRequest[] }>('/public/requests', { open }).then((r) => r.requests),
+    // `enabled` is how a screen that BOTH roles can open avoids firing a request the API will
+    // refuse: these rows carry names, phones and emails under CASL consent and the route is
+    // organizer/admin. Not a security boundary — the route is — just an honest client.
+    enabled,
     staleTime: 30_000,
   });
 }

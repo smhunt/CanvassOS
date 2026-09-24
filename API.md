@@ -363,13 +363,33 @@ nullable and most fields are free text. The two exceptions to "not voter data" a
   the concession" ordering, deliberately **not** a travelling-salesman solve: it is stable, explainable to the
   volunteer holding the list, and good enough to collect a few hundred signs in a weekend. Every field needed to find
   the sign in November is on the line, including `photo_ids` for `GET /api/signs/photo/:photoId`.
-- `GET /api/signs/requests?limit=200` (1–500) → `{ requests: [...] }` — doors whose **most recent** contact set
-  `wants_sign = true` and which have **no `sign` row yet**. This closes the loop from the door screen to sign delivery
-  and is the reason `contact.wants_sign` exists; a door drops off the list the moment a sign is placed against it.
-  `{ household_id, address, ward, community, lat, lon, contact_id, last_contact_at, last_result, note, user_id,
-  user_name, voter_id, voter_name }`, newest first.
+- `GET /api/signs/requests?limit=200` (1–500) → `{ requests: [...] }` — doors waiting for a sign, from **two**
+  sources unioned into one worklist. `source` says which:
+  - `door` — the door's **most recent** contact set `wants_sign = true`. This closes the loop from the door screen
+    to sign delivery and is the reason `contact.wants_sign` exists.
+  - `direct` — a `sign` row with status `requested` and **no** `wants_sign` contact behind it: somebody raised the
+    request from the map's door card or a worklist, without a visit. Before these were unioned in they reached
+    nobody's list — the canvasser tapped, believed the door was handled, and no sign was ever brought.
+
+  A door appears in exactly one branch (the `direct` branch negates the `door` branch's condition), and at most once
+  (`DISTINCT ON`, because the web app's duplicate guard fails open with no signal). A door leaves the list only when a
+  sign exists in some **other** status — a row still marked `requested` *is* this request and must not hide the door.
+
+  `{ household_id, address, ward, community, lat, lon, sign_address, source, contact_id, last_contact_at,
+  last_result, note, user_id, user_name, voter_id, voter_name }`, newest first.
+  **On a `direct` row `contact_id`, `last_result`, `user_id`, `user_name`, `voter_id` and `voter_name` are all
+  `null`**, and `last_contact_at` is the sign's `requested_at`. `POST /api/signs` stamps no requester on a
+  `requested` row (only `placed_by` on a placement), so **who raised a `direct` request is recorded in `audit_log`
+  — `place_sign` — and nowhere on the row itself.**
   Unlike the rest of `/api/signs` this **is** voter data, so it follows the ordinary rules: **volunteers see only doors
-  inside their assigned turfs**, organizer/admin see all, and every call writes audit `view_sign_requests` with `{ n }`.
+  inside their assigned turfs — the turf scope is applied to BOTH branches**, organizer/admin see all, and every call
+  writes audit `view_sign_requests` with `{ n }`.
+
+  **Requests that arrived some other way — phoned in, texted, off the website — are NOT in this response.** They are
+  `public_request` rows, they carry a name, email and phone under CASL consent, and this endpoint is one a volunteer
+  may call. They stay on `GET /api/public/requests`, which is organizer/admin at the route. The web app shows the two
+  as a single list for the organizers who may see both; the merge is in the browser, so there is no shape in which a
+  volunteer could receive a CASL contact field.
 
 ### Sign photos
 - `POST /api/signs/:id/photo` — one `multipart/form-data` file part → `201 { photo }`. Any signed-in role.

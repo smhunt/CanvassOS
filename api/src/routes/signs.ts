@@ -292,24 +292,72 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
 
     const rows = await q<SignRequestRow>(
       app.db,
-      `SELECT h.id AS household_id, h.address, h.ward, h.community, h.lat, h.lon,
-              -- Where they asked for it, when that is not the door: a corner lot, a farm gate, the
-              -- shop. Null means nobody captured one, not that the door is the answer.
-              c.sign_address,
-              c.id AS contact_id, c.at AS last_contact_at, c.result::text AS last_result, c.note,
-              c.user_id, u.name AS user_name, c.voter_id, v.display_name AS voter_name
-       FROM (SELECT DISTINCT household_id FROM contact WHERE wants_sign) d
-       JOIN household h ON h.id = d.household_id
-       JOIN LATERAL (SELECT * FROM contact WHERE household_id = h.id ORDER BY at DESC LIMIT 1) c ON true
-       JOIN app_user u ON u.id = c.user_id
-       LEFT JOIN voter v ON v.id = c.voter_id
-       WHERE c.wants_sign
-         -- Only a sign that exists in some OTHER form excludes the door. A row still marked
-         -- 'requested' is this same request, written by POST /api/contacts, and must not hide the
-         -- door from the list of doors still waiting for one.
-         AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id AND s.status <> 'requested')
-         ${scope}
-       ORDER BY c.at DESC
+      // Two ways a door ends up waiting for a sign, unioned so one worklist covers both.
+      //
+      // `door` is the original: the door's most recent canvass contact ticked "wants a sign".
+      //
+      // `direct` is a request raised with no visit behind it — from the map's door card, the
+      // follow-up queue, anywhere `HouseholdActions` is shown. Those write a `sign` row with status
+      // 'requested' and no `contact`, so the `door` branch cannot see them. Before this they
+      // reached nobody's worklist: the canvasser tapped, believed the door was handled, and no sign
+      // was ever brought. A button that quietly does nothing is worse than no button.
+      //
+      // `${scope}` is interpolated into BOTH branches, and that is not tidiness. It is the MEA
+      // s.23(7)-(8) boundary — a volunteer may read only the doors of turfs assigned to them — so a
+      // union branch that forgot it would hand a volunteer addresses off the voters list they have
+      // no business seeing. Same `$n` placeholder in both; never let one branch drift.
+      `WITH door AS (
+         SELECT h.id AS household_id, h.address, h.ward, h.community, h.lat, h.lon,
+                -- Where they asked for it, when that is not the door: a corner lot, a farm gate, the
+                -- shop. Null means nobody captured one, not that the door is the answer.
+                c.sign_address,
+                c.id::text AS contact_id, c.at AS last_contact_at, c.result::text AS last_result, c.note,
+                c.user_id::text AS user_id, u.name AS user_name,
+                c.voter_id::text AS voter_id, v.display_name AS voter_name,
+                'door'::text AS source
+         FROM (SELECT DISTINCT household_id FROM contact WHERE wants_sign) d
+         JOIN household h ON h.id = d.household_id
+         JOIN LATERAL (SELECT * FROM contact WHERE household_id = h.id ORDER BY at DESC LIMIT 1) c ON true
+         JOIN app_user u ON u.id = c.user_id
+         LEFT JOIN voter v ON v.id = c.voter_id
+         WHERE c.wants_sign
+           -- Only a sign that exists in some OTHER form excludes the door. A row still marked
+           -- 'requested' is this same request, written by POST /api/contacts, and must not hide the
+           -- door from the list of doors still waiting for one.
+           AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id AND s.status <> 'requested')
+           ${scope}
+       ),
+       direct AS (
+         -- DISTINCT ON because the web app's duplicate guard fails open by design: with no signal it
+         -- cannot read the sign list, so two taps in a dead spot can leave two 'requested' rows.
+         -- That is one door waiting, not two.
+         SELECT DISTINCT ON (h.id)
+                h.id AS household_id, h.address, h.ward, h.community, h.lat, h.lon,
+                -- The label is the door's own address when nobody named anywhere else, and
+                -- repeating it as "where they asked for it" would read as a second, different place.
+                nullif(s.label, h.address) AS sign_address,
+                NULL::text AS contact_id, s.requested_at AS last_contact_at, NULL::text AS last_result, s.note,
+                NULL::text AS user_id, NULL::text AS user_name,
+                NULL::text AS voter_id, NULL::text AS voter_name,
+                'direct'::text AS source
+         FROM sign s
+         JOIN household h ON h.id = s.household_id
+         WHERE s.status = 'requested'
+           AND NOT EXISTS (SELECT 1 FROM sign s2 WHERE s2.household_id = h.id AND s2.status <> 'requested')
+           -- Exactly the door branch's condition, negated, so a door appears in one branch or the
+           -- other and never both. coalesce because a door with NO contacts at all is the common
+           -- case here and must be kept: a bare NOT of NULL is NULL, which would silently drop
+           -- every request at a door nobody has canvassed yet — most of them.
+           AND NOT coalesce(
+                 (SELECT c2.wants_sign FROM contact c2 WHERE c2.household_id = h.id ORDER BY c2.at DESC LIMIT 1),
+                 false)
+           ${scope}
+         ORDER BY h.id, s.requested_at DESC NULLS LAST, s.id
+       )
+       SELECT * FROM door
+       UNION ALL
+       SELECT * FROM direct
+       ORDER BY last_contact_at DESC NULLS LAST
        LIMIT $1`,
       params,
     );

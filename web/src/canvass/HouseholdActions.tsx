@@ -55,8 +55,16 @@ export interface ActionDoor {
  */
 export type ProvidedAction = 'visit' | 'directions' | 'place';
 
+/** Why every action is greyed out on a request nobody has matched to a door yet. */
+const NO_DOOR = 'Link this request to a door first — it has no address on the voters list.';
+
 interface Props {
-  door: ActionDoor;
+  /**
+   * Null when the row is a request nobody has matched to a door yet — a phoned-in sign-up whose
+   * address is free text somebody typed. Every action is then shown **disabled with the reason**
+   * rather than dropped, so the set still reads the same on every row of a list that mixes them.
+   */
+  door: ActionDoor | null;
   provided?: ProvidedAction[];
   /**
    * A visit has just been recorded. Only for refetches the HOST owns — the map card repaints its
@@ -86,19 +94,19 @@ export function HouseholdActions({ door, provided = [], onRecorded }: Props) {
   // Shared cache with the signs map (`useSigns()` with no filters is the same query key), so this
   // is usually free. `undefined` — loading, offline, refused — means the guard fails open.
   const signs = useSigns();
-  const verdict = signRequestVerdict(door, signs.data);
+  const verdict = door ? signRequestVerdict(door, signs.data) : ({ can: false, reason: NO_DOOR } as const);
 
   // Only fetched when a list row asked for the visit form without carrying the names. Scoped by the
   // API, not by this flag: `/households/:id` runs assertHouseholdAccess, so a volunteer reaching a
   // door outside their turfs gets a 403 here exactly as they would anywhere else.
-  const needVoters = recording && !door.voters;
+  const needVoters = recording && !!door && !door.voters;
   const fetched = useHousehold(needVoters ? door.id : null, needVoters);
 
-  const coords = coordsOf(door);
+  const coords = door ? coordsOf(door) : null;
   const btn = 'btn btn--small';
 
   function requestSign() {
-    if (!verdict.can || !coords) return;
+    if (!door || !verdict.can || !coords) return;
     // One client_id, minted once, right here. Regenerating it on a retry is what turns one request
     // into two; `usePlaceSign` hands this exact body to the outbox and replays it unchanged.
     place.mutate(
@@ -114,7 +122,7 @@ export function HouseholdActions({ door, provided = [], onRecorded }: Props) {
     );
   }
 
-  if (recording) {
+  if (recording && door) {
     const voters = door.voters ?? fetched.data?.voters;
     if (!voters) {
       return (
@@ -162,7 +170,13 @@ export function HouseholdActions({ door, provided = [], onRecorded }: Props) {
 
       {!provided.includes('visit') && (
         // `contact.turf_id` is nullable, which is what makes this work at a door in no turf at all.
-        <button type="button" className={`${btn} btn--primary`} onClick={() => setRecording(true)}>
+        <button
+          type="button"
+          className={`${btn} btn--primary`}
+          onClick={() => setRecording(true)}
+          disabled={!door}
+          title={door ? undefined : NO_DOOR}
+        >
           Record a visit
         </button>
       )}
@@ -180,16 +194,21 @@ export function HouseholdActions({ door, provided = [], onRecorded }: Props) {
 
       {/* Placing is the field flow — it wants a GPS fix and a photo — so it stays a link to the
           screen built for it, carrying the door through. */}
-      {!provided.includes('place') && (
-        <Link
-          className={btn}
-          to={`/signs?tab=place&household=${encodeURIComponent(door.id)}&address=${encodeURIComponent(door.address)}`}
-        >
-          Place a lawn sign
-        </Link>
-      )}
+      {!provided.includes('place') &&
+        (door ? (
+          <Link
+            className={btn}
+            to={`/signs?tab=place&household=${encodeURIComponent(door.id)}&address=${encodeURIComponent(door.address)}`}
+          >
+            Place a lawn sign
+          </Link>
+        ) : (
+          <button type="button" className={btn} disabled title={NO_DOOR}>
+            Place a lawn sign
+          </button>
+        ))}
 
-      {door.turfId && (
+      {door?.turfId && (
         <Link className={btn} to={`/canvass/${door.turfId}`}>
           Open in the door screen
         </Link>
@@ -204,7 +223,7 @@ export function HouseholdActions({ door, provided = [], onRecorded }: Props) {
             Directions
           </a>
         ) : (
-          <button type="button" className={btn} disabled title="This door has no map position.">
+          <button type="button" className={btn} disabled title={door ? 'This door has no map position.' : NO_DOOR}>
             Directions
           </button>
         ))}
