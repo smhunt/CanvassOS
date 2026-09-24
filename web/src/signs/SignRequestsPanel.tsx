@@ -16,6 +16,7 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useMe, useSignRequests } from '../api/hooks';
+import { HouseholdActions } from '../canvass/HouseholdActions';
 import { EmptyState, ErrorBox, LoadingCards, fmtDate, n, titleCase, wardLabel } from '../components/ui';
 import { wardColour } from '../map/palette';
 import { relativeDay } from '../reports/relative';
@@ -116,12 +117,19 @@ function RequestRow({ r }: { r: DeliveryRequest }) {
       {r.note ? <p className="sg-note">{r.note}</p> : <p className="sg-note sg-note--none">No note was left at the door.</p>}
 
       <div className="sg-row__actions">
+        {/* "Place a sign here" stays the primary button: on this list, delivering one is the job.
+            The shared set follows it so this screen offers the same actions as everywhere else —
+            "Request a sign" will be disabled here, because this door already has. */}
         <Link
           className="btn btn--small btn--primary"
           to={`/signs?tab=place&household=${encodeURIComponent(r.household_id)}&address=${encodeURIComponent(r.address)}`}
         >
           Place a sign here
         </Link>
+        <HouseholdActions
+          door={{ id: r.household_id, address: r.address, lat: r.lat, lon: r.lon, turfId: null }}
+          provided={['place']}
+        />
         {/* /map consumes ?household= and opens straight onto the door card. */}
         <Link className="btn btn--small" to={`/map?household=${encodeURIComponent(r.household_id)}`}>
           Show on the map

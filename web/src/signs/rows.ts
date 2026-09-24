@@ -53,6 +53,9 @@ export interface DeliveryRequest {
   address: string;
   ward: string;
   community: string | null;
+  /** The door's own position — what a sign request is filed at, and what Directions opens. */
+  lat: number | null;
+  lon: number | null;
   contact_id: string;
   /** When the door asked — `last_contact_at` on the wire, `requested_at` in the shared type. */
   at: string | null;
@@ -70,6 +73,8 @@ export function toDeliveryRequests(rows: SignRequest[] | undefined): DeliveryReq
       address: str(r.address) ?? 'Address unknown',
       ward: str(r.ward) ?? '',
       community: str(r.community),
+      lat: num(r.lat),
+      lon: num(r.lon),
       contact_id: String(r.contact_id ?? ''),
       at: str(r.last_contact_at),
       user_name: str(r.user_name),

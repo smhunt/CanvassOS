@@ -8,6 +8,21 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ### Added
 
+- **"Request a sign", and the same set of door actions everywhere a door is shown.** Recording that
+  a household *asked* for a lawn sign no longer needs a canvass contact behind it: the button writes
+  the same `sign` row with status `requested`, at the door's own coordinates, that ticking "wants a
+  sign" on the door screen has always written — so it shows as Requested on the signs map and stays
+  off the pickup list until somebody plants it. It goes through the offline queue like every other
+  field write, and says "saved on this phone" rather than claiming a record the server has not seen.
+  The actions themselves now live in one component (`web/src/canvass/HouseholdActions.tsx`) used by
+  the map's door card, the door screen, the follow-up queue and the sign delivery list, because what
+  a canvasser can do at a house should not depend on how they arrived at it. An action that cannot
+  work at a particular door — no map position, a sign already requested or already standing — is
+  **disabled with the reason on it** rather than hidden. The duplicate guard deliberately fails
+  open: if the sign list has not loaded, the button still works, because a duplicate pin is a
+  five-second cleanup and a volunteer on a porch who cannot record a request is a lost sign.
+  Drive mode is deliberately excluded — that screen is built never to be touched while the car is
+  moving.
 - **`scripts/cutover-aws.sh sync`** copies the Mac's data to EC2 while the Mac stays production —
   no freeze, so the list tables must match exactly and the tables volunteers write to are reported
   with their drift. Run before a cutover, and whenever the nightly S3 backup (taken from EC2) should

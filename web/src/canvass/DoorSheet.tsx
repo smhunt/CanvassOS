@@ -6,6 +6,7 @@ import { ErrorBox, Spinner, n, titleCase } from '../components/ui';
 import { ContactHistory } from './ContactHistory';
 import { spokeBody } from './contactBody';
 import { coordsOf, mapsUrl, walkHint, type Coords } from './directions';
+import { HouseholdActions } from './HouseholdActions';
 import { SpokeForm, type SpokeDetail } from './SpokeForm';
 import { resultColour } from './status';
 import { SyncStatus } from './SyncStatus';
@@ -151,6 +152,29 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
             Previous visits
           </h3>
           <ContactHistory householdId={door.household_id} />
+        </section>
+
+        <section aria-labelledby="cv-more-h">
+          <h3 id="cv-more-h" className="sheet__h3">
+            Anything else at this door
+          </h3>
+          {/* The shared door actions, so this screen offers the same set as the map card and the
+              two worklists. `provided` names the two it already does better itself: the footer's
+              five one-thumb result buttons ARE "record a visit", and "Walk here" carries a distance
+              and a compass point this row has no room for. The set a canvasser can reach here is
+              still all of them — only the presentation differs. */}
+          <HouseholdActions
+            door={{
+              id: door.household_id,
+              address: door.address,
+              lat: door.lat,
+              lon: door.lon,
+              // Already walking this turf, so there is no "open in the door screen" to offer.
+              turfId: null,
+              voters: door.voters,
+            }}
+            provided={['visit', 'directions']}
+          />
         </section>
       </div>
 

@@ -2,6 +2,7 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useFollowUps } from '../api/hooks';
 import { RESULT_LABELS, type FollowUp } from '../api/types';
+import { HouseholdActions } from '../canvass/HouseholdActions';
 import { EmptyState, ErrorBox, LoadingCards, fmtDate, n, titleCase, wardLabel } from '../components/ui';
 import { RESULT_COLOURS, wardColour } from '../map/palette';
 import { relativeDay } from './relative';
@@ -99,6 +100,11 @@ function FollowUpRow({ f }: { f: FollowUp }) {
       )}
 
       <div className="rep-fu__actions">
+        {/* The same set as the map card and the door screen. A door in this queue is one somebody
+            promised to come back to, so acting on it here — rather than after a detour through the
+            map — is the whole point of the promise being written down. `voters` is absent from
+            /api/follow-ups, so recording a visit fetches the door on demand. */}
+        <HouseholdActions door={{ id: f.household_id, address: f.address, lat: f.lat, lon: f.lon, turfId: null }} />
         {/* /map consumes ?household= and opens straight onto the door card. */}
         <Link className="btn btn--small" to={`/map?household=${encodeURIComponent(f.household_id)}`}>
           Show this door on the map

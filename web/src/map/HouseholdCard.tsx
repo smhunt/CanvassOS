@@ -1,13 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { isApiError } from '../api/client';
 import { useHousehold } from '../api/hooks';
-import { RESULT_LABELS, type ContactResult, type Household, type PointProps, type User, type Voter } from '../api/types';
+import type { Household, PointProps, User, Voter } from '../api/types';
 import { isOrganizer } from '../auth';
 import { ErrorBox, LoadingRows, n, titleCase, wardLabel } from '../components/ui';
-import { coordsOf, mapsUrl } from '../canvass/directions';
-import { RecordVisit } from '../canvass/RecordVisit';
+import { HouseholdActions } from '../canvass/HouseholdActions';
 import { QUALITY_LABELS, wardColour } from './palette';
 
 export interface Selection {
@@ -117,63 +115,26 @@ function VolunteerView({ props }: { props: PointProps | undefined }) {
  * nothing, so recording a visit meant remembering the address, finding the turf, and walking in
  * from the door screen. The actions are the same whether or not the door is in a turf — a door
  * outside every turf is the *most* likely one to need a sign or a set of directions, not the least.
+ *
+ * The buttons themselves now live in `canvass/HouseholdActions.tsx`, shared with the door screen,
+ * the follow-up queue and the delivery list, so what you can do at a house no longer depends on how
+ * you got to it. This is the surrounding context only — which turfs the door is in, and the
+ * refetches this particular screen needs after a visit lands.
  */
 function DoorActions({ hh }: { hh: Household }) {
-  const coords = coordsOf(hh);
   const turf = hh.turfs[0];
-  const [recording, setRecording] = useState(false);
-  const [recorded, setRecorded] = useState<ContactResult | null>(null);
   const qc = useQueryClient();
 
-  if (recording) {
-    return (
-      <RecordVisit
-        householdId={hh.id}
-        address={hh.address}
-        voters={hh.voters}
-        turfId={turf?.id ?? null}
-        onRecorded={(r) => {
-          setRecording(false);
-          setRecorded(r);
+  return (
+    <div className="stack">
+      <HouseholdActions
+        door={{ id: hh.id, address: hh.address, lat: hh.lat, lon: hh.lon, turfId: turf?.id ?? null, voters: hh.voters }}
+        onRecorded={() => {
           // The card's own status line and the map's colouring both read this door.
           void qc.invalidateQueries({ queryKey: ['household', hh.id] });
           void qc.invalidateQueries({ queryKey: ['points'] });
         }}
-        onCancel={() => setRecording(false)}
       />
-    );
-  }
-
-  return (
-    <div className="hc-actions">
-      {recorded && (
-        <p className="hc-actions__note" role="status">
-          Recorded: <strong>{RESULT_LABELS[recorded]}</strong>.
-        </p>
-      )}
-      {/* The whole point of the card being actionable. Works with or without a turf — `turf_id` is
-          nullable on `contact`, so a door in no turf is still a door somebody knocked. */}
-      <button type="button" className="btn btn--primary btn--small" onClick={() => setRecording(true)}>
-        Record a visit
-      </button>
-      {turf ? (
-        <Link className="btn btn--small" to={`/canvass/${turf.id}`}>
-          Open in the door screen
-        </Link>
-      ) : null}
-      <Link
-        className="btn btn--small"
-        to={`/signs?tab=place&household=${encodeURIComponent(hh.id)}&address=${encodeURIComponent(hh.address)}`}
-      >
-        Place a lawn sign
-      </Link>
-      {coords && (
-        // The phone's own map app, because the last hundred metres of a rural lane is not something
-        // this app is going to do better than Apple or Google.
-        <a className="btn btn--small" href={mapsUrl(coords.lat, coords.lon)} target="_blank" rel="noreferrer noopener">
-          Directions
-        </a>
-      )}
       {hh.turfs.length > 1 && (
         <p className="muted small hc-actions__note">
           Also in {hh.turfs.slice(1).map((t) => t.name).join(', ')}.
