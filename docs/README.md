@@ -218,7 +218,7 @@ mc-canvass/
 │   │   │                        subscribe_pending (everything downstream of consent)
 │   │   ├── 004_subscriber_contacts.sql  voter_contact.source; a contact need not be a door on the list
 │   │   ├── 005_sign_request_address.sql sign_address: where the sign was actually asked for
-│   │   ├── 006_public_requests.sql      public_request: website sign-ups, never merged into the list
+│   │   ├── 006_public_requests.sql      public_request: website sign-ups and hand-entered requests
 │   │   └── 007_subscriber_link.sql      subscriber_link, match_candidate (the phase 8 matcher)
 │   └── migrate.sh               applies pending migrations, records them in schema_migration
 │
