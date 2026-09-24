@@ -182,7 +182,10 @@ Design notes before anyone starts:
   reported accuracy, an optional photo (magic-byte sniffed, stored on a volume rather than in the
   database), a pickup worklist of everything still standing, and a delivery list of doors whose latest
   contact ticked `wants_sign`. The driver is a by-law deadline, not canvassing: a sign nobody can find
-  after election day is a fine. `db/migrations/001_signs.sql`.
+  after election day is a fine. `db/migrations/001_signs.sql`. Since 1.5.0 an organizer can also type
+  in a request that arrived by phone, text or in person, and correct or delete it. Those are
+  `public_request` rows with `source: 'manual'` rather than signs, because placing a sign demands a
+  GPS fix inside the municipality and a request taken over the phone has no coordinates at all.
 - **Doorstep phone numbers and email addresses**, in their own `voter_contact` table with per-purpose
   consent, a recorded (never deleted) withdrawal, and an organizer-only GOTV send list. Deliberately
   separate from `voter` because it is not list data and CASL, not the Municipal Elections Act, governs
