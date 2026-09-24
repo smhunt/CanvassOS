@@ -24,6 +24,14 @@ export type AuditAction =
   | 'public_request'
   | 'view_public_requests'
   | 'handle_public_request'
+  // Hand-entered requests (`source = 'manual'`): somebody rang the campaign, or stopped an
+  // organizer in the street. Unlike `public_request` these DO carry a user id — a member of the
+  // campaign typed them in, and the consent line written onto the row names that person, so the
+  // trail has to agree with it. Same rule as everywhere else: the detail carries field names,
+  // counts and booleans, never the name, email, phone or address that was typed.
+  | 'create_manual_request'
+  | 'update_manual_request'
+  | 'delete_manual_request'
   | 'export'
   | 'import'
   // Phase 2 — canvassing

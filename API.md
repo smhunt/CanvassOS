@@ -731,9 +731,80 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
 
 - `GET /api/public/requests?open=true&limit=100` → organizer/admin. The submissions, newest first,
   each row carrying `source`, `external_id`, `website_status` and a `candidates` array (phase 8,
-  below). Audit `view_public_requests`.
+  below). `source` is `web` (posted straight to the form above), `website` (pulled in by the
+  five-minute sync) or `manual` (typed in by an organizer, below) — the queue shows which, and the
+  edit/delete routes below gate on it. Audit `view_public_requests`.
 - `PATCH /api/public/requests/:id` → organizer/admin. `{ handled?, household_id?, sign_id? }` —
   mark one dealt with and record the door it turned out to be. Audit `handle_public_request`.
+
+### Hand-entered requests (organizer/admin)
+
+Most sign requests never touch the form: somebody rings the campaign, texts an organizer, or stops
+one outside the arena. Those are written down as ordinary `public_request` rows with
+`source = 'manual'`, so the queue, the matcher, the handled verdict and the household/sign pointers
+all work on them unchanged — there is no separate table and no migration.
+
+- `POST /api/public/requests/manual` → organizer/admin.
+  ```
+  { name, email?, phone?, address?, note?,
+    wants?: ["sign"|"volunteer"|"reminders"|"donate"|"other"],   // default ["sign"]
+    household_id? }
+  → 201 { request }        // exactly one row of the GET above, candidates included
+  ```
+  - At least one of `email` / `phone` / `address` is required (`400 contact_required`). An address
+    on its own is enough — somebody can go and knock — but with none of the three there is nothing
+    to act on and the row would sit in the queue forever.
+  - `household_id` must name a real door (`404 household_not_found`), checked rather than left to
+    the foreign key so a typo is a plain answer instead of a 500.
+  - An explicit `null` or a blank string is the same as omitting the field, on both routes. A form
+    with three "give us one of these" boxes sends the empty ones as `null`, an unfilled door picker
+    sends `household_id: ""`, and an empty address stored as `""` reads as an answer somebody gave.
+  - `phone` is normalised to E.164 when it can be and **kept as typed when it cannot**, the same
+    rule as the public form and the doorstep contacts.
+  - **`consent_text` is built by the server and never taken from the client**, unlike the public
+    form where it is the verbatim wording the person read. Nobody read anything here: what happened
+    is that a member of the campaign says somebody asked them. The record of that is
+    `Asked by phone, text or in person; recorded by <caller's name> on <YYYY-MM-DD>.` — the
+    signed-in user's name and the date in `America/Toronto`. Letting a browser post its own wording
+    would turn the one column that exists to be evidence into free text.
+  - **`ip`, `user_agent` and `origin` stay NULL.** They are the provenance columns for a browser
+    that posted a form; this row did not come from one, and stamping the organizer's own address
+    into them would put a lie in the three fields that tell a real submission from abuse.
+  - `matched_at` is set to now **only when a `household_id` was given**. The matcher scans
+    `matched_at IS NULL AND handled_at IS NULL` across every source, so a row whose door a human
+    has already picked is stamped and skipped; one without stays NULL so the matcher can suggest
+    candidates, which is the genuinely useful case.
+  - Audit `create_manual_request`, target the new row id, detail `{ wants, has_household }` — never
+    the name, email, phone or address.
+
+- `PATCH /api/public/requests/:id/fields` → organizer/admin. Any subset of
+  `{ name, email, phone, address, note, wants, household_id }`; `→ 200 { request }`, the same row
+  shape as the create. Every field is nullable (clear it) except `name`, which may be changed but
+  not blanked. `null` means clear and absent means leave alone, so only the keys actually sent are
+  written.
+  - **Manual rows only — `403 not_editable` otherwise.** A website sign-up is the record of what
+    somebody actually submitted, beside the consent wording they actually read; editing it would
+    leave the campaign holding a consent record it had quietly rewritten, which is worse than
+    holding none. It would also not survive: the five-minute sync upserts that row on `external_id`
+    and would put the original text straight back. A row an organizer typed in is theirs to fix.
+  - `404` for an unknown id, `400` for an empty body, `404 household_not_found` and the same phone
+    normalisation as the create.
+  - `400 contact_required` when the edit would leave the row with no email, phone *or* address —
+    otherwise clearing a typo'd number is a way to make the row the create refuses to create.
+  - `matched_at` follows `household_id`: set to now when a door is linked, cleared when it is
+    unlinked, which is the rule `/decide`'s reject path already follows. Editing name or address
+    does not touch it.
+  - Audit `update_manual_request`, detail `{ fields, from_household }` — the field **names** that
+    changed, never their values, plus whether the row was already linked to a door before the edit.
+
+- `DELETE /api/public/requests/:id` → organizer/admin. `→ 204`, and the row's `match_candidate`
+  suggestions go with it (ON DELETE CASCADE).
+  - **Manual rows only — `403 not_deletable` otherwise**, and not merely for symmetry with the
+    PATCH. A website sign-up is a CASL consent record: the campaign may have to produce it, and
+    deleting it destroys the evidence for messages already sent. It would also not work — the
+    five-minute sync would re-insert the row on its next pull. Mark it handled instead.
+  - `404` for an unknown id.
+  - Audit `delete_manual_request`, detail `{ wants, had_household }`.
 
 ## Subscriber link (phase 8)
 

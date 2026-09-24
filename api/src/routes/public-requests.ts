@@ -25,12 +25,23 @@
  * to drive somewhere, and a text or email in reply would be a message to an address nobody has
  * confirmed. Phone consent has its own double-opt-in route (`subscribe.ts`) and this endpoint does
  * not short-circuit it.
+ *
+ * The rest of the file is the organizer's side: the queue, the handled/household/sign verdicts, the
+ * matcher's candidates — and the three **hand-entered** routes (`source = 'manual'`). Most sign
+ * requests do not arrive through a form at all: somebody rings, or stops an organizer outside the
+ * arena. Those belong in the same queue or they live on a scrap of paper, so they are ordinary
+ * `public_request` rows with `source = 'manual'`, which is also the flag that decides what may be
+ * edited. A row that somebody submitted themselves is the record of what *they* said and of the
+ * consent wording they read: it is not ours to rewrite or to delete, and the five-minute website
+ * sync would re-insert a deleted one anyway. A row we typed in ourselves is ours to correct.
  */
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requireRole } from '../auth/guard.js';
 import { one, q } from '../db.js';
 import { audit } from '../lib/audit.js';
+import { badRequest, forbidden, notFound } from '../lib/errors.js';
+import { CAMPAIGN_TIMEZONE } from '../lib/quiet-hours.js';
 import { normalizeContactValue } from './voter-contacts.js';
 
 /** What the form's tick boxes can ask for. An unknown value is dropped rather than stored. */
@@ -65,6 +76,129 @@ const OPAQUE = {
 
 /** A submission with no way to reply is not a request, it is a note to nobody. */
 const hasContact = (b: z.infer<typeof body>) => Boolean(b.email || b.phone);
+
+/**
+ * Blank and absent are the same instruction on a hand-entered form, and `''` must never reach the
+ * database: an empty `household_id` is a foreign-key violation (a 500 out of Postgres for what is
+ * really an unfilled picker), and an empty address is worse than a NULL one because it reads as an
+ * answer somebody gave. Deliberately NOT the `.or(z.literal(''))` shape the public body uses —
+ * that only works when the left branch REJECTS `''`, which is true for `.email()` and for phone's
+ * `.min(3)` and is dead code for a plain length-capped string, which accepts `''` and stores it.
+ */
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullish()
+    .transform((v) => (v ? v : undefined));
+
+/**
+ * A hand-entered request. Deliberately NOT the public `body` above: there is no honeypot (nobody
+ * crawled their way here, the caller is a signed-in organizer), no `consent_text` (built below,
+ * never accepted from the client) and one extra field, `household_id`, because the person typing
+ * this in usually already knows which door it is — they are looking at the map.
+ *
+ * `name` runs to 200 rather than the form's 120: the form is a text input somebody fills in about
+ * themselves, this is an organizer writing down what they were told ("Jim and Sandra at the farm
+ * past the church"), and truncating that loses the only thing that will find them again.
+ */
+const manualBody = z.object({
+  name: z.string().trim().min(1).max(200),
+  // `nullish`, not `optional`: a form with three "give us one of these" boxes sends the empty ones
+  // as an explicit null, and refusing that would be a 400 on the commonest shape of a real request.
+  email: z.string().trim().email().max(200).nullish().or(z.literal('').transform(() => undefined)),
+  phone: z.string().trim().min(3).max(30).nullish().or(z.literal('').transform(() => undefined)),
+  address: optionalText(300),
+  note: optionalText(2000),
+  /** Hand-entered requests are overwhelmingly lawn signs, so that is the default rather than none. */
+  wants: z.array(z.enum(WANTS)).max(WANTS.length).default(['sign']),
+  household_id: optionalText(80),
+});
+
+/** The fields a manual row may be corrected on, and the order the audit trail lists them in. */
+const EDITABLE = ['name', 'email', 'phone', 'address', 'note', 'wants', 'household_id'] as const;
+type EditableField = (typeof EDITABLE)[number];
+
+/**
+ * Every field nullable except `name`: a typo can leave a phone number that belongs to nobody, and
+ * the fix for that is to clear it, not to leave a wrong one on the row. `name` has no empty form —
+ * a request with no name is not a request — so it may be changed but never blanked. Which keys
+ * were actually sent is read off the raw body, because `null` (clear it) and absent (leave it) are
+ * different instructions and zod cannot tell them apart once parsed.
+ */
+const fieldsBody = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  email: z.string().trim().email().max(200).nullish().or(z.literal('').transform(() => null)),
+  phone: z.string().trim().min(3).max(30).nullish().or(z.literal('').transform(() => null)),
+  address: optionalText(300),
+  note: optionalText(2000),
+  // `wants` is NOT NULL in the schema, so an explicit null here means "asked for nothing in
+  // particular" and lands as the empty array rather than as a constraint violation.
+  wants: z
+    .array(z.enum(WANTS))
+    .max(WANTS.length)
+    .nullish()
+    .transform((v) => v ?? []),
+  household_id: optionalText(80),
+});
+
+/**
+ * `YYYY-MM-DD` in the campaign's own timezone, through `Intl` and the shared CAMPAIGN_TIMEZONE
+ * constant rather than a UTC slice. A request written down at 20:00 on a Tuesday is already
+ * Wednesday in UTC, and a consent record that names the wrong day is a consent record nobody can
+ * stand behind.
+ */
+const CONSENT_DATE = new Intl.DateTimeFormat('en-CA', {
+  timeZone: CAMPAIGN_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/**
+ * Built on the server, never taken from the client — the one field of a manual row the caller
+ * cannot set. On the public form `consent_text` is the verbatim wording the person read, so only
+ * the page that showed it can supply it. Nobody read anything here: what actually happened is that
+ * a member of the campaign says somebody asked them. The honest record of that is who wrote it
+ * down and when, and letting a browser post its own wording would turn the one column that exists
+ * to be evidence into free text.
+ */
+export function manualConsentText(recordedBy: string, at: Date): string {
+  return `Asked by phone, text or in person; recorded by ${recordedBy} on ${CONSENT_DATE.format(at)}.`;
+}
+
+/**
+ * One row of the organizer's queue, the matcher's candidates riding along as a JSON array (phase
+ * 8): the queue is where an organizer confirms or rejects the matcher's suggestions, so the two
+ * are one screen and one read. Candidate rows carry voter names and addresses — organizer-only,
+ * like /search.
+ *
+ * Kept as one fragment because the manual POST and PATCH answer with exactly the row the GET
+ * returns, so a new row drops straight into the list the client is already holding; three copies
+ * of this projection would drift the first time a column is added. It is also an explicit
+ * allow-list in the sense `serialize.ts` means: `ip`, `user_agent` and `origin` are provenance
+ * kept for abuse handling and never leave the server.
+ *
+ * `tail` is always a literal from this file (a WHERE / ORDER BY / LIMIT clause), never user input.
+ */
+const REQUEST_ROW = `
+    SELECT pr.id, pr.created_at, pr.name, pr.email, pr.phone, pr.address, pr.note, pr.wants,
+           pr.consent_text, pr.handled_at, pr.handled_by, pr.household_id, pr.sign_id,
+           pr.source, pr.external_id, pr.website_status,
+           coalesce(mc.candidates, '[]'::json) AS candidates
+      FROM public_request pr
+      LEFT JOIN LATERAL (
+        SELECT json_agg(json_build_object(
+                 'id', c.id, 'voter_id', c.voter_id, 'natural_key', c.natural_key,
+                 'household_id', c.household_id, 'voter_name', c.voter_name,
+                 'household_address', c.household_address, 'score', c.score,
+                 'method', c.method, 'status', c.status, 'decided_at', c.decided_at)
+               ORDER BY c.status = 'accepted' DESC, c.score DESC) AS candidates
+        FROM match_candidate c
+        WHERE c.public_request_id = pr.id
+      ) mc ON true`;
+const requestQuery = (tail: string): string => `${REQUEST_ROW}\n      ${tail}`;
 
 export function allowedOrigins(raw: string): string[] {
   return raw
@@ -183,29 +317,16 @@ export const publicRequestRoutes: FastifyPluginAsync = async (app) => {
       })
       .parse(req.query);
 
-    // Candidates ride along as a JSON array per request (phase 8): the queue is where an
-    // organizer confirms or rejects the matcher's suggestions, so the two are one screen and
-    // one read. Candidate rows carry voter names and addresses — organizer-only, like /search.
+    // Every row carries `source` ('web' straight off the form, 'website' from the sync, 'manual'
+    // typed in here), which is how the queue tells them apart and what the edit/delete routes
+    // below gate on.
     const rows = await q<Record<string, unknown>>(
       app.db,
-      `SELECT pr.id, pr.created_at, pr.name, pr.email, pr.phone, pr.address, pr.note, pr.wants,
-              pr.consent_text, pr.handled_at, pr.handled_by, pr.household_id, pr.sign_id,
-              pr.source, pr.external_id, pr.website_status,
-              coalesce(mc.candidates, '[]'::json) AS candidates
-       FROM public_request pr
-       LEFT JOIN LATERAL (
-         SELECT json_agg(json_build_object(
-                  'id', c.id, 'voter_id', c.voter_id, 'natural_key', c.natural_key,
-                  'household_id', c.household_id, 'voter_name', c.voter_name,
-                  'household_address', c.household_address, 'score', c.score,
-                  'method', c.method, 'status', c.status, 'decided_at', c.decided_at)
-                ORDER BY c.status = 'accepted' DESC, c.score DESC) AS candidates
-         FROM match_candidate c
-         WHERE c.public_request_id = pr.id
-       ) mc ON true
-       ${qp.open ? 'WHERE pr.handled_at IS NULL' : ''}
+      requestQuery(
+        `${qp.open ? 'WHERE pr.handled_at IS NULL' : ''}
        ORDER BY pr.created_at DESC
        LIMIT $1`,
+      ),
       [qp.limit],
     );
 
@@ -254,6 +375,223 @@ export const publicRequestRoutes: FastifyPluginAsync = async (app) => {
       ip: req.ip,
     });
     return { ok: true };
+  });
+
+  /**
+   * Write one down by hand. Most sign requests never touch the form: somebody rings the campaign
+   * number, texts an organizer, or stops one outside the arena. The row is an ordinary
+   * `public_request` with `source = 'manual'`, so the queue, the matcher, the handled verdict and
+   * the household/sign pointers all work on it unchanged and nothing needed a new table.
+   */
+  app.post('/public/requests/manual', { preHandler: requireRole('organizer') }, async (req, reply) => {
+    const b = manualBody.parse(req.body ?? {});
+    const me = req.session!.user;
+
+    // The public form's rule, one field wider. A hand-entered request often has no email and no
+    // phone at all — a neighbour flagged somebody down and gave a street and a house — and an
+    // address on its own is enough to go and knock. With none of the three there is nothing to
+    // act on: the row would sit in the queue forever because nobody could ever find this person.
+    if (!b.email && !b.phone && !b.address) {
+      throw badRequest('give an email address, a phone number or an address', 'contact_required');
+    }
+
+    // Checked rather than left to the foreign key, so a mistyped door is a plain 404 naming the
+    // problem instead of a 500 out of Postgres.
+    if (b.household_id) {
+      const hh = await one<{ id: string }>(app.db, `SELECT id FROM household WHERE id = $1`, [b.household_id]);
+      if (!hh) throw notFound('no household with that id', 'household_not_found');
+    }
+
+    // Same treatment as the public form: normalised when it can be, kept as typed when it cannot.
+    // Someone reading a number off a note in a car park is exactly who gets this wrong, and the
+    // campaign would rather hold a messy number than refuse the request.
+    let phone = b.phone ?? null;
+    if (phone) {
+      try {
+        phone = normalizeContactValue('phone', phone);
+      } catch {
+        req.log.info({ route: 'public-requests' }, 'manual request: phone kept as typed');
+      }
+    }
+
+    const created = await one<{ id: string }>(
+      app.db,
+      // `origin`, `ip` and `user_agent` stay NULL on purpose. They are the provenance columns for a
+      // browser that posted a form; this row did not come from one, and stamping the organizer's
+      // own address into them would put a lie in the three columns that exist to tell a real
+      // submission from abuse.
+      //
+      // `matched_at` is set only when a door was picked. The matcher scans
+      // `matched_at IS NULL AND handled_at IS NULL` across every source, so a row that already has
+      // its answer must be stamped or the matcher will spend a pass suggesting candidates for a
+      // question a human has already settled. With no door picked it stays NULL, which is the
+      // useful case: the matcher will offer the organizer three names to choose from.
+      `INSERT INTO public_request (name, email, phone, address, note, wants, consent_text, source,
+                                   household_id, matched_at)
+       VALUES ($1, $2, $3, $4, $5, $6::text[], $7, 'manual', $8,
+               CASE WHEN $8::text IS NULL THEN NULL ELSE now() END)
+       RETURNING id`,
+      [
+        b.name,
+        b.email ?? null,
+        phone,
+        b.address ?? null,
+        b.note ?? null,
+        b.wants,
+        manualConsentText(me.name, new Date()),
+        b.household_id ?? null,
+      ],
+    );
+    const id = created!.id;
+
+    await audit(app.db, req.log, {
+      userId: me.id,
+      action: 'create_manual_request',
+      target: id,
+      // What was asked for and whether a door was picked — never the name, email, phone or
+      // address, which would make audit_log a second copy of the very row it is recording.
+      detail: { wants: b.wants, has_household: Boolean(b.household_id) },
+      ip: req.ip,
+    });
+
+    // Answered with the queue's own row shape so the client can drop it straight into the list.
+    const request = await one<Record<string, unknown>>(app.db, requestQuery('WHERE pr.id = $1'), [id]);
+    return reply.status(201).send({ request });
+  });
+
+  /**
+   * Correct one. **Manual rows only.** A website sign-up is the record of what somebody actually
+   * submitted, beside the consent wording they actually read; editing it would leave the campaign
+   * holding a consent record it had quietly rewritten, which is worse than holding none. (It would
+   * also lose: the five-minute website sync upserts that row on `external_id` and would put the
+   * original text straight back.) A row an organizer typed in is theirs to fix.
+   */
+  app.patch('/public/requests/:id/fields', { preHandler: requireRole('organizer') }, async (req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const raw = (req.body ?? {}) as Record<string, unknown>;
+    const patch = fieldsBody.parse(raw);
+    const me = req.session!.user;
+
+    // `null` means clear it and absent means leave it alone, so which keys were sent is read off
+    // the raw body — after zod has had its say about the values.
+    const given = EDITABLE.filter((f) => Object.prototype.hasOwnProperty.call(raw, f));
+    if (given.length === 0) throw badRequest('give at least one field to change');
+
+    const current = await one<{
+      source: string;
+      email: string | null;
+      phone: string | null;
+      address: string | null;
+      household_id: string | null;
+    }>(app.db, `SELECT source, email, phone, address, household_id FROM public_request WHERE id = $1`, [id]);
+    if (!current) throw notFound('no such request');
+    if (current.source !== 'manual') {
+      throw forbidden(
+        'this request was submitted from the website; it is the record of what that person said, ' +
+          'not ours to rewrite. Add a note against it instead.',
+        'not_editable',
+      );
+    }
+
+    let phone = patch.phone ?? null;
+    if (phone) {
+      try {
+        phone = normalizeContactValue('phone', phone);
+      } catch {
+        req.log.info({ route: 'public-requests' }, 'manual request: phone kept as typed');
+      }
+    }
+
+    if (given.includes('household_id') && patch.household_id) {
+      const hh = await one<{ id: string }>(app.db, `SELECT id FROM household WHERE id = $1`, [patch.household_id]);
+      if (!hh) throw notFound('no household with that id', 'household_not_found');
+    }
+
+    // The create's rule has to hold after an edit too, or clearing a typo'd phone number is a way
+    // to end up with the unactionable row the create refuses to make.
+    const after = {
+      email: given.includes('email') ? (patch.email ?? null) : current.email,
+      phone: given.includes('phone') ? phone : current.phone,
+      address: given.includes('address') ? (patch.address ?? null) : current.address,
+    };
+    if (!after.email && !after.phone && !after.address) {
+      throw badRequest('give an email address, a phone number or an address', 'contact_required');
+    }
+
+    const params: unknown[] = [id];
+    const sets: string[] = [];
+    const push = (col: string, value: unknown, cast = ''): void => {
+      params.push(value);
+      sets.push(`${col} = $${params.length}${cast}`);
+    };
+    for (const f of given) {
+      if (f === 'phone') push('phone', phone);
+      else if (f === 'wants') push('wants', patch.wants, '::text[]');
+      else if (f === 'household_id') {
+        push('household_id', patch.household_id ?? null);
+        // `matched_at` follows the link, for the same reason the create stamps it: picking a door
+        // is a human answering the matcher's question, and unlinking withdraws that answer so the
+        // matcher should look again. This is the rule `/decide`'s reject path already follows.
+        sets.push(patch.household_id ? 'matched_at = now()' : 'matched_at = NULL');
+      } else push(f, patch[f] ?? null);
+    }
+
+    await q(app.db, `UPDATE public_request SET ${sets.join(', ')} WHERE id = $1 AND source = 'manual'`, params);
+
+    await audit(app.db, req.log, {
+      userId: me.id,
+      action: 'update_manual_request',
+      target: id,
+      // The NAMES of the fields that changed, never their values — an audit log that recorded the
+      // old phone number would be an un-withdrawable copy of it. `from_household` is whether the
+      // row was already linked to a door before this edit, so the trail shows a link being added,
+      // kept or removed without naming it.
+      detail: { fields: given, from_household: Boolean(current.household_id) },
+      ip: req.ip,
+    });
+
+    const request = await one<Record<string, unknown>>(app.db, requestQuery('WHERE pr.id = $1'), [id]);
+    return { request };
+  });
+
+  /**
+   * Remove one. **Manual rows only**, and the reason is not symmetry with the PATCH above. A
+   * website sign-up is a CASL consent record: the campaign may have to produce it, and deleting it
+   * is destroying the evidence for messages it has already sent. It would also not work — the
+   * five-minute sync would re-insert the row from the website on its next pull. A mistyped manual
+   * row has no such standing; it is a note somebody wrote in the wrong place.
+   */
+  app.delete('/public/requests/:id', { preHandler: requireRole('organizer') }, async (req, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const me = req.session!.user;
+
+    const row = await one<{ source: string; wants: string[]; household_id: string | null }>(
+      app.db,
+      `SELECT source, wants, household_id FROM public_request WHERE id = $1`,
+      [id],
+    );
+    if (!row) throw notFound('no such request');
+    if (row.source !== 'manual') {
+      throw forbidden(
+        'this request came from the website: it is a consent record the campaign may have to ' +
+          'produce, and the website sync would re-create it anyway. Mark it handled instead.',
+        'not_deletable',
+      );
+    }
+
+    // `match_candidate` rows die with it (ON DELETE CASCADE, migration 007). The subscriber_link
+    // ledger is deliberately FK-free and keyed on this id, but nothing reads a ledger row whose
+    // request is gone and a uuid never recurs, so the stale entry is inert.
+    await q(app.db, `DELETE FROM public_request WHERE id = $1 AND source = 'manual'`, [id]);
+
+    await audit(app.db, req.log, {
+      userId: me.id,
+      action: 'delete_manual_request',
+      target: id,
+      detail: { wants: row.wants, had_household: Boolean(row.household_id) },
+      ip: req.ip,
+    });
+    return reply.status(204).send();
   });
 
   /**

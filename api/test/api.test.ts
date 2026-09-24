@@ -1293,6 +1293,301 @@ describe('public sign-up form (unauthenticated)', () => {
   });
 });
 
+describe('hand-entered sign requests (source = manual)', () => {
+  /** Rows this describe creates, in every source — the unit of cleanup. */
+  const cleanup: string[] = [];
+  const create = (payload: unknown, cookie = organizerCookie) =>
+    call('POST', '/api/public/requests/manual', cookie, payload);
+
+  /** The consent line the server writes for itself: who took it down, and on what local day. */
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Toronto',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const CONSENT = `Asked by phone, text or in person; recorded by organizer accepted on ${today}.`;
+
+  let household: string;
+  before(async () => {
+    household = (await db.query<{ id: string }>(`SELECT id FROM household ORDER BY id LIMIT 1`)).rows[0]!.id;
+  });
+
+  after(async () => {
+    if (cleanup.length > 0) {
+      await db.query(
+        `DELETE FROM audit_log
+          WHERE action IN ('create_manual_request', 'update_manual_request', 'delete_manual_request', 'public_request')
+            AND target = ANY($1::text[])`,
+        [cleanup],
+      );
+      await db.query(`DELETE FROM public_request WHERE id = ANY($1::uuid[])`, [cleanup]);
+    }
+  });
+
+  it('refuses a request with no way to find the person again', async () => {
+    // No email, no phone, no address: the row would sit in the queue forever because nobody could
+    // ever act on it.
+    const res = await create({ name: 'Nobody At All' });
+    assert.equal(res.statusCode, 400, res.body);
+    assert.equal((res.json() as { error: { code: string } }).error.code, 'contact_required');
+  });
+
+  it('refuses a door that does not exist rather than letting the foreign key 500', async () => {
+    const res = await create({ name: 'Wrong Door', phone: '519-555-0180', household_id: 'H-NOPE-99999' });
+    assert.equal(res.statusCode, 404, res.body);
+    assert.equal((res.json() as { error: { code: string } }).error.code, 'household_not_found');
+  });
+
+  it('writes the consent line itself and ignores what the client sends', async () => {
+    const res = await create({
+      name: 'Rang The Campaign',
+      phone: '(519) 555-0181',
+      address: '4 Mill Line, blue house',
+      note: 'wants it up before the debate',
+      wants: ['sign', 'volunteer'],
+      // Everything below is the client trying to set columns it does not own. `consent_text` is
+      // the one that matters: it is evidence, and evidence the browser wrote is not evidence.
+      consent_text: 'They agreed to absolutely anything we like.',
+      source: 'website',
+      external_id: 'not-mine',
+      ip: '1.2.3.4',
+      handled_at: '2026-01-01T00:00:00Z',
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    const { request } = res.json() as { request: Record<string, unknown> };
+    cleanup.push(request.id as string);
+
+    // The answer is the queue's own row shape, so the client can drop it straight into the list.
+    assert.equal(request.source, 'manual');
+    assert.equal(request.consent_text, CONSENT);
+    assert.deepEqual(request.candidates, []);
+    assert.equal(request.external_id, null);
+    assert.equal(request.handled_at, null);
+    // Normalised like a doorstep number, because a number read off a note in a car park is exactly
+    // the one that arrives punctuated.
+    assert.equal(request.phone, normalizeContactValue('phone', '(519) 555-0181'));
+
+    const row = (
+      await db.query<{ ip: string | null; user_agent: string | null; origin: string | null; matched_at: Date | null }>(
+        `SELECT ip::text AS ip, user_agent, origin, matched_at FROM public_request WHERE id = $1`,
+        [request.id],
+      )
+    ).rows[0]!;
+    // This row did not come from a browser. Stamping the organizer's own address into the
+    // provenance columns would put a lie in the three fields that tell a submission from abuse.
+    assert.equal(row.ip, null);
+    assert.equal(row.user_agent, null);
+    assert.equal(row.origin, null);
+    // No door was picked, so the matcher should still look at it and offer candidates.
+    assert.equal(row.matched_at, null);
+
+    // Audited under the organizer who typed it, and the detail names nothing about the person.
+    const a = (
+      await db.query<{ user_id: string; detail: Record<string, unknown> }>(
+        `SELECT user_id, detail FROM audit_log WHERE action = 'create_manual_request' AND target = $1`,
+        [request.id],
+      )
+    ).rows[0]!;
+    assert.ok(a.user_id, 'a hand-entered row carries the user who entered it');
+    assert.deepEqual(a.detail, { wants: ['sign', 'volunteer'], has_household: false });
+  });
+
+  it('stamps matched_at when a door was picked, so the matcher leaves it alone', async () => {
+    const res = await create({ name: 'Known Door', phone: '519-555-0182', household_id: household });
+    assert.equal(res.statusCode, 201, res.body);
+    const { request } = res.json() as { request: Record<string, unknown> };
+    cleanup.push(request.id as string);
+    assert.equal(request.household_id, household);
+
+    // match.ts scans `matched_at IS NULL AND handled_at IS NULL` across every source: a human has
+    // already answered the question it would ask.
+    const row = (
+      await db.query<{ matched_at: Date | null }>(`SELECT matched_at FROM public_request WHERE id = $1`, [request.id])
+    ).rows[0]!;
+    assert.ok(row.matched_at, 'a hand-picked door counts as matched');
+  });
+
+  it('takes the payload the form actually sends: unfilled boxes as explicit nulls', async () => {
+    // web/src/signs/ManualRequestForm.tsx sends `field.trim() || null` for every optional box, so
+    // a request given only over the phone arrives with four nulls. Refusing those would be a 400
+    // on the commonest shape of a real request.
+    const res = await create({
+      name: 'Phoned It In',
+      phone: '519-555-0188',
+      email: null,
+      address: null,
+      note: null,
+      wants: ['sign'],
+      household_id: null,
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    const { request } = res.json() as { request: Record<string, unknown> };
+    cleanup.push(request.id as string);
+    assert.equal(request.email, null);
+    assert.equal(request.address, null);
+    assert.equal(request.household_id, null);
+  });
+
+  it('treats a blank field as no answer rather than storing an empty string', async () => {
+    // What an unfilled door picker and an untouched textarea actually send. An empty household_id
+    // skips the existence check and then violates the foreign key — a 500 for an unfilled form.
+    const res = await create({ name: 'Blank Fields', phone: '519-555-0187', household_id: '', note: '' });
+    assert.equal(res.statusCode, 201, res.body);
+    const { request } = res.json() as { request: Record<string, unknown> };
+    cleanup.push(request.id as string);
+    assert.equal(request.household_id, null);
+    assert.equal(request.note, null);
+
+    // And on the way back out: an empty address is worse than a NULL one, because it reads as an
+    // answer somebody gave.
+    const edit = await call('PATCH', `/api/public/requests/${request.id}/fields`, organizerCookie, { address: '' });
+    assert.equal(edit.statusCode, 200, edit.body);
+    assert.equal((edit.json() as { request: { address: string | null } }).request.address, null);
+  });
+
+  it('edits only the fields that were sent, and audits their names not their values', async () => {
+    const made = await create({ name: 'Typo Person', phone: '519-555-0183', address: '9 Elm' });
+    const id = (made.json() as { request: { id: string } }).request.id;
+    cleanup.push(id);
+
+    const res = await call('PATCH', `/api/public/requests/${id}/fields`, organizerCookie, {
+      name: 'Tyler Person',
+      phone: null, // a wrong number belongs to somebody; clearing it is the fix, not leaving it
+      wants: ['sign', 'donate'],
+      household_id: household,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const { request } = res.json() as { request: Record<string, unknown> };
+    assert.equal(request.name, 'Tyler Person');
+    assert.equal(request.phone, null);
+    assert.deepEqual(request.wants, ['sign', 'donate']);
+    assert.equal(request.household_id, household);
+    // Untouched: a field nobody sent is not cleared.
+    assert.equal(request.address, '9 Elm');
+    assert.equal(request.consent_text, CONSENT);
+
+    const row = (
+      await db.query<{ matched_at: Date | null }>(`SELECT matched_at FROM public_request WHERE id = $1`, [id])
+    ).rows[0]!;
+    assert.ok(row.matched_at, 'linking a door in an edit counts as matched too');
+
+    const detail = (
+      await db.query<{ detail: { fields: string[]; from_household: boolean } }>(
+        `SELECT detail FROM audit_log WHERE action = 'update_manual_request' AND target = $1`,
+        [id],
+      )
+    ).rows[0]!.detail;
+    assert.deepEqual(detail.fields, ['name', 'phone', 'wants', 'household_id']);
+    // The row had no door before this edit; the trail shows the link appearing without naming it.
+    assert.equal(detail.from_household, false);
+    // The values themselves are never in audit_log — that would be a second, un-withdrawable copy.
+    assert.ok(!JSON.stringify(detail).includes('519'));
+    assert.ok(!JSON.stringify(detail).includes('Tyler'));
+  });
+
+  it('refuses an empty edit, an unknown row, and an edit that would leave nothing to act on', async () => {
+    const made = await create({ name: 'Only A Phone', phone: '519-555-0184' });
+    const id = (made.json() as { request: { id: string } }).request.id;
+    cleanup.push(id);
+
+    const empty = await call('PATCH', `/api/public/requests/${id}/fields`, organizerCookie, {});
+    assert.equal(empty.statusCode, 400, empty.body);
+
+    const missing = await call('PATCH', `/api/public/requests/${randomUUID()}/fields`, organizerCookie, {
+      name: 'Ghost',
+    });
+    assert.equal(missing.statusCode, 404, missing.body);
+
+    // Clearing the only contact detail would produce exactly the row the create refuses to make.
+    const stripped = await call('PATCH', `/api/public/requests/${id}/fields`, organizerCookie, { phone: null });
+    assert.equal(stripped.statusCode, 400, stripped.body);
+    assert.equal((stripped.json() as { error: { code: string } }).error.code, 'contact_required');
+  });
+
+  it('will not rewrite or delete a row the person submitted themselves', async () => {
+    // Two non-manual sources, because the gate is "is it manual", not "is it the website": the
+    // public form defaults to 'web' and the five-minute sync writes 'website'.
+    const posted = await app.inject({
+      method: 'POST',
+      url: '/api/public/requests',
+      payload: {
+        name: 'Self Submitted',
+        email: `self+${RUN}@example.test`,
+        wants: ['sign'],
+        consent_text: 'By signing up you consent to receive campaign emails about this election.',
+      },
+    });
+    assert.equal(posted.statusCode, 202);
+    const webId = (
+      await db.query<{ id: string }>(`SELECT id FROM public_request WHERE email = $1`, [`self+${RUN}@example.test`])
+    ).rows[0]!.id;
+    cleanup.push(webId);
+    const syncedId = (
+      await db.query<{ id: string }>(
+        `INSERT INTO public_request (name, email, wants, consent_text, source, external_id, website_status)
+         VALUES ('Synced Person', $1, '{sign}', 'website consent wording, stored verbatim', 'website', $2, 'confirmed')
+         RETURNING id`,
+        [`synced+${RUN}@example.test`, `manual-test-${RUN}`],
+      )
+    ).rows[0]!.id;
+    cleanup.push(syncedId);
+
+    for (const id of [webId, syncedId]) {
+      const edit = await call('PATCH', `/api/public/requests/${id}/fields`, organizerCookie, { name: 'Rewritten' });
+      assert.equal(edit.statusCode, 403, edit.body);
+      assert.equal((edit.json() as { error: { code: string } }).error.code, 'not_editable');
+
+      // A website sign-up is a CASL consent record, and the sync would re-insert it regardless.
+      const del = await call('DELETE', `/api/public/requests/${id}`, organizerCookie);
+      assert.equal(del.statusCode, 403, del.body);
+      assert.equal((del.json() as { error: { code: string } }).error.code, 'not_deletable');
+    }
+
+    const still = await db.query(`SELECT 1 FROM public_request WHERE id = ANY($1::uuid[])`, [[webId, syncedId]]);
+    assert.equal(still.rowCount, 2, 'neither row was touched');
+  });
+
+  it('deletes a manual row and records what it was', async () => {
+    const made = await create({ name: 'Wrong Note', address: '1 Nowhere Lane', wants: ['sign'] });
+    const id = (made.json() as { request: { id: string } }).request.id;
+
+    const missing = await call('DELETE', `/api/public/requests/${randomUUID()}`, organizerCookie);
+    assert.equal(missing.statusCode, 404, missing.body);
+
+    const res = await call('DELETE', `/api/public/requests/${id}`, organizerCookie);
+    assert.equal(res.statusCode, 204, res.body);
+    const gone = await db.query(`SELECT 1 FROM public_request WHERE id = $1`, [id]);
+    assert.equal(gone.rowCount, 0);
+
+    const detail = (
+      await db.query<{ detail: Record<string, unknown> }>(
+        `SELECT detail FROM audit_log WHERE action = 'delete_manual_request' AND target = $1`,
+        [id],
+      )
+    ).rows[0]!.detail;
+    assert.deepEqual(detail, { wants: ['sign'], had_household: false });
+    // The audit row outlives the request, so clean it up by target even though the row has gone.
+    cleanup.push(id);
+  });
+
+  it('is organizer-only on all three routes', async () => {
+    const made = await create({ name: 'Role Gate', phone: '519-555-0185' });
+    const id = (made.json() as { request: { id: string } }).request.id;
+    cleanup.push(id);
+
+    const mk = await create({ name: 'Volunteer Tried', phone: '519-555-0186' }, volunteerCookie);
+    assert.equal(mk.statusCode, 403, mk.body);
+    const edit = await call('PATCH', `/api/public/requests/${id}/fields`, volunteerCookie, { name: 'No' });
+    assert.equal(edit.statusCode, 403, edit.body);
+    const del = await call('DELETE', `/api/public/requests/${id}`, volunteerCookie);
+    assert.equal(del.statusCode, 403, del.body);
+
+    const still = await db.query(`SELECT name FROM public_request WHERE id = $1`, [id]);
+    assert.equal(still.rowCount, 1, 'a volunteer changed nothing');
+  });
+});
+
 describe('sign requests from a contact', () => {
   it('records a visit with no turf at all, and raises a sign request row', async () => {
     // A door tapped on the map may be in no turf. `contact.turf_id` is nullable precisely so this
