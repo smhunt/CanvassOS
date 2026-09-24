@@ -17,6 +17,16 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ### Fixed
 
+- **No sign photo could ever be uploaded.** `SIGN_PHOTO_DIR` is a named volume mounted at
+  `/photos`, a path the API image did not contain — so Docker created the volume owned by root
+  while the API runs as the unprivileged `canvass` user, and every upload died on
+  `EACCES: permission denied`. The GPS fix and the sign itself saved normally, because those are
+  database writes, so the failure read as a problem with the photo or the phone. `api/Dockerfile`
+  now creates and chowns `/photos`; a volume that already exists needs the one-time `chown` in
+  README "Sign photos fail with EACCES", because Docker never re-applies ownership to one. The API
+  also answers a broken photo directory with `500 { code: "photo_storage_unwritable" }` and says
+  plainly that the picture was fine and the server was not, rather than a generic failure that
+  invites a volunteer to retake it in the rain to the same result.
 - **`/sw.js` is served with `Cache-Control: no-cache`.** Its filename never changes between builds,
   unlike the content-hashed files under `/assets`, and Cloudflare was caching it at the edge and
   handing browsers `max-age=14400`. For up to four hours after a deploy an installed phone could not

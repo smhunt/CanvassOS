@@ -24,6 +24,13 @@ RUN apk add --no-cache curl && addgroup -S canvass && adduser -S -G canvass -H c
 COPY --from=deps  --chown=canvass:canvass /app/node_modules ./node_modules
 COPY --from=build --chown=canvass:canvass /app/dist ./dist
 COPY --chown=canvass:canvass package.json ./
+# SIGN_PHOTO_DIR's mount point has to exist in the image, owned by the user the API runs as.
+# Docker seeds a fresh named volume from the image path it is mounted over — including its
+# ownership — but only if that path exists; mounting over a path the image does not have creates
+# the volume root-owned, and an API running as `canvass` then cannot write a single sign photo
+# (EACCES on every upload, with the placement itself saving fine because that is a database write).
+# This does NOT repair a volume that already exists: see README "Sign photos fail with EACCES".
+RUN mkdir -p /photos && chown canvass:canvass /photos
 USER canvass
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=5 \

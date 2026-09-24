@@ -494,8 +494,26 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
 
     const photoId = randomUUID();
     const file = `${photoId}.${IMAGE_EXT[img.contentType]}`;
-    // `wx` — a uuid collision must fail loudly rather than overwrite somebody else's photo.
-    await writeFile(join(photoDir, file), buf, { flag: 'wx' });
+    try {
+      // `wx` — a uuid collision must fail loudly rather than overwrite somebody else's photo.
+      await writeFile(join(photoDir, file), buf, { flag: 'wx' });
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      // The photo directory itself is broken — a volume mounted root-owned under a non-root API
+      // (EACCES), a mount that never arrived (ENOENT), a full disk (ENOSPC). None of that is a
+      // verdict on the photo, and the volunteer must be told so: the generic failure here reads as
+      // "your photo was no good" and they retake it, in the rain, to the same result. It is also
+      // worth an error-level log, because every upload will fail the same way until it is fixed.
+      if (code === 'EACCES' || code === 'EPERM' || code === 'ENOENT' || code === 'ENOSPC') {
+        req.log.error({ err, dir: photoDir, sign_id: id }, 'sign photo directory is not writable');
+        throw new ApiError(
+          500,
+          'photo_storage_unwritable',
+          'the server could not store this photo — nothing is wrong with the picture, and this will keep happening until somebody fixes the photo storage. Tell an organiser; the sign itself is saved.',
+        );
+      }
+      throw err;
+    }
 
     let photo: SignPhotoRow | undefined;
     try {

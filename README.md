@@ -642,6 +642,37 @@ top of the file appears to promise. `make --version` tells you which one you are
 </details>
 
 <details>
+<summary><b>Sign photos fail with EACCES</b></summary>
+
+Symptom: the GPS fix and the sign itself save, every photo fails, and `make logs SERVICE=api` shows
+
+```
+EACCES: permission denied, open '/photos/<uuid>.jpg'
+```
+
+Cause: Docker seeds a new named volume from the image directory it is mounted over, ownership
+included — but only when that directory exists in the image. `/photos` did not, so the `signphotos`
+volume was created owned by root while the API runs as the unprivileged `canvass` user (uid 100),
+and not one photo could ever be written. `api/Dockerfile` now creates and chowns `/photos`, which
+fixes any volume created from that image onwards.
+
+It does **not** repair a volume that already exists — Docker never re-applies ownership to one. Fix
+the live volume once, by hand:
+
+```bash
+docker run --rm -v canvass_signphotos:/photos alpine \
+  sh -c 'chown -R 100:101 /photos && chmod 755 /photos'
+make restart-tunnel        # or `make restart` on a non-tunnel stack
+```
+
+Then take one photo and confirm it comes back from `GET /api/signs/photo/:photoId`. Photos taken
+while this was broken are gone: they were refused at the door and never written. The API now
+answers this case with `500 { code: "photo_storage_unwritable" }` and a message that tells the
+volunteer the picture was fine and the server was not, rather than letting them retake it in the
+rain to the same result.
+</details>
+
+<details>
 <summary><b>Re-importing a newer list</b></summary>
 
 The importer is idempotent on identical files. Different files replace `household` and `voter`
