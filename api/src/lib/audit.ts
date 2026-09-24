@@ -56,6 +56,13 @@ export type AuditAction =
   // GET /api/signs/requests reads doors off the voters list, so it audits like any other
   // personal-data read; the rest of /api/signs is campaign logistics and does not.
   | 'view_sign_requests'
+  // Taking a request off the delivery list without delivering anything, and putting it back. The
+  // row itself only ever holds the CURRENT state — restoring NULLs the stamp — so this log is the
+  // only place the history lives, and it is what answers "who cancelled this, and was it spam or
+  // was somebody testing" months later. The detail carries the reason code and the door, never the
+  // note somebody typed.
+  | 'cancel_sign_request'
+  | 'restore_sign_request'
   // Phone / email collected at the door (voter_contact). Everything here touches data the person
   // handed over under a consent, so every read AND every change to that consent is recorded — the
   // consent is only defensible if we can say what was agreed, when, and who took or changed it.

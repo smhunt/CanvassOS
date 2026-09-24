@@ -376,7 +376,8 @@ nullable and most fields are free text. The two exceptions to "not voter data" a
   sign exists in some **other** status — a row still marked `requested` *is* this request and must not hide the door.
 
   `{ household_id, address, ward, community, lat, lon, sign_address, source, contact_id, last_contact_at,
-  last_result, note, user_id, user_name, voter_id, voter_name }`, newest first.
+  last_result, note, user_id, user_name, voter_id, voter_name, cancelled_at, cancelled_by_name,
+  cancel_reason, cancel_note }`, newest first. The four `cancel*` fields are null on every live row.
   **On a `direct` row `contact_id`, `last_result`, `user_id`, `user_name`, `voter_id` and `voter_name` are all
   `null`**, and `last_contact_at` is the sign's `requested_at`. `POST /api/signs` stamps no requester on a
   `requested` row (only `placed_by` on a placement), so **who raised a `direct` request is recorded in `audit_log`
@@ -390,6 +391,39 @@ nullable and most fields are free text. The two exceptions to "not voter data" a
   may call. They stay on `GET /api/public/requests`, which is organizer/admin at the route. The web app shows the two
   as a single list for the organizers who may see both; the merge is in the browser, so there is no shape in which a
   volunteer could receive a CASL contact field.
+
+  `?cancelled=true` returns the **bin** instead — requests taken off the list without a sign being delivered, newest
+  cancellation first, with `cancelled_at`, `cancelled_by_name`, `cancel_reason` and `cancel_note` filled and
+  `last_contact_at` set to the cancellation time. **Organizer/admin only (`403 forbidden`)**: the bin holds what
+  somebody judged to be spam or a test, and that judgement is not a volunteer's worklist.
+
+- `POST /api/signs/requests/:householdId/cancel` `{ reason, note? }` → `200 { ok: true, cancelled: <n> }` —
+  **organizer/admin**, the same rule as `DELETE /api/signs`: a request recorded by mistake should be removable, but
+  the record of what a door asked for is not a volunteer's to erase.
+  `reason` ∈ `test` | `spam` | `withdrawn` | `duplicate` | `other`; `note` ≤ 2000 chars.
+  - **It stamps the `sign` row and never touches `contact`.** A contact says what a person said on a doorstep: it is
+    canvass history and an audit artefact, and editing one to cancel a sign request would be rewriting it. The
+    *request* is the sign row — `POST /api/contacts` raises one for every door that ticks `wants_sign`, and a door
+    card writes the same row directly — so one anchor covers both kinds.
+  - Stamps **every** open `requested` sign at the door, because the web app's duplicate guard fails open and two taps
+    with no signal can leave two rows; cancelling one would put the door straight back on the list.
+  - `409 nothing_to_cancel` when the door has no open request. That is the ~70 unmapped legal-description doors,
+    which never got a sign row because it would have had no coordinates, plus any contact predating the feature.
+  - Audit `cancel_sign_request`, target the household, detail `{ reason, signs, had_note }` — the reason **code**,
+    never the note, which is free text somebody typed about a person.
+- `POST /api/signs/requests/:householdId/restore` → `200 { ok: true, restored: <n> }` — organizer/admin. NULLs all
+  four columns together (migration 008's CHECK requires it), exactly as `PATCH /api/signs/:id` clears
+  `removed_by`/`removed_at` when a sign marked collected turns out to still be standing. `409 nothing_to_restore`.
+  Audit `restore_sign_request`.
+  - **Nothing is deleted, and the row holds only the current state.** `audit_log` is therefore the only permanent
+    record that a cancel ever happened — which is what answers "was that spam, or was somebody testing" in November.
+  - A **door** row's cancel is compared against the door's latest contact (`cancelled_at > contact.at`), so a
+    resident who asks again at a later knock comes back onto the list by themselves. Without that comparison a
+    cancel would be permanent, because `POST /api/contacts` declines to raise a second sign row at a door that
+    already has one.
+  - A cancelled request also disappears from `GET /api/signs` and therefore from the signs map. Leaving the pin up
+    would mean "cancel" cleared one screen and not the other, which is how somebody drives to a door that asked for
+    nothing. `/api/signs/pickup` is unaffected — a cancelled request was never planted.
 
 ### Sign photos
 - `POST /api/signs/:id/photo` — one `multipart/form-data` file part → `201 { photo }`. Any signed-in role.

@@ -8,6 +8,7 @@ import type {
   Activity,
   Assignment,
   AuditEntry,
+  CancelReason,
   Contact,
   ContactInput,
   DoorsResponse,
@@ -575,7 +576,7 @@ export function useDeleteManualRequest() {
   });
 }
 
-/** Doors that asked for a sign at the door and have not got one yet. */
+/** Doors waiting for a sign — asked at the door, or requested from a door card. */
 export function useSignRequests() {
   return useQuery({
     queryKey: ['signs', 'requests'],
@@ -583,6 +584,38 @@ export function useSignRequests() {
     staleTime: 30_000,
   });
 }
+
+/** The bin: requests taken off the list without a sign. Organizer/admin — the API 403s anyone else. */
+export function useCancelledSignRequests(enabled: boolean) {
+  return useQuery({
+    queryKey: ['signs', 'requests', 'cancelled'],
+    queryFn: () =>
+      api.get<{ requests: SignRequest[] }>('/signs/requests', { cancelled: true }).then((r) => r.requests),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Take a request off the delivery list, or put it back.
+ *
+ * Nothing is deleted — the sign row is stamped and a restore clears the stamp — so "I was testing"
+ * is genuinely reversible. Both invalidate the sign list as well as the two request lists, because
+ * a cancelled request also leaves the signs map.
+ */
+function useSignRequestVerdict(path: 'cancel' | 'restore') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ householdId, ...body }: { householdId: string; reason?: CancelReason; note?: string }) =>
+      api.post<{ ok: boolean }>(`/signs/requests/${encodeURIComponent(householdId)}/${path}`, body),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['signs'] });
+    },
+  });
+}
+
+export const useCancelSignRequest = () => useSignRequestVerdict('cancel');
+export const useRestoreSignRequest = () => useSignRequestVerdict('restore');
 
 /**
  * A sign the volunteer placed but the network has not accepted yet.

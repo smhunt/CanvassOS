@@ -111,7 +111,22 @@ const listQuery = z.object({
     }),
 });
 
-const requestsQuery = z.object({ limit: z.coerce.number().int().min(1).max(500).default(200) });
+const requestsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+  // The cancelled bin, for putting something back that should not have gone. Organizer/admin only —
+  // the same rule as cancelling in the first place.
+  cancelled: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+});
+
+/** Why a request was taken off the list. A fixed list, mirrored by the CHECK in migration 008. */
+const CANCEL_REASONS = ['test', 'spam', 'withdrawn', 'duplicate', 'other'] as const;
+const cancelBody = z.object({
+  reason: z.enum(CANCEL_REASONS),
+  note: z.string().trim().max(2000).nullish(),
+});
 
 // ---------------------------------------------------------------- SQL
 
@@ -290,7 +305,41 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
                            WHERE x.household_id = h.id AND a.user_id = $${params.length})`;
     }
 
-    const rows = await q<SignRequestRow>(
+    if (qp.cancelled && !isOrganizer(me.role)) {
+      // The bin holds requests somebody judged to be spam or a test. That judgement, and the note
+      // beside it, is organizer business; a volunteer's worklist is the live list only.
+      throw new ApiError(403, 'forbidden', 'Only an organizer can see cancelled requests.');
+    }
+
+    const rows = qp.cancelled
+      ? await q<SignRequestRow>(
+          app.db,
+          // The bin. One branch, because a cancelled request is identified by its stamp rather than
+          // by how it arrived — `source` is re-derived so the row still says which it was.
+          `SELECT * FROM (
+             SELECT DISTINCT ON (h.id)
+                    h.id AS household_id, h.address, h.ward, h.community, h.lat, h.lon,
+                    nullif(s.label, h.address) AS sign_address,
+                    NULL::text AS contact_id, s.cancelled_at AS last_contact_at,
+                    NULL::text AS last_result, s.note,
+                    NULL::text AS user_id, NULL::text AS user_name,
+                    NULL::text AS voter_id, NULL::text AS voter_name,
+                    CASE WHEN coalesce(
+                           (SELECT c2.wants_sign FROM contact c2 WHERE c2.household_id = h.id ORDER BY c2.at DESC LIMIT 1),
+                           false)
+                         THEN 'door' ELSE 'direct' END AS source,
+                    s.cancelled_at, cu.name AS cancelled_by_name, s.cancel_reason, s.cancel_note
+             FROM sign s
+             JOIN household h ON h.id = s.household_id
+             LEFT JOIN app_user cu ON cu.id = s.cancelled_by
+             WHERE s.cancelled_at IS NOT NULL
+             ORDER BY h.id, s.cancelled_at DESC, s.id
+           ) binned
+           ORDER BY cancelled_at DESC
+           LIMIT $1`,
+          [qp.limit],
+        )
+      : await q<SignRequestRow>(
       app.db,
       // Two ways a door ends up waiting for a sign, unioned so one worklist covers both.
       //
@@ -314,7 +363,9 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
                 c.id::text AS contact_id, c.at AS last_contact_at, c.result::text AS last_result, c.note,
                 c.user_id::text AS user_id, u.name AS user_name,
                 c.voter_id::text AS voter_id, v.display_name AS voter_name,
-                'door'::text AS source
+                'door'::text AS source,
+                NULL::timestamptz AS cancelled_at, NULL::text AS cancelled_by_name,
+                NULL::text AS cancel_reason, NULL::text AS cancel_note
          FROM (SELECT DISTINCT household_id FROM contact WHERE wants_sign) d
          JOIN household h ON h.id = d.household_id
          JOIN LATERAL (SELECT * FROM contact WHERE household_id = h.id ORDER BY at DESC LIMIT 1) c ON true
@@ -325,6 +376,13 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
            -- 'requested' is this same request, written by POST /api/contacts, and must not hide the
            -- door from the list of doors still waiting for one.
            AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id AND s.status <> 'requested')
+           -- Cancelled, and cancelled AFTER the door last asked. The time comparison is what stops
+           -- a cancel being permanent: if the canvasser knocks again and the resident asks again,
+           -- the newer contact outranks the old stamp and the door comes back. Without it, a door
+           -- cancelled once could never re-enter the list, because POST /api/contacts declines to
+           -- raise a second sign row at a door that already has one.
+           AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id
+                             AND s.cancelled_at IS NOT NULL AND s.cancelled_at > c.at)
            ${scope}
        ),
        direct AS (
@@ -339,10 +397,15 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
                 NULL::text AS contact_id, s.requested_at AS last_contact_at, NULL::text AS last_result, s.note,
                 NULL::text AS user_id, NULL::text AS user_name,
                 NULL::text AS voter_id, NULL::text AS voter_name,
-                'direct'::text AS source
+                'direct'::text AS source,
+                NULL::timestamptz AS cancelled_at, NULL::text AS cancelled_by_name,
+                NULL::text AS cancel_reason, NULL::text AS cancel_note
          FROM sign s
          JOIN household h ON h.id = s.household_id
          WHERE s.status = 'requested'
+           -- This request itself is live. Unlike the door branch there is no contact to compare
+           -- against: the sign row IS the request, so cancelling it cancels the row outright.
+           AND s.cancelled_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM sign s2 WHERE s2.household_id = h.id AND s2.status <> 'requested')
            -- Exactly the door branch's condition, negated, so a door appears in one branch or the
            -- other and never both. coalesce because a door with NO contacts at all is the common
@@ -371,11 +434,88 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
     return { requests: rows.map(serializeSignRequest) };
   });
 
+  /**
+   * POST /api/signs/requests/:householdId/cancel — take a door off the delivery list without
+   * delivering anything, and POST .../restore to put it back.
+   *
+   * Organizer/admin, the same rule as DELETE /api/signs: a request recorded by mistake should be
+   * removable, but the record of what a door asked for is not a volunteer's to erase.
+   *
+   * It stamps the `sign` row rather than touching `contact`. A contact is canvass history and an
+   * audit artefact — it says what a person said on a doorstep — and editing one to cancel a sign
+   * request would be rewriting that. What is cancelled is the REQUEST, and the request is the sign
+   * row: `POST /api/contacts` raises one for every door that ticks "wants a sign", and a door card
+   * writes the same row directly. One anchor, both kinds.
+   *
+   * A door with no sign row cannot be cancelled and says so (`409 nothing_to_cancel`). That is the
+   * ~70 unmapped legal-description doors, which never got a sign row because it would have had no
+   * coordinates, plus any door whose contact predates this feature.
+   */
+  app.post('/requests/:householdId/cancel', { preHandler: requireRole('organizer') }, async (req, reply) => {
+    const { householdId } = z.object({ householdId: z.string().min(1) }).parse(req.params);
+    const body = cancelBody.parse(req.body);
+    const me = currentSession(req).user;
+
+    // Every live request at the door, because the web app's duplicate guard fails open and two taps
+    // in a dead spot can leave two. Cancelling one and leaving the other would put the door
+    // straight back on the list, which reads as the button not working.
+    const res = await app.db.query(
+      `UPDATE sign SET cancelled_at = now(), cancelled_by = $2, cancel_reason = $3, cancel_note = $4
+       WHERE household_id = $1 AND status = 'requested' AND cancelled_at IS NULL`,
+      [householdId, me.id, body.reason, body.note?.trim() || null],
+    );
+    if (!res.rowCount) {
+      throw new ApiError(
+        409,
+        'nothing_to_cancel',
+        'There is no open sign request at this door to cancel. A door with no map position never had one recorded.',
+      );
+    }
+
+    // The row only ever holds the CURRENT state — a restore NULLs it — so this entry is the only
+    // permanent record that the cancel happened. The reason code rides along; the note does not,
+    // because a note is free text somebody typed about a person.
+    await audit(app.db, req.log, {
+      userId: me.id,
+      action: 'cancel_sign_request',
+      target: householdId,
+      detail: { reason: body.reason, signs: res.rowCount, had_note: !!body.note?.trim() },
+      ip: req.ip,
+    });
+    return reply.status(200).send({ ok: true, cancelled: res.rowCount });
+  });
+
+  app.post('/requests/:householdId/restore', { preHandler: requireRole('organizer') }, async (req, reply) => {
+    const { householdId } = z.object({ householdId: z.string().min(1) }).parse(req.params);
+    const me = currentSession(req).user;
+
+    // Clearing all four together is what the CHECK in migration 008 requires, and it mirrors the
+    // way PATCH /api/signs/:id clears removed_by/removed_at when a sign turns out to still stand.
+    const res = await app.db.query(
+      `UPDATE sign SET cancelled_at = NULL, cancelled_by = NULL, cancel_reason = NULL, cancel_note = NULL
+       WHERE household_id = $1 AND cancelled_at IS NOT NULL`,
+      [householdId],
+    );
+    if (!res.rowCount) throw new ApiError(409, 'nothing_to_restore', 'No cancelled sign request at this door.');
+
+    await audit(app.db, req.log, {
+      userId: me.id,
+      action: 'restore_sign_request',
+      target: householdId,
+      detail: { signs: res.rowCount },
+      ip: req.ip,
+    });
+    return reply.status(200).send({ ok: true, restored: res.rowCount });
+  });
+
   // GET /api/signs?status=&ward=&bbox= — any signed-in role.
   app.get('/', { preHandler: requireAuth }, async (req) => {
     const qp = listQuery.parse(req.query);
     const params: unknown[] = [];
-    const where: string[] = [];
+    // A cancelled request is not a sign that exists anywhere in the world, so it is not on the map
+    // and not in the list. Leaving the pin up would mean "cancel" removed a row from one screen and
+    // not the other, which is how somebody ends up driving to a door that asked for nothing.
+    const where: string[] = ['s.cancelled_at IS NULL'];
     if (qp.status) {
       params.push(qp.status);
       where.push(`s.status = ANY($${params.length}::sign_status[])`);

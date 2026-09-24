@@ -204,7 +204,7 @@ Cloudflare, not in this repo, so a move to another hostname or zone must bring i
 is a file in `db/migrations/`, applied with `make migrate` (`make migrate-status` to see what is
 pending) and recorded in `schema_migration`. **Never edit `db/schema.sql` to change a live stack**; it
 will not re-run, and the two will silently diverge. Applied so far: `001_signs.sql` through
-`007_subscriber_link.sql`, all seven (`make migrate-status` is the authority, not this sentence). Run new migrations against `canvass_test` as well, or the suite drifts out
+`008_sign_request_cancel.sql`, all eight (`make migrate-status` is the authority, not this sentence). **008 is applied to `canvass_test` but NOT yet to production** — it must be applied there before the API that reads `sign.cancelled_at` is deployed. Run new migrations against `canvass_test` as well, or the suite drifts out
 of shape; `make demo` already applies them to `canvass_demo` when it rebuilds it.
 
 **The test suite has rails; keep them.** `api/test/api.test.ts` throws at import time unless

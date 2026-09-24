@@ -18,7 +18,17 @@
  */
 import { useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
-import { useDeleteManualRequest, useHandleRequest, useMe, usePublicRequests, useSignRequests } from '../api/hooks';
+import {
+  useCancelSignRequest,
+  useCancelledSignRequests,
+  useDeleteManualRequest,
+  useHandleRequest,
+  useMe,
+  usePublicRequests,
+  useRestoreSignRequest,
+  useSignRequests,
+} from '../api/hooks';
+import { CANCEL_REASONS, CANCEL_REASON_LABELS, type CancelReason } from '../api/types';
 import { HouseholdActions } from '../canvass/HouseholdActions';
 import { EmptyState, ErrorBox, LoadingCards, fmtDate, n, titleCase, wardLabel } from '../components/ui';
 import { wardColour } from '../map/palette';
@@ -43,10 +53,26 @@ export function SignRequestsPanel() {
   const [ward, setWard] = useState('');
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // The bin. Only an organizer can open it, and only they can put something back.
+  const [showBin, setShowBin] = useState(false);
+  const binned = useCancelledSignRequests(organizer && showBin);
+  // A public request taken off the list is `handled`, which is its own reversible stamp — so the
+  // bin shows those too rather than pretending there are two different kinds of "cancelled".
+  const handledPublics = usePublicRequests(false, organizer && showBin);
 
   const rows = useMemo(
     () => sortRequests([...fromSignRequests(toDeliveryRequests(doors.data)), ...fromPublicRequests(publics.data)]),
     [doors.data, publics.data],
+  );
+
+  const binRows = useMemo(
+    () =>
+      sortRequests([
+        ...fromSignRequests(toDeliveryRequests(binned.data)),
+        // `open=false` returns everything, so keep only the ones actually dealt with.
+        ...fromPublicRequests((handledPublics.data ?? []).filter((r) => r.handled_at !== null)),
+      ]),
+    [binned.data, handledPublics.data],
   );
 
   // Only door-derived rows carry a ward, so the filter necessarily hides every phoned-in request
@@ -127,14 +153,145 @@ export function SignRequestsPanel() {
           ))}
         </ul>
       )}
+
+      {organizer && (
+        <div className="sg-toolbar">
+          <button type="button" className="btn btn--small" aria-expanded={showBin} onClick={() => setShowBin((v) => !v)}>
+            {showBin ? 'Hide cancelled requests' : 'Show cancelled requests'}
+          </button>
+        </div>
+      )}
+
+      {organizer && showBin && (
+        <section aria-labelledby="sg-bin-h">
+          <h3 id="sg-bin-h" className="sheet__h3">
+            Cancelled
+          </h3>
+          <p className="muted small">
+            Nothing here was deleted — a cancelled request is stamped with who cancelled it and why, and putting one
+            back restores it exactly. The permanent record of both is in the audit log.
+          </p>
+          {(binned.isPending || handledPublics.isPending) && <LoadingCards count={2} label="Loading cancelled requests…" />}
+          {binned.isError && <ErrorBox title="Could not load cancelled requests" error={binned.error} compact />}
+          {!binned.isPending && binRows.length === 0 && (
+            <div className="card">
+              <EmptyState title="Nothing has been cancelled." />
+            </div>
+          )}
+          {binRows.length > 0 && (
+            <ul className="sg-list">
+              {binRows.map((r) => (
+                <BinnedRow key={r.key} r={r} />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </section>
   );
 }
 
+/** One cancelled request, and the one button that puts it back. */
+function BinnedRow({ r }: { r: UnifiedRequest }) {
+  const restore = useRestoreSignRequest();
+  const handle = useHandleRequest();
+  const busy = restore.isPending || handle.isPending;
+
+  return (
+    <li className="card sg-row">
+      <div className="sg-row__head">
+        <h3 className="sg-row__title">{r.title}</h3>
+        <div className="sg-row__tags">
+          <span className="chip">{ORIGIN_LABELS[r.origin]}</span>
+          {r.cancel_reason && <span className="chip">{CANCEL_REASON_LABELS[r.cancel_reason]}</span>}
+        </div>
+      </div>
+      <p className="muted small sg-row__meta">
+        {r.cancelled_at ? (
+          <>
+            Cancelled {relativeDay(r.cancelled_at)} · {fmtDate(r.cancelled_at)}
+            {r.cancelled_by_name && ` · by ${r.cancelled_by_name}`}
+          </>
+        ) : (
+          <>Marked handled — no sign was placed against it.</>
+        )}
+      </p>
+      {r.cancel_note && <p className="sg-note">{r.cancel_note}</p>}
+      {restore.isError && <ErrorBox title="Not restored" error={restore.error} compact />}
+      <div className="sg-row__actions">
+        <button
+          type="button"
+          className="btn btn--small"
+          disabled={busy}
+          onClick={() =>
+            r.public_request_id
+              ? handle.mutate({ requestId: r.public_request_id, handled: false })
+              : r.household_id && restore.mutate({ householdId: r.household_id })
+          }
+        >
+          Put it back on the list
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Cancelling, in two taps: the reason first, then the confirmation.
+ *
+ * The reason is not decoration. "Was that spam or was somebody testing" is exactly the question
+ * asked of the audit log months later, and a free-text box would make the answer unreadable in
+ * aggregate — so it is a fixed list, and the optional note carries anything else.
+ */
+function CancelRequest({ householdId, onDone }: { householdId: string; onDone: () => void }) {
+  const cancel = useCancelSignRequest();
+  const [reason, setReason] = useState<CancelReason>('test');
+  const [note, setNote] = useState('');
+
+  return (
+    // `.field` is the form-control wrapper the rest of the app uses (see LegalList's ward picker).
+    // A bare <select>/<input> here would sit at the browser's default height beside 44px buttons on
+    // a phone — the tap-target rule on this row is `.sg-row__actions .btn`, which they are not.
+    <div className="sg-row__actions">
+      <label className="field field--inline">
+        <span className="field__label">Why</span>
+        <select value={reason} onChange={(e) => setReason(e.target.value as CancelReason)}>
+          {CANCEL_REASONS.map((v) => (
+            <option key={v} value={v}>
+              {CANCEL_REASON_LABELS[v]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field field--inline">
+        <span className="field__label">Note</span>
+        <input type="text" placeholder="optional" value={note} onChange={(e) => setNote(e.target.value)} />
+      </label>
+      <button
+        type="button"
+        className="btn btn--small btn--danger-outline"
+        disabled={cancel.isPending}
+        onClick={() =>
+          cancel.mutate({ householdId, reason, ...(note.trim() ? { note: note.trim() } : {}) }, { onSuccess: onDone })
+        }
+      >
+        Cancel this request
+      </button>
+      <button type="button" className="btn btn--small" onClick={onDone} disabled={cancel.isPending}>
+        Keep it
+      </button>
+      {cancel.isError && <ErrorBox title="Not cancelled" error={cancel.error} compact />}
+    </div>
+  );
+}
+
 function RequestRow({ r, onEdit, busy }: { r: UnifiedRequest; onEdit: () => void; busy: boolean }) {
+  const me = useMe();
+  const organizer = me.data?.role === 'organizer' || me.data?.role === 'admin';
   const remove = useDeleteManualRequest();
   const handle = useHandleRequest();
   const [confirming, setConfirming] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   // Everything the delivery run needs is on the line; the placing form takes it from the query
   // string and PATCHes a public request handled once the sign is actually in the ground. A door
@@ -174,6 +331,12 @@ function RequestRow({ r, onEdit, busy }: { r: UnifiedRequest; onEdit: () => void
       {r.note ? <p className="sg-note">{r.note}</p> : <p className="sg-note sg-note--none">No note was left.</p>}
 
       {remove.isError && <ErrorBox title="Not deleted" error={remove.error} compact />}
+
+      {/* A door-derived request is cancelled by stamping its sign row; a phoned-in one is "marked
+          handled", which is the same idea and already reversible. Both are below. */}
+      {cancelling && r.household_id && (
+        <CancelRequest householdId={r.household_id} onDone={() => setCancelling(false)} />
+      )}
 
       <div className="sg-row__actions">
         {/* Delivering one is the job on this screen, so placing stays the primary button and the
@@ -243,6 +406,28 @@ function RequestRow({ r, onEdit, busy }: { r: UnifiedRequest; onEdit: () => void
           <Link className="btn btn--small" to={`/map?household=${encodeURIComponent(r.household_id)}`}>
             Show on the map
           </Link>
+        )}
+
+        {/* Organizer-only, the same rule as deleting a sign: a request recorded by mistake should be
+            removable, but what a door asked for is not a volunteer's to erase. Shown disabled with
+            the reason rather than hidden, so the row reads the same for everyone. Only for
+            door-anchored rows — a public request's equivalent is "Mark handled", beside it. */}
+        {!r.public_request_id && !cancelling && (
+          <button
+            type="button"
+            className="btn btn--small"
+            onClick={() => setCancelling(true)}
+            disabled={!organizer || !r.household_id}
+            title={
+              !organizer
+                ? 'Only an organizer can cancel a request.'
+                : !r.household_id
+                  ? 'This request is not linked to a door.'
+                  : 'Take it off the list — testing, spam, or they changed their mind'
+            }
+          >
+            Cancel request
+          </button>
         )}
       </div>
     </li>

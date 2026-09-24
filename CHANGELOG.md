@@ -34,6 +34,20 @@ All notable changes to CanvassOS are recorded here. The format follows
   The phoned-in half stays on `GET /api/public/requests`, which refuses a volunteer at the route:
   those rows carry a name, an email and a phone under CASL consent, and the merge happens in the
   browser precisely so there is no response shape in which a volunteer could be handed one.
+- **Cancel a sign request, and put it back.** Somebody testing the button, a spammed web form, a
+  resident who changed their mind, the same door twice — until now the only way off the delivery
+  list was to plant a sign nobody wanted, and a door-asked request had no way off at all.
+  `POST /api/signs/requests/:householdId/cancel` takes one off with a reason from a fixed list
+  (*testing*, *spam*, *changed their mind*, *duplicate*, *other*) and an optional note;
+  `.../restore` puts it back exactly. Organizer/admin only — the same rule as deleting a sign.
+  **Nothing is deleted.** The `sign` row is stamped (migration `008_sign_request_cancel.sql`) and a
+  restore clears the stamp, so "I was testing" is genuinely reversible; the permanent history of
+  both lives in `audit_log` as `cancel_sign_request` / `restore_sign_request`, carrying the reason
+  code and never the note. **A `contact` is never touched** — it records what a person said on a
+  doorstep and is an audit artefact, so what gets cancelled is the request, not the visit.
+  A cancelled request also leaves the signs map, because a pin left standing would mean the cancel
+  cleared one screen and not the other. A door whose resident asks again at a later knock comes
+  back onto the list by itself. Organizers get a "Show cancelled requests" bin to restore from.
 - **`scripts/cutover-aws.sh sync`** copies the Mac's data to EC2 while the Mac stays production —
   no freeze, so the list tables must match exactly and the tables volunteers write to are reported
   with their drift. Run before a cutover, and whenever the nightly S3 backup (taken from EC2) should

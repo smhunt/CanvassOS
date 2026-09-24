@@ -615,6 +615,17 @@ export interface SignRequestRow {
   user_name: string | null;
   voter_id: string | null;
   voter_name: string | null;
+  /**
+   * Set only on a row from the cancelled bin (`?cancelled=true`); null on every live row.
+   *
+   * `cancel_note` is free text an organizer typed about a request, so it is here — an organizer is
+   * the only role that can reach the bin at all — but it never reaches the audit detail, which
+   * carries the reason code alone.
+   */
+  cancelled_at: Date | string | null;
+  cancelled_by_name: string | null;
+  cancel_reason: string | null;
+  cancel_note: string | null;
 }
 
 export function serializeSignRequest(row: SignRequestRow): SignRequestRow {
@@ -635,6 +646,10 @@ export function serializeSignRequest(row: SignRequestRow): SignRequestRow {
     user_name: row.user_name,
     voter_id: row.voter_id,
     voter_name: row.voter_name,
+    cancelled_at: row.cancelled_at ?? null,
+    cancelled_by_name: row.cancelled_by_name ?? null,
+    cancel_reason: row.cancel_reason ?? null,
+    cancel_note: row.cancel_note ?? null,
   };
 }
 

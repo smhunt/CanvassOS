@@ -241,7 +241,12 @@ after(async () => {
     await db.query(`DELETE FROM sign WHERE id = ANY($1::uuid[])`, [createdSignIds]);
   }
   if (ids.length > 0) {
-    await db.query(`DELETE FROM sign WHERE placed_by = ANY($1::uuid[]) OR removed_by = ANY($1::uuid[])`, [ids]);
+    // `cancelled_by` (migration 008) is a third app_user reference with no ON DELETE, so a sign
+    // this run cancelled would block the deletion of the organizer who cancelled it.
+    await db.query(
+      `DELETE FROM sign WHERE placed_by = ANY($1::uuid[]) OR removed_by = ANY($1::uuid[]) OR cancelled_by = ANY($1::uuid[])`,
+      [ids],
+    );
     // A contact with wants_sign now RAISES a sign row (status 'requested', client_id
     // `<contact key>:signreq`). Those have no placed_by, so the clause above never caught them and
     // they leaked into later suites as a sign attached to a household the next test picked. Deleted
@@ -2417,6 +2422,122 @@ describe('lawn signs', () => {
     }
     const volPublic = await call('GET', '/api/public/requests?open=true', volunteerCookie);
     assert.equal(volPublic.statusCode, 403, 'the phoned-in half refuses a volunteer at the route');
+  });
+
+  it('cancels a sign request with a stamped reason, hides it everywhere, and restores it intact', async () => {
+    const free = await db.query<{ id: string }>(
+      `SELECT h.id FROM household h
+       WHERE h.id = ANY($1::text[]) AND h.lat IS NOT NULL AND h.lon IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id)
+         AND NOT EXISTS (SELECT 1 FROM contact c WHERE c.household_id = h.id)
+       LIMIT 1`,
+      [ctx.streetHouseholdIds],
+    );
+    const doorId = free.rows[0]!.id;
+
+    const made = await call('POST', '/api/signs', organizerCookie, {
+      household_id: doorId,
+      lat: SIGN_LAT,
+      lon: SIGN_LON,
+      status: 'requested',
+      client_id: `test-cancel-${RUN}`,
+    });
+    assert.equal(made.statusCode, 201, made.body);
+    const signId = track((made.json() as { sign: { id: string } }).sign.id);
+
+    const onList = async (cookie: string) =>
+      ((await call('GET', '/api/signs/requests', cookie)).json() as { requests: Array<{ household_id: string }> })
+        .requests.some((r) => r.household_id === doorId);
+    assert.equal(await onList(organizerCookie), true, 'the request starts on the list');
+
+    // Cancelling is organizer business — the same rule as DELETE /api/signs.
+    const volCancel = await call('POST', `/api/signs/requests/${doorId}/cancel`, volunteerCookie, { reason: 'test' });
+    assert.equal(volCancel.statusCode, 403);
+    const volBin = await call('GET', '/api/signs/requests?cancelled=true', volunteerCookie);
+    assert.equal(volBin.statusCode, 403, 'the bin is not a volunteer worklist');
+
+    const cancelled = await call('POST', `/api/signs/requests/${doorId}/cancel`, organizerCookie, {
+      reason: 'test',
+      note: 'pressing the button to see what it did',
+    });
+    assert.equal(cancelled.statusCode, 200, cancelled.body);
+    assert.equal((cancelled.json() as { cancelled: number }).cancelled, 1);
+
+    assert.equal(await onList(organizerCookie), false, 'a cancelled request leaves the delivery list');
+
+    // And the map, because a pin left standing would mean cancel cleared one screen and not the
+    // other — which is how somebody drives out to a door that asked for nothing.
+    const signsNow = await call('GET', '/api/signs', organizerCookie);
+    assert.ok(
+      !(signsNow.json() as { signs: Array<{ id: string }> }).signs.some((s) => s.id === signId),
+      'a cancelled request is off the signs list and therefore off the map',
+    );
+
+    const bin = await call('GET', '/api/signs/requests?cancelled=true', organizerCookie);
+    assert.equal(bin.statusCode, 200);
+    const binned = (bin.json() as { requests: Array<Record<string, unknown>> }).requests.find(
+      (r) => r.household_id === doorId,
+    );
+    assert.ok(binned, 'it is in the bin');
+    assert.equal(binned!.cancel_reason, 'test');
+    assert.equal(binned!.cancelled_by_name, 'organizer accepted');
+    assert.equal(binned!.cancel_note, 'pressing the button to see what it did');
+    assert.ok(binned!.cancelled_at);
+
+    // Nothing was deleted — the row is still there, stamped.
+    const stored = await db.query<{ status: string; cancel_reason: string }>(
+      `SELECT status::text AS status, cancel_reason FROM sign WHERE id = $1`,
+      [signId],
+    );
+    assert.equal(stored.rows[0]!.status, 'requested', 'the sign row survives, it is only stamped');
+    assert.equal(stored.rows[0]!.cancel_reason, 'test');
+
+    // "I was testing" has to be reversible or the cancel only half-solves it.
+    const restored = await call('POST', `/api/signs/requests/${doorId}/restore`, organizerCookie);
+    assert.equal(restored.statusCode, 200, restored.body);
+    assert.equal(await onList(organizerCookie), true, 'restoring puts it back on the list');
+    const binAfter = await call('GET', '/api/signs/requests?cancelled=true', organizerCookie);
+    assert.ok(
+      !(binAfter.json() as { requests: Array<{ household_id: string }> }).requests.some(
+        (r) => r.household_id === doorId,
+      ),
+      'and takes it out of the bin',
+    );
+
+    // A second restore has nothing to do, and a door that never asked cannot be cancelled.
+    assert.equal((await call('POST', `/api/signs/requests/${doorId}/restore`, organizerCookie)).statusCode, 409);
+    // A door nobody has asked anything of — which is also the shape of the ~70 unmapped parcels,
+    // where `POST /api/contacts` never raised a sign row because it would have had no coordinates.
+    const quiet = await db.query<{ id: string }>(
+      `SELECT h.id FROM household h
+       WHERE NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id) LIMIT 1`,
+    );
+    const noRequest = await call('POST', `/api/signs/requests/${quiet.rows[0]!.id}/cancel`, organizerCookie, {
+      reason: 'spam',
+    });
+    assert.equal(noRequest.statusCode, 409);
+    assert.equal((noRequest.json() as { error: { code: string } }).error.code, 'nothing_to_cancel');
+    assert.equal(
+      (await call('POST', `/api/signs/requests/${doorId}/cancel`, organizerCookie, { reason: 'nope' })).statusCode,
+      400,
+      'the reason comes from a fixed list',
+    );
+
+    // The row only ever holds the CURRENT state, so the log is the only permanent record of both.
+    const aud = await db.query<{ action: string; detail: Record<string, unknown> }>(
+      `SELECT action, detail FROM audit_log
+       WHERE action IN ('cancel_sign_request', 'restore_sign_request') AND target = $1
+       ORDER BY id`,
+      [doorId],
+    );
+    assert.deepEqual(
+      aud.rows.map((r) => r.action),
+      ['cancel_sign_request', 'restore_sign_request'],
+    );
+    assert.equal(aud.rows[0]!.detail.reason, 'test');
+    assert.equal(aud.rows[0]!.detail.had_note, true);
+    // The note is free text somebody typed about a person; the reason code is what is logged.
+    assert.equal('note' in aud.rows[0]!.detail, false, 'the note never reaches the audit detail');
   });
 
   it('deletes signs and photos for organizers only, and takes the file with them', async () => {

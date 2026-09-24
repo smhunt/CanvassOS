@@ -10,7 +10,7 @@
  * screen's to edit, so the mismatch is absorbed here — defensively, so the pickup list still
  * renders whichever way the contract settles.
  */
-import type { PickupSign as ApiPickupSign, PublicRequest, SignRequest, SignStatus } from '../api/types';
+import type { CancelReason, PickupSign as ApiPickupSign, PublicRequest, SignRequest, SignStatus } from '../api/types';
 import { SIGN_STATUSES } from '../api/types';
 
 /** One line on the post-election retrieval worklist. Re-exported so the panels keep importing it
@@ -64,6 +64,10 @@ export interface DeliveryRequest {
   note: string | null;
   /** `door` = a contact ticked "wants a sign"; `direct` = raised from a door card, no visit behind it. */
   origin: 'door' | 'direct';
+  cancelled_at: string | null;
+  cancelled_by_name: string | null;
+  cancel_reason: CancelReason | null;
+  cancel_note: string | null;
 }
 
 export function toDeliveryRequests(rows: SignRequest[] | undefined): DeliveryRequest[] {
@@ -83,6 +87,10 @@ export function toDeliveryRequests(rows: SignRequest[] | undefined): DeliveryReq
       voter_name: str(r.voter_name),
       note: str(r.note),
       origin: r.source === 'direct' ? 'direct' : 'door',
+      cancelled_at: str(r.cancelled_at),
+      cancelled_by_name: str(r.cancelled_by_name),
+      cancel_reason: (str(r.cancel_reason) as CancelReason | null) ?? null,
+      cancel_note: str(r.cancel_note),
     };
   });
 }
@@ -135,6 +143,11 @@ export interface UnifiedRequest {
   contact_line: string | null;
   /** The `public_request` id behind a manual/website row, for the edit/delete/handled routes. */
   public_request_id: string | null;
+  /** Filled only on a row from the bin; a live row carries nulls. */
+  cancelled_at: string | null;
+  cancelled_by_name: string | null;
+  cancel_reason: CancelReason | null;
+  cancel_note: string | null;
 }
 
 export function fromSignRequests(rows: DeliveryRequest[]): UnifiedRequest[] {
@@ -153,6 +166,10 @@ export function fromSignRequests(rows: DeliveryRequest[]): UnifiedRequest[] {
     note: r.note,
     contact_line: null,
     public_request_id: null,
+    cancelled_at: r.cancelled_at,
+    cancelled_by_name: r.cancelled_by_name,
+    cancel_reason: r.cancel_reason,
+    cancel_note: r.cancel_note,
   }));
 }
 
@@ -177,6 +194,12 @@ export function fromPublicRequests(rows: PublicRequest[] | undefined): UnifiedRe
       note: r.note,
       contact_line: [r.name, r.phone, r.email].filter(Boolean).join(' · ') || null,
       public_request_id: r.id,
+      // A public request has no cancel stamp: its equivalent is `handled_at`, which the panel
+      // reads from the request itself. Keeping these null stops the bin row inventing a reason.
+      cancelled_at: null,
+      cancelled_by_name: null,
+      cancel_reason: null,
+      cancel_note: null,
     }));
 }
 

@@ -381,7 +381,24 @@ export interface SignRequest {
   user_name: string | null;
   voter_id: string | null;
   voter_name: string | null;
+  /** Filled only on a row from the bin (`?cancelled=true`); null on every live row. */
+  cancelled_at: string | null;
+  cancelled_by_name: string | null;
+  cancel_reason: CancelReason | null;
+  cancel_note: string | null;
 }
+
+/** Why a request was taken off the delivery list. Mirrors the CHECK in db/migrations/008. */
+export const CANCEL_REASONS = ['test', 'spam', 'withdrawn', 'duplicate', 'other'] as const;
+export type CancelReason = (typeof CANCEL_REASONS)[number];
+
+export const CANCEL_REASON_LABELS: Record<CancelReason, string> = {
+  test: 'I was testing',
+  spam: 'Junk or spam',
+  withdrawn: 'They changed their mind',
+  duplicate: 'Duplicate of another request',
+  other: 'Something else',
+};
 
 /** GET /api/signs/pickup returns a narrower row than `Sign` — see serializePickup in the API.
  *  It carries `photo_ids` (which `Sign` does not) and drops the fields a retrieval crew cannot use. */
