@@ -37,6 +37,17 @@ export function RequestsPage() {
   );
 }
 
+/**
+ * Where the row came from. `manual` is an organiser typing in a phone call on the signs screen —
+ * calling that "public form" would credit a stranger with something the campaign wrote down itself,
+ * which matters when the next question about the row is whether they consented to anything.
+ */
+function sourceLabel(source: string): string {
+  if (source === 'website') return 'website';
+  if (source === 'manual') return 'taken by hand';
+  return 'public form';
+}
+
 const WANT_LABELS: Record<string, string> = {
   sign: 'lawn sign',
   volunteer: 'volunteer',
@@ -60,8 +71,7 @@ function RequestCard({ request: r }: { request: PublicRequest }) {
           <strong>{r.name}</strong>
           <span className="muted">
             {' '}
-            · {new Date(r.created_at).toLocaleDateString()} ·{' '}
-            {r.source === 'website' ? 'website' : 'public form'}
+            · {new Date(r.created_at).toLocaleDateString()} · {sourceLabel(r.source)}
           </span>
           {r.website_status === 'unsubscribed' && (
             <span className="request__flag request__flag--danger">unsubscribed — do not email</span>

@@ -121,7 +121,12 @@ export function PlaceSignPanel({ household, requestId, onClearHousehold }: Props
   }
 
   if (created) {
-    return <PlacedCard placed={created} onAgain={again} />;
+    // The request could not be closed: the PATCH failed, or it answered `ok: false` because the id
+    // is unknown. Either way the sign is in the ground and the request is still on somebody's list,
+    // so this is said out loud rather than left for a second volunteer to discover by driving there.
+    const requestStuck =
+      !!requestId && !created.queued && (handleRequest.isError || handleRequest.data?.ok === false);
+    return <PlacedCard placed={created} requestStuck={requestStuck} onAgain={again} />;
   }
 
   const heldElsewhere = photoQ.photos.length;
@@ -350,7 +355,15 @@ function FixReadout({ fix, poor, attempts }: { fix: GeoFix; poor: boolean; attem
  * matches the door screen's sync affordances ("saved on this phone", "as soon as there is signal")
  * so the two screens agree about what the queue means.
  */
-function PlacedCard({ placed, onAgain }: { placed: Placed; onAgain: () => void }) {
+function PlacedCard({
+  placed,
+  requestStuck,
+  onAgain,
+}: {
+  placed: Placed;
+  requestStuck: boolean;
+  onAgain: () => void;
+}) {
   const { sign, queued, clientId } = placed;
   const describe = sign.label ?? sign.address ?? `${formatCoord(sign.lat)}, ${formatCoord(sign.lon)}`;
   return (
@@ -371,6 +384,18 @@ function PlacedCard({ placed, onAgain }: { placed: Placed; onAgain: () => void }
             <strong>Sign recorded</strong>
             <div className="alert__detail">
               {describe} · fix good to {formatAccuracy(sign.accuracy_m)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {requestStuck && (
+        <div className="alert alert--warn alert--compact" role="status">
+          <div>
+            <strong>The sign is saved, the request is not closed</strong>
+            <div className="alert__detail">
+              This one is still showing as waiting, so somebody may drive out to it again. Mark it handled by hand on
+              the Sign requests tab.
             </div>
           </div>
         </div>

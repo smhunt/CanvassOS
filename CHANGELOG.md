@@ -23,16 +23,6 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ### Fixed
 
-- **No sign photo could ever be uploaded.** `SIGN_PHOTO_DIR` is a named volume mounted at
-  `/photos`, a path the API image did not contain — so Docker created the volume owned by root
-  while the API runs as the unprivileged `canvass` user, and every upload died on
-  `EACCES: permission denied`. The GPS fix and the sign itself saved normally, because those are
-  database writes, so the failure read as a problem with the photo or the phone. `api/Dockerfile`
-  now creates and chowns `/photos`; a volume that already exists needs the one-time `chown` in
-  README "Sign photos fail with EACCES", because Docker never re-applies ownership to one. The API
-  also answers a broken photo directory with `500 { code: "photo_storage_unwritable" }` and says
-  plainly that the picture was fine and the server was not, rather than a generic failure that
-  invites a volunteer to retake it in the rain to the same result.
 - **`/sw.js` is served with `Cache-Control: no-cache`.** Its filename never changes between builds,
   unlike the content-hashed files under `/assets`, and Cloudflare was caching it at the edge and
   handing browsers `max-age=14400`. For up to four hours after a deploy an installed phone could not
@@ -45,6 +35,50 @@ All notable changes to CanvassOS are recorded here. The format follows
   `/sw.js` purged by URL. `CLAUDE.md` has the landmine and the reload command. The zone-wide
   Browser Cache TTL was also rewriting the header to four hours on the way to the browser; a Cache
   Rule scoped to `canvass.webarchitecture.ca/sw.js` now makes Cloudflare respect the origin.
+
+## [1.5.0] - 2026-09-24
+
+### Added
+
+- **Sign requests can be taken, corrected and deleted by hand.** Most requests arrive by phone,
+  text or across a table at the fair, and the Sign requests tab could only ever show doors a
+  canvasser had ticked; the rest lived on the back of an envelope. The tab now has two halves —
+  "Asked at the door" unchanged, and below it, for organizers, requests taken by hand together with
+  website sign-ups that wanted a sign. A short form takes a name, a phone or email and where the
+  sign goes, and the address box doubles as a household search so a real door can be linked. Typing
+  a farm gate freehand is equally valid: plenty of places that want a sign are not a door the
+  clerk's file knows about.
+- **Stored as an ordinary `public_request` with `source: 'manual'`** — the same row a website
+  sign-up produces, so it reaches the matcher, the sign-ups queue and the delivery flow without a
+  second code path, and no migration. Deliberately not a `sign` row with status `requested`:
+  placing a sign demands a real GPS fix inside the municipality, and a request taken over the phone
+  has no coordinates at all. `consent_text` is written server-side from who was signed in and when,
+  because a client able to supply it would be a client able to put words in somebody's mouth.
+- **What may be done to a request depends on where it came from.** One taken by hand is the
+  campaign's own note and is fully editable and deletable. A website sign-up is the record of a
+  consent somebody gave — and the five-minute website sync would re-insert a deleted one by
+  morning — so it is read-only here and links to Sign-ups instead. Enforced server-side, not just
+  hidden in the UI.
+- **Placing a sign closes the request it answers.** A door leaves the delivery list by itself,
+  because the query behind it excludes any household that has a sign; a `public_request` has no
+  such derivation, so "Place a sign here" carries the request through and the placing form marks it
+  handled with the new sign id. Only when the sign actually reached the server: a queued sign
+  leaves the request open, because showing it twice costs a wasted stop while closing it against a
+  sign nobody can see costs the sign. If that close fails, the card says so rather than letting a
+  second volunteer discover it by driving there.
+
+### Fixed
+
+- **No sign photo could ever be uploaded.** `SIGN_PHOTO_DIR` is a named volume mounted at
+  `/photos`, a path the API image did not contain — so Docker created the volume owned by root
+  while the API runs as the unprivileged `canvass` user, and every upload died on
+  `EACCES: permission denied`. The GPS fix and the sign itself saved normally, because those are
+  database writes, so the failure read as a problem with the photo or the phone. `api/Dockerfile`
+  now creates and chowns `/photos`; a volume that already exists needs the one-time `chown` in
+  README "Sign photos fail with EACCES", because Docker never re-applies ownership to one. The API
+  also answers a broken photo directory with `500 { code: "photo_storage_unwritable" }` and says
+  plainly that the picture was fine and the server was not, rather than a generic failure that
+  invites a volunteer to retake it in the rain to the same result.
 
 ## [1.4.0] - 2026-09-21
 

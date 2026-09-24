@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.4.0';
+export const APP_VERSION = '1.5.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,16 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.5.0',
+    date: '2026-09-24',
+    changes: [
+      'Sign requests that came by phone, text or in person can now be typed straight into the Sign requests tab, instead of living on the back of an envelope. Start typing the address to link it to a real door on the list.',
+      'Requests you typed in can be edited or deleted. A sign-up that came from the website cannot be changed here, because it is the record of what somebody actually submitted — open it in Sign-ups instead.',
+      'Placing a sign against a request takes it off the list by itself. If the phone had no signal when the sign was saved, the request stays on the list and the screen says so.',
+      'Sign photos work again. Every photo taken until now was refused by the server for a reason that had nothing to do with the picture, while the sign and its location saved normally.',
+    ],
+  },
   {
     version: '1.4.0',
     date: '2026-09-21',
