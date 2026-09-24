@@ -447,42 +447,88 @@ export const signRoutes: FastifyPluginAsync = async (app) => {
    * row: `POST /api/contacts` raises one for every door that ticks "wants a sign", and a door card
    * writes the same row directly. One anchor, both kinds.
    *
-   * A door with no sign row cannot be cancelled and says so (`409 nothing_to_cancel`). That is the
-   * ~70 unmapped legal-description doors, which never got a sign row because it would have had no
-   * coordinates, plus any door whose contact predates this feature.
+   * **A door on the list may have no sign row at all, and that is the COMMON case, not an edge.**
+   * `contacts.ts` only raises one when the submission carried a `client_id`, and it has only done
+   * so since that code shipped — so every `wants_sign` contact written before it, or by any path
+   * without a client id, put a door on the delivery list with nothing to stamp. Measured against
+   * the frozen production copy: 5 of 7 waiting doors, none of them unmapped parcels. An earlier
+   * draft of this route answered those with `409 nothing_to_cancel`, which reproduced in a new form
+   * exactly the "the button quietly does nothing" failure this feature exists to fix.
+   *
+   * So when there is nothing to stamp, the row is CREATED already cancelled, filled in as
+   * `contacts.ts` would have filled it — the door's own coordinates, the raising contact in
+   * `requested_from`, its `sign_address` as the label. `sign.lat`/`lon` are nullable, so an unmapped
+   * legal-description door gets one too and is just as cancellable; nothing is silently excluded.
+   *
+   * `409 nothing_to_cancel` now means what it says: this door is not waiting for a sign.
    */
   app.post('/requests/:householdId/cancel', { preHandler: requireRole('organizer') }, async (req, reply) => {
     const { householdId } = z.object({ householdId: z.string().min(1) }).parse(req.params);
     const body = cancelBody.parse(req.body);
     const me = currentSession(req).user;
 
-    // Every live request at the door, because the web app's duplicate guard fails open and two taps
-    // in a dead spot can leave two. Cancelling one and leaving the other would put the door
-    // straight back on the list, which reads as the button not working.
-    const res = await app.db.query(
-      `UPDATE sign SET cancelled_at = now(), cancelled_by = $2, cancel_reason = $3, cancel_note = $4
-       WHERE household_id = $1 AND status = 'requested' AND cancelled_at IS NULL`,
+    const res = await one<{ updated: number; inserted: number }>(
+      app.db,
+      // One statement, so a cancel can never half-happen. `ins` reads `upd`'s RETURNING rows, which
+      // is what orders the two: the insert only runs when the update stamped nothing.
+      `WITH latest AS (
+         SELECT c.id, c.at, c.wants_sign, c.sign_address
+         FROM contact c WHERE c.household_id = $1 ORDER BY c.at DESC LIMIT 1
+       ),
+       upd AS (
+         UPDATE sign s
+            SET cancelled_at = now(), cancelled_by = $2, cancel_reason = $3, cancel_note = $4
+          WHERE s.household_id = $1
+            AND s.status = 'requested'
+            -- Every live request at the door, because the web app's duplicate guard fails open and
+            -- two taps in a dead spot can leave two. Cancelling one and leaving the other would put
+            -- the door straight back on the list, which reads as the button not working.
+            AND (s.cancelled_at IS NULL
+                 -- Already cancelled, but the door has asked AGAIN since — so it is back on the
+                 -- list (see the cancelled_at > contact.at rule in GET /requests) and this is a
+                 -- real second cancel. Re-stamping beats inserting a duplicate stamp row.
+                 OR EXISTS (SELECT 1 FROM latest l WHERE l.wants_sign AND l.at >= s.cancelled_at))
+         RETURNING s.id
+       ),
+       ins AS (
+         INSERT INTO sign (household_id, status, lat, lon, label, requested_at, requested_from,
+                           cancelled_at, cancelled_by, cancel_reason, cancel_note)
+         SELECT h.id, 'requested', h.lat, h.lon, l.sign_address, l.at, l.id,
+                now(), $2, $3, $4
+           FROM household h JOIN latest l ON true
+          WHERE h.id = $1
+            -- Only for a door that really is waiting: the door branch's own condition. Without
+            -- this, cancelling would mint a request at a door that never asked for anything.
+            AND l.wants_sign
+            AND NOT EXISTS (SELECT 1 FROM upd)
+            AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id AND s.status <> 'requested')
+         RETURNING id
+       )
+       SELECT (SELECT count(*)::int FROM upd) AS updated, (SELECT count(*)::int FROM ins) AS inserted`,
       [householdId, me.id, body.reason, body.note?.trim() || null],
     );
-    if (!res.rowCount) {
+    // The aggregate SELECT always returns exactly one row, but `one` is typed for the general case.
+    const n = (res?.updated ?? 0) + (res?.inserted ?? 0);
+    if (!n) {
       throw new ApiError(
         409,
         'nothing_to_cancel',
-        'There is no open sign request at this door to cancel. A door with no map position never had one recorded.',
+        'This door is not waiting for a sign, so there is no request to cancel.',
       );
     }
 
     // The row only ever holds the CURRENT state — a restore NULLs it — so this entry is the only
     // permanent record that the cancel happened. The reason code rides along; the note does not,
-    // because a note is free text somebody typed about a person.
+    // because a note is free text somebody typed about a person. `backfilled` says the request had
+    // never been written down as a sign row until this cancel wrote it.
     await audit(app.db, req.log, {
       userId: me.id,
       action: 'cancel_sign_request',
       target: householdId,
-      detail: { reason: body.reason, signs: res.rowCount, had_note: !!body.note?.trim() },
+      detail: { reason: body.reason, signs: n, backfilled: (res?.inserted ?? 0) > 0, had_note: !!body.note?.trim() },
       ip: req.ip,
     });
-    return reply.status(200).send({ ok: true, cancelled: res.rowCount });
+    return reply.status(200).send({ ok: true, cancelled: n });
   });
 
   app.post('/requests/:householdId/restore', { preHandler: requireRole('organizer') }, async (req, reply) => {

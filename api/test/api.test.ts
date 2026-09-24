@@ -2540,6 +2540,98 @@ describe('lawn signs', () => {
     assert.equal('note' in aud.rows[0]!.detail, false, 'the note never reaches the audit detail');
   });
 
+  it('cancels a door that asked but never got a sign row — the common case, not an edge', async () => {
+    // How most of the real list looks. `contacts.ts` only raises a 'requested' sign when the
+    // submission carried a client_id, so a wants_sign contact without one puts a door on the
+    // delivery list with nothing to stamp — as does every contact written before that code shipped.
+    // Measured on the frozen production copy: 5 of 7 waiting doors. An earlier draft of the cancel
+    // route answered all of them with 409, which is the button quietly doing nothing again.
+    const free = await db.query<{ id: string }>(
+      `SELECT h.id FROM household h
+       WHERE h.id = ANY($1::text[])
+         AND NOT EXISTS (SELECT 1 FROM sign s WHERE s.household_id = h.id)
+         AND NOT EXISTS (SELECT 1 FROM contact c WHERE c.household_id = h.id)
+       LIMIT 1`,
+      [ctx.streetHouseholdIds],
+    );
+    const doorId = free.rows[0]!.id;
+
+    const asked = await call('POST', '/api/contacts', organizerCookie, {
+      household_id: doorId,
+      result: 'spoke',
+      wants_sign: true,
+      sign_address: 'by the mailbox at the end of the lane',
+      // NO client_id — which is exactly what stops contacts.ts raising the sign row.
+    });
+    assert.equal(asked.statusCode, 201, asked.body);
+    const raised = await db.query(`SELECT count(*)::int AS n FROM sign WHERE household_id = $1`, [doorId]);
+    assert.equal(raised.rows[0].n, 0, 'the fixture is only meaningful if no sign row exists');
+
+    const onList = async () =>
+      ((await call('GET', '/api/signs/requests', organizerCookie)).json() as {
+        requests: Array<{ household_id: string; source: string }>;
+      }).requests.find((r) => r.household_id === doorId);
+    assert.equal((await onList())?.source, 'door', 'it is on the list as a door row');
+
+    const res = await call('POST', `/api/signs/requests/${doorId}/cancel`, organizerCookie, {
+      reason: 'spam',
+      note: 'called three times, not a real request',
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal((res.json() as { cancelled: number }).cancelled, 1);
+    assert.equal(await onList(), undefined, 'and it leaves the list');
+
+    // The row was created already cancelled, filled in the way contacts.ts would have filled it.
+    const made = await db.query<{
+      id: string;
+      status: string;
+      cancel_reason: string;
+      label: string | null;
+      requested_from: string | null;
+      lat: number | null;
+    }>(`SELECT id, status::text AS status, cancel_reason, label, requested_from, lat FROM sign WHERE household_id = $1`, [
+      doorId,
+    ]);
+    assert.equal(made.rowCount, 1, 'exactly one row was backfilled');
+    track(made.rows[0]!.id);
+    assert.equal(made.rows[0]!.status, 'requested');
+    assert.equal(made.rows[0]!.cancel_reason, 'spam');
+    assert.equal(made.rows[0]!.label, 'by the mailbox at the end of the lane', 'the sign_address becomes the label');
+    assert.ok(made.rows[0]!.requested_from, 'and it points at the contact that raised it');
+
+    // It is a cancelled request, so it is not a sign: off the list, off the map, off the pickup run.
+    const signsNow = (await call('GET', '/api/signs', organizerCookie)).json() as { signs: Array<{ id: string }> };
+    assert.ok(!signsNow.signs.some((s) => s.id === made.rows[0]!.id));
+
+    const bin = (await call('GET', '/api/signs/requests?cancelled=true', organizerCookie)).json() as {
+      requests: Array<Record<string, unknown>>;
+    };
+    const binned = bin.requests.find((r) => r.household_id === doorId);
+    assert.ok(binned, 'it is in the bin');
+    assert.equal(binned!.source, 'door', 'and still says it was asked at the door');
+
+    const aud = await db.query<{ detail: Record<string, unknown> }>(
+      `SELECT detail FROM audit_log WHERE action = 'cancel_sign_request' AND target = $1`,
+      [doorId],
+    );
+    assert.equal(aud.rows[0]!.detail.backfilled, true, 'the log says the row had to be written');
+    assert.equal(aud.rows[0]!.detail.reason, 'spam');
+
+    // Restoring puts it back, and the backfilled row behaves like any other request afterwards.
+    assert.equal((await call('POST', `/api/signs/requests/${doorId}/restore`, organizerCookie)).statusCode, 200);
+    assert.ok(await onList(), 'restoring puts the door back on the list');
+    // Second cancel re-stamps the row that now exists rather than writing another.
+    const again = await call('POST', `/api/signs/requests/${doorId}/cancel`, organizerCookie, { reason: 'duplicate' });
+    assert.equal(again.statusCode, 200, again.body);
+    const rows = await db.query(`SELECT count(*)::int AS n FROM sign WHERE household_id = $1`, [doorId]);
+    assert.equal(rows.rows[0].n, 1, 'a second cancel re-stamps, it does not pile up rows');
+
+    const contacts = await db.query<{ id: string }>(`SELECT id FROM contact WHERE household_id = $1`, [doorId]);
+    await db.query(`DELETE FROM audit_log WHERE action = 'contact' AND target = ANY($1::text[])`, [
+      contacts.rows.map((r) => r.id),
+    ]);
+  });
+
   it('deletes signs and photos for organizers only, and takes the file with them', async () => {
     const volDelete = await call('DELETE', `/api/signs/photo/${signCtx.photoId}`, volunteerCookie);
     assert.equal(volDelete.statusCode, 403);

@@ -407,10 +407,18 @@ nullable and most fields are free text. The two exceptions to "not voter data" a
     card writes the same row directly — so one anchor covers both kinds.
   - Stamps **every** open `requested` sign at the door, because the web app's duplicate guard fails open and two taps
     with no signal can leave two rows; cancelling one would put the door straight back on the list.
-  - `409 nothing_to_cancel` when the door has no open request. That is the ~70 unmapped legal-description doors,
-    which never got a sign row because it would have had no coordinates, plus any contact predating the feature.
-  - Audit `cancel_sign_request`, target the household, detail `{ reason, signs, had_note }` — the reason **code**,
-    never the note, which is free text somebody typed about a person.
+  - **A waiting door may have no `sign` row at all, and that is the common case.** `POST /api/contacts` only raises
+    one when the submission carried a `client_id`, and has only done so since that code shipped — measured on the
+    frozen production copy, **5 of 7 waiting doors have no row**, none of them unmapped. When there is nothing to
+    stamp the row is **created already cancelled**, filled in as `contacts.ts` would have: the door's own
+    coordinates, the raising contact in `requested_from`, its `sign_address` as the `label`. `sign.lat`/`lon` are
+    nullable, so an **unmapped legal-description door gets one too** and is just as cancellable — nothing is
+    excluded. The audit detail's `backfilled: true` says the row had to be written.
+  - A door already cancelled that has since **asked again** is re-stamped rather than given a second row.
+  - `409 nothing_to_cancel` means what it says: **this door is not waiting for a sign.** It is not a statement about
+    whether a `sign` row exists.
+  - Audit `cancel_sign_request`, target the household, detail `{ reason, signs, backfilled, had_note }` — the reason
+    **code**, never the note, which is free text somebody typed about a person.
 - `POST /api/signs/requests/:householdId/restore` → `200 { ok: true, restored: <n> }` — organizer/admin. NULLs all
   four columns together (migration 008's CHECK requires it), exactly as `PATCH /api/signs/:id` clears
   `removed_by`/`removed_at` when a sign marked collected turns out to still be standing. `409 nothing_to_restore`.

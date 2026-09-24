@@ -48,6 +48,11 @@ All notable changes to CanvassOS are recorded here. The format follows
   A cancelled request also leaves the signs map, because a pin left standing would mean the cancel
   cleared one screen and not the other. A door whose resident asks again at a later knock comes
   back onto the list by itself. Organizers get a "Show cancelled requests" bin to restore from.
+  **Cancelling works on a door that has no `sign` row**, which is most of them: a `wants_sign`
+  contact only raises one when the submission carried a `client_id`, so 5 of the 7 doors currently
+  waiting have nothing on file to stamp. Those get the row written for them, already cancelled and
+  filled in the way the door screen would have filled it. Unmapped legal-description doors included
+  — `sign.lat`/`lon` are nullable, so they are cancellable too.
 - **`scripts/cutover-aws.sh sync`** copies the Mac's data to EC2 while the Mac stays production —
   no freeze, so the list tables must match exactly and the tables volunteers write to are reported
   with their drift. Run before a cutover, and whenever the nightly S3 backup (taken from EC2) should

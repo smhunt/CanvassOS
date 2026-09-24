@@ -112,7 +112,9 @@ export default function SignsMap() {
     let dropped = 0;
     for (const s of signs.data ?? []) {
       // The column is nullable even though the create route requires both, so a row written by
-      // hand or by a future importer cannot put a NaN on the map.
+      // hand or by a future importer cannot put a NaN on the map. This now catches a real case as
+      // well as a defensive one: cancelling a request that was never written down backfills the
+      // sign row from the DOOR's coordinates, and an unmapped legal-description door has none.
       if (typeof s.lat !== 'number' || typeof s.lon !== 'number') {
         dropped += 1;
         continue;

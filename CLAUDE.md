@@ -34,6 +34,15 @@ with audit.
 `sean-hunt.com`, because a tunnel hostname must be on Cloudflare DNS and that zone is on OpenSRS
 carrying the campaign's Google Workspace MX. See README "DNS — what is actually deployed".
 
+**Production moved to AWS on 2026-09-24 and the office Mac is no longer it.** The stack runs on the
+EC2 box in `/srv/canvass`, reached as `ssh canvass-prod`; the Mac's containers are stopped and no
+`cloudflared` runs there, so the tunnel has exactly one connector. Anything you deploy, restart,
+migrate, back up or read logs from happens over that ssh alias, and `make restart-tunnel` on the Mac
+now restarts nothing anybody can see. `scripts/cutover-aws.sh rollback` is the way back, and
+`--with-data` is required once AWS has taken real writes — which it has. The Mac keeps a working
+copy of the repo and a database that is a snapshot from the cutover, useful for development and
+misleading if you mistake it for production.
+
 Data as loaded: **7,140 households, 16,892 electors**, 7,067 mapped, 70 legal descriptions, 3 that
 would not geocode at all, 11 institutions.
 
@@ -174,8 +183,10 @@ Five compose services in `docker-compose.yml`: `db`, `api`, `web`, `caddy`, `imp
 
 **Two deployment modes.** `make up` is the public-host form: Caddy binds 80/443 and gets its own Let's
 Encrypt cert. `make up-tunnel` overlays `docker-compose.tunnel.yml` + `Caddyfile.tunnel` for the current
-setup — the stack runs on the office Mac, Caddy serves plain HTTP on `127.0.0.1:3031`, and a Cloudflare
-Tunnel publishes it as canvass.sean-hunt.com with TLS at the edge. In tunnel mode Caddy rewrites
+setup — Caddy serves plain HTTP on `127.0.0.1:3031` and a Cloudflare Tunnel publishes it as
+canvass.webarchitecture.ca with TLS at the edge. **Since 2026-09-24 the host running that is the EC2
+box (`ssh canvass-prod`, `/srv/canvass`), not the office Mac**; the mode is identical, only the
+hardware changed. In tunnel mode Caddy rewrites
 `X-Forwarded-For` from `CF-Connecting-IP`; without that every `audit_log` row would record the tunnel's
 own address, which would gut the MEA artefact. `docker-compose.devdb.yml` is a third overlay that
 publishes the database on loopback for dev/test. See README "Deploying behind a Cloudflare Tunnel".
@@ -204,7 +215,19 @@ Cloudflare, not in this repo, so a move to another hostname or zone must bring i
 is a file in `db/migrations/`, applied with `make migrate` (`make migrate-status` to see what is
 pending) and recorded in `schema_migration`. **Never edit `db/schema.sql` to change a live stack**; it
 will not re-run, and the two will silently diverge. Applied so far: `001_signs.sql` through
-`008_sign_request_cancel.sql`, all eight (`make migrate-status` is the authority, not this sentence). **008 is applied to `canvass_test` but NOT yet to production** — it must be applied there before the API that reads `sign.cancelled_at` is deployed. Run new migrations against `canvass_test` as well, or the suite drifts out
+`008_sign_request_cancel.sql`, all eight (`make migrate-status` is the authority, not this sentence).
+
+**008 must be applied BEFORE the API that reads `sign.cancelled_at` is deployed, not after.** This is
+not a theoretical ordering: an API build carrying the cancel feature, pointed at a database without
+008, answers `GET /api/signs/requests` with a **500** — every branch of that query filters on
+`cancelled_at` — which takes out the whole signs screen, not one button. Confirmed on 2026-09-24
+against the un-migrated `canvass` database. Production is on AWS, so that is `ssh canvass-prod`,
+`make migrate`, **then** the rebuild — never the rebuild first. As of that date 008 is applied to
+`canvass_test` only; **production still needs it**, and `canvass_demo` picks it up on the next
+`make demo`. A dev API on the Mac pointed at the frozen `canvass` snapshot needs it too, or the
+signs screen 500s there as well.
+
+Run new migrations against `canvass_test` as well, or the suite drifts out
 of shape; `make demo` already applies them to `canvass_demo` when it rebuilds it.
 
 **The test suite has rails; keep them.** `api/test/api.test.ts` throws at import time unless
