@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Hourly staging refresh: restore the newest production backup from S3 into the Mac's `canvass`.
+# Twice-daily staging refresh: restore the newest production backup from S3 into the Mac's `canvass`.
 #
-#   ./scripts/staging-sync.sh            run once (what launchd runs at :45 every hour)
+#   ./scripts/staging-sync.sh            run once, now (by hand, or `make staging-sync`)
+#   ./scripts/staging-sync.sh scheduled  what launchd runs at 04:15 and 16:15 — see "no catch-up"
 #   ./scripts/staging-sync.sh install    copy this script out of the repo and load the LaunchAgent
 #   ./scripts/staging-sync.sh uninstall  unload it and remove the installed copy (dumps are left)
 #   ./scripts/staging-sync.sh status     is it loaded, what was restored last, the log tail
 #
-# THIS IS A STAGING REFRESH, NOT REPLICATION. The copy is whatever EC2's last hourly
-# backup-offsite.sh shipped, so it is up to ~75 minutes behind production. A rollback onto it still
-# loses everything recorded since that dump; `cutover-aws.sh rollback --with-data` takes a fresh dump
-# for exactly that reason, and this script is not a substitute for it. It never touches a tunnel
-# connector on either machine.
+# THIS IS A STAGING REFRESH, NOT REPLICATION. The copy is whatever EC2 last shipped to S3 when the
+# refresh ran, so between refreshes it falls up to ~12 hours behind production — more if EC2's
+# backups are only nightly. A rollback onto it loses everything recorded since that dump;
+# `cutover-aws.sh rollback --with-data` takes a fresh dump for exactly that reason, and this script is
+# not a substitute for it. It never touches a tunnel connector on either machine.
 #
 # DIRECTION IS FIXED BY CONSTRUCTION. Production is only ever *read*, and only through S3: there is
 # no ssh in this file, no remote psql, no connection string. The one write goes through
@@ -19,23 +20,29 @@
 # reach production — keep it that way; do not add an ssh leg "to save a hop".
 #
 # It refuses, every run, when the Mac looks like it is serving: the api container or a cloudflared
-# process running here means a rollback happened, the Mac is production again, and an hourly
+# process running here means a rollback happened, the Mac is production again, and a scheduled
 # drop-and-recreate of its database would destroy live writes. It also refuses while anything is
-# connected to `canvass`, and it restores in ONE transaction, so a failed restore leaves the previous
-# copy intact rather than half-dropped.
+# connected to `canvass`, and it restores in ONE transaction with ON_ERROR_STOP, so a failed restore
+# exits non-zero and leaves the previous copy intact rather than half-dropped.
 #
-# Sign photos are not restored here. The hourly EC2 runs are database-only (PHOTO_VOL=none); photos
-# ship to $BACKUP_S3_URI/photos/ with the 03:30 nightly only, so in an emergency the newest photos
-# tarball can be up to a day older than the newest db/ dump. Nothing in the key names says so.
+# NO CATCH-UP. launchd runs a calendar job that was missed while the Mac was asleep or off once, on
+# wake. `scheduled` treats any start outside a $WINDOW_MIN-minute window after 04:15 or 16:15 as
+# such a replay: it logs that it skipped and exits, and the next refresh is the next normal window.
+# A missed refresh is never made up.
 #
-# Every refusal is loud (a macOS notification, every hour it persists), and so is staleness: when
-# the newest dump in S3 is more than $STALE_HOURS hours old, EC2's hourly backup has stopped and this
-# copy is quietly falling behind.
+# Sign photos are not restored here. EC2's database dumps and its photos tarball are separate
+# uploads, and photos ship with the 03:30 nightly only, so in an emergency the newest photos tarball
+# can be up to a day older than the newest db/ dump. Nothing in the key names says so.
+#
+# Every refusal is loud (a macOS notification on each run it persists), and so is staleness: when the
+# newest dump in S3 is more than $STALE_HOURS hours old, EC2 has stopped backing up.
+#
+# The log ($LOG) holds counts, S3 keys, times and durations — never a name, address or household id.
+# It sits unencrypted on the Mac, so keep it that way. It rotates at 512 KB.
 #
 # The restored database is plaintext on the Mac's disk — the same posture the Mac had as production
-# before 2026-09-24. `make purge` uninstalls this job and deletes the database volume; the encrypted
-# dumps in backups/staging/ are pruned to the newest $KEEP here and listed by `make purge` for manual
-# deletion like every other backup.
+# before 2026-09-24. Dumps in backups/staging/ are kept $RETAIN_DAYS days. `make purge` uninstalls this
+# job and deletes the database volume, and lists backups/staging/ (dumps and log) for deletion.
 set -euo pipefail
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -45,7 +52,8 @@ REPO="${CANVASS_REPO:-$(cd "$(dirname "$SELF")/.." && pwd)}"
 LABEL=ca.ecoworks.canvass-staging-sync
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 INSTALL_DIR="$HOME/Library/Application Support/canvass-staging-sync"
-LOG="$HOME/Library/Logs/canvass-staging-sync.log"
+# launchd's stderr only (stdout is already in $LOG) — a crash before log() is reachable lands here.
+LAUNCHD_LOG="$HOME/Library/Logs/canvass-staging-sync.launchd.log"
 LAUNCHD_PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 DB_CONTAINER=canvass-db-1
@@ -53,11 +61,15 @@ API_CONTAINER=canvass-api-1
 DB_NAME="${CANVASS_SYNC_DB:-canvass}"   # override only to test against a throwaway database in the same container
 STAGE_DIR="$REPO/backups/staging"
 STATE="$STAGE_DIR/last-restored"
-KEEP=24
-STALE_HOURS=3
+LOG="$STAGE_DIR/staging-sync.log"
+RETAIN_DAYS=3
+# 13, not less: with nightly-only EC2 backups the 16:15 run legitimately finds the 03:30 dump, and a
+# missed nightly still trips it on the next 04:15.
+STALE_HOURS=13
+WINDOW_MIN=30
 
 envval() { sed -n "s/^$1=//p" "$REPO/.env" 2>/dev/null | tail -1; }
-log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
+log() { mkdir -p "$STAGE_DIR"; printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 fail() {
   log "FAILED: $*"
   osascript -e "display notification \"$*\" with title \"Canvass staging sync failed\"" >/dev/null 2>&1 || true
@@ -65,14 +77,26 @@ fail() {
 }
 psql_in() { local db=$1; shift; docker exec -i "$DB_CONTAINER" psql -U canvass -d "$db" -At -v ON_ERROR_STOP=1 "$@"; }
 
+cmd_scheduled() {
+  local now=$(( 10#$(date +%H) * 60 + 10#$(date +%M) ))
+  local w
+  for w in $((4 * 60 + 15)) $((16 * 60 + 15)); do
+    if [ "$now" -ge "$w" ] && [ "$now" -lt $((w + WINDOW_MIN)) ]; then cmd_run; return; fi
+  done
+  log "skip: started at $(date +%H:%M), outside the 04:15/16:15 windows — a missed run (Mac asleep or off) is not replayed"
+}
+
 cmd_run() {
   mkdir -p "$STAGE_DIR"
-  # A slow download must not overlap the next hour's run. mkdir is atomic; a stale lock from a
+  if [ -f "$LOG" ] && [ "$(stat -f %z "$LOG")" -gt 524288 ]; then mv -f "$LOG" "$LOG.1"; fi
+  local started=$SECONDS
+  log "start"
+  # A slow download must not overlap the next run. mkdir is atomic; a stale lock from a
   # crashed run is cleared once it is older than the interval.
   local lock="$STAGE_DIR/.lock"
   if ! mkdir "$lock" 2>/dev/null; then
     if [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then rmdir "$lock"; mkdir "$lock"
-    else log "previous run still going — skipping"; return 0; fi
+    else log "skip: previous run still going"; return 0; fi
   fi
   trap 'rmdir "$STAGE_DIR/.lock" 2>/dev/null || true' EXIT
   trap 'fail "unexpected error at line $LINENO"' ERR
@@ -99,11 +123,12 @@ cmd_run() {
   case "$key" in db/canvass-*.sql.gz.gpg) ;; *) fail "no dump found in $s3/db/ (got '$key')" ;; esac
   local stamp="${key#db/canvass-}"; stamp="${stamp%.sql.gz.gpg}"
   local age_h=$(( ( $(date +%s) - $(date -j -f %Y%m%d-%H%M%S "$stamp" +%s) ) / 3600 ))
-  [ "$age_h" -lt "$STALE_HOURS" ] || fail "newest dump in S3 is ${age_h}h old ($key) — EC2's hourly backup has stopped"
+  [ "$age_h" -lt "$STALE_HOURS" ] || fail "newest dump in S3 is ${age_h}h old ($key) — EC2 has stopped backing up"
+  log "newest in S3: $key (${age_h}h old)"
   local last; last="$(cat "$STATE" 2>/dev/null || true)"
-  if [ "$last" = "$key" ]; then log "up to date ($key)"; return 0; fi
+  if [ "$last" = "$key" ]; then log "skip: already restored $key"; return 0; fi
   # Never go backwards: a copy restored by hand can be newer than anything in the bucket.
-  if [ -n "$last" ] && [[ "$key" < "$last" ]]; then log "newest in S3 ($key) is older than $last — skipping"; return 0; fi
+  if [ -n "$last" ] && [[ "$key" < "$last" ]]; then log "skip: $key is older than the copy already restored ($last)"; return 0; fi
 
   # ---- nobody may be using the database we are about to replace
   local busy; busy="$(psql_in postgres -c "SELECT count(*) FROM pg_stat_activity WHERE datname = '$DB_NAME'")"
@@ -118,7 +143,7 @@ cmd_run() {
   local migrations_before; migrations_before="$(psql_in "$DB_NAME" -c 'SELECT count(*) FROM schema_migration' 2>/dev/null || echo 0)"
   local audit_before; audit_before="$(psql_in "$DB_NAME" -c "SELECT coalesce(max(at), 'epoch') FROM audit_log" 2>/dev/null || echo epoch)"
 
-  # One transaction: a bad dump rolls back and leaves the previous hour's copy in place. The
+  # One transaction: a bad dump rolls back and leaves the previous copy in place. The
   # passphrase goes over an fd, not argv, so it never appears in `ps`.
   gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 3 -d "$file" 3<<<"$pass" \
     | gunzip \
@@ -140,15 +165,16 @@ cmd_run() {
   counts="$(psql_in "$DB_NAME" -c "SELECT '$households households, $voters voters, ' || (SELECT count(*) FROM contact) || ' contacts, ' || (SELECT count(*) FROM sign) || ' signs, $migrations_after migrations'")"
 
   printf '%s\n' "$key" > "$STATE"
-  log "restored $key: $counts"
+  log "restored $key in $((SECONDS - started))s: $counts; the copy is ${age_h}h behind production"
 
-  # Retention: the newest $KEEP dumps (a day of hourlies). Everything here is the voters list.
-  ls -t "$STAGE_DIR"/canvass-*.sql.gz.gpg 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do rm -f "$old"; done
+  # Retention: $RETAIN_DAYS days. Everything here is the voters list.
+  find "$STAGE_DIR" -maxdepth 1 -name 'canvass-*.sql.gz.gpg' -mmin +$((RETAIN_DAYS * 24 * 60)) -print \
+    | while read -r old; do rm -f "$old"; log "pruned $(basename "$old")"; done
 }
 
 cmd_install() {
   [ -f "$REPO/.env" ] || { echo "no $REPO/.env — run install from the main checkout, or set CANVASS_REPO" >&2; exit 1; }
-  mkdir -p "$INSTALL_DIR" "$(dirname "$PLIST")" "$(dirname "$LOG")"
+  mkdir -p "$INSTALL_DIR" "$(dirname "$PLIST")" "$(dirname "$LAUNCHD_LOG")" "$STAGE_DIR"
   cp "$SELF" "$INSTALL_DIR/staging-sync.sh"; chmod 755 "$INSTALL_DIR/staging-sync.sh"
   cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -157,23 +183,27 @@ cmd_install() {
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>/bin/bash</string><string>$INSTALL_DIR/staging-sync.sh</string><string>run</string></array>
+  <array><string>/bin/bash</string><string>$INSTALL_DIR/staging-sync.sh</string><string>scheduled</string></array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>$LAUNCHD_PATH</string>
     <key>CANVASS_REPO</key><string>$REPO</string>
   </dict>
-  <!-- :45 — EC2's hourly backup-offsite.sh runs at :30 and takes seconds. A run missed while the
-       Mac was asleep fires once on wake. -->
-  <key>StartCalendarInterval</key><dict><key>Minute</key><integer>45</integer></dict>
-  <key>StandardOutPath</key><string>$LOG</string>
-  <key>StandardErrorPath</key><string>$LOG</string>
+  <!-- 04:15 is after EC2's 03:30 nightly. A time missed while the Mac was asleep fires once on
+       wake; the scheduled mode logs that and skips it, so nothing is replayed. -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>15</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>$LAUNCHD_LOG</string>
 </dict>
 </plist>
 EOF
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$PLIST"
-  echo "installed: $LABEL runs at :45 every hour against $REPO (log: $LOG)"
+  echo "installed: $LABEL runs at 04:15 and 16:15 against $REPO (log: $LOG)"
 }
 
 cmd_uninstall() {
@@ -188,13 +218,14 @@ cmd_status() {
     echo "note: the installed copy differs from $SELF — re-run install to pick up changes"
   fi
   echo "last restored: $(cat "$STATE" 2>/dev/null || echo none)"
-  tail -5 "$LOG" 2>/dev/null || true
+  tail -8 "$LOG" 2>/dev/null || true
 }
 
 case "${1:-run}" in
   run) cmd_run ;;
+  scheduled) cmd_scheduled ;;
   install) cmd_install ;;
   uninstall) cmd_uninstall ;;
   status) cmd_status ;;
-  *) echo "usage: $0 [run|install|uninstall|status]" >&2; exit 2 ;;
+  *) echo "usage: $0 [run|scheduled|install|uninstall|status]" >&2; exit 2 ;;
 esac

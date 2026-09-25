@@ -6,6 +6,21 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Twice-daily staging refresh on the Mac (`scripts/staging-sync.sh`, `make staging-sync-install`).**
+  A LaunchAgent at 04:15 and 16:15 restores the newest production dump from S3 into the Mac's
+  `canvass`, so the rollback copy is refreshed instead of frozen at the cutover. A run missed while
+  the Mac was asleep or off is logged and skipped, never replayed. It
+  reads production only through S3 — no ssh, no remote psql — so it cannot be turned round to write
+  to production. It restores in one transaction (a bad dump leaves the previous hour in place),
+  refuses when the Mac's api or a cloudflared is running (a rollback would have made the Mac
+  production again), refuses while anything is connected to `canvass`, never restores an older dump
+  over a newer one, checks the newest audit row did not go backwards, and raises a macOS
+  notification on every refusal and whenever the newest dump in S3 is more than 13 hours old. It
+  keeps three days of dumps and a log (counts, keys and times only) in `backups/staging/`;
+  `make purge` uninstalls it. It is a staging refresh, not replication.
+
 ### Changed
 
 - **The delivery route's Google Maps links name each stop by its street address** ("282 ELM ST,
@@ -63,18 +78,6 @@ All notable changes to CanvassOS are recorded here. The format follows
   recorded, forwarded to Amplitude with no IP and no id of a door, voter or request, and the relay
   endpoint `POST /api/analytics/events` that the web app will use in Phase B. Nothing changes for
   canvassers, and nothing is sent until a key for a dedicated CanvassOS project is configured.
-- **Hourly staging refresh on the Mac (`scripts/staging-sync.sh`, `make staging-sync-install`).** A
-  LaunchAgent at :45 restores the newest production dump from S3 into the Mac's `canvass`, so the
-  rollback copy is never more than about 75 minutes behind instead of frozen at the cutover. It
-  reads production only through S3 — no ssh, no remote psql — so it cannot be turned round to write
-  to production. It restores in one transaction (a bad dump leaves the previous hour in place),
-  refuses when the Mac's api or a cloudflared is running (a rollback would have made the Mac
-  production again), refuses while anything is connected to `canvass`, never restores an older dump
-  over a newer one, checks the newest audit row did not go backwards, and raises a macOS
-  notification on every refusal and whenever the newest dump in S3 is more than 3 hours old. It
-  keeps the newest 24 dumps in `backups/staging/`; `make purge` uninstalls it. EC2 backs up hourly
-  to feed it (database only; photos stay nightly). It is a staging refresh, not replication.
-
 - **"Request a sign", and the same set of door actions everywhere a door is shown.** Recording that
   a household *asked* for a lawn sign no longer needs a canvass contact behind it: the button writes
   the same `sign` row with status `requested`, at the door's own coordinates, that ticking "wants a

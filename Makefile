@@ -102,13 +102,13 @@ backup: ## encrypted dump -> backups/canvass-<stamp>.sql.gz.gpg (pg_dump | gzip 
 backup-offsite: ## make backup + ship it (and any sign photos) to $BACKUP_S3_URI, verified — this is the cron target
 	@./scripts/backup-offsite.sh
 
-staging-sync: ## MAC ONLY: restore the newest production dump from S3 into the local `canvass` (what the hourly LaunchAgent runs)
+staging-sync: ## MAC ONLY: restore the newest production dump from S3 into the local `canvass` now (the LaunchAgent does this at 04:15 and 16:15)
 	@./scripts/staging-sync.sh run
 
-staging-sync-install: ## MAC ONLY: load the hourly LaunchAgent (runs at :45; re-run after changing the script)
+staging-sync-install: ## MAC ONLY: load the twice-daily LaunchAgent (04:15, 16:15; re-run after changing the script)
 	@./scripts/staging-sync.sh install
 
-staging-sync-uninstall: ## MAC ONLY: unload the hourly LaunchAgent
+staging-sync-uninstall: ## MAC ONLY: unload the staging LaunchAgent
 	@./scripts/staging-sync.sh uninstall
 
 staging-sync-status: ## MAC ONLY: is the LaunchAgent loaded, what was restored last, log tail
@@ -129,7 +129,7 @@ purge: ## AFTER THE ELECTION: stop the stack, delete ALL volumes (database, web,
 	@echo "This permanently destroys the database volume, the web volume, sign photos, Caddy state and shreds data/*.csv."
 	@echo "Encrypted backups in $(BACKUP_DIR)/ are NOT touched — delete them yourself once they are no longer needed."
 	@read -r -p "Type PURGE to continue: " ans; [ "$$ans" = "PURGE" ] || { echo "aborted"; exit 1; }
-	@# The hourly staging refresh would otherwise pull the list straight back onto this Mac.
+	@# The staging refresh would otherwise pull the list straight back onto this Mac.
 	@if [ "$$(uname)" = Darwin ]; then ./scripts/staging-sync.sh uninstall; fi
 	$(COMPOSE) --profile import down --volumes --remove-orphans
 	find data -maxdepth 1 -type f \( -name '*.csv' -o -name '*.xlsx' \) -print -exec shred -u -z -n 3 {} +
@@ -139,7 +139,7 @@ purge: ## AFTER THE ELECTION: stop the stack, delete ALL volumes (database, web,
 	  find data/sign-photos -type f -print -exec shred -u -z -n 3 {} + ; rmdir data/sign-photos 2>/dev/null || true; \
 	fi
 	$(MAKE) purge-offsite CONFIRM=PURGE
-	@echo "purged. Also remove: $(BACKUP_DIR)/*.gpg and $(BACKUP_DIR)/staging/ (the hourly copies on the Mac), any copies of the list on laptops/phones, and the pipeline outputs."
+	@echo "purged. Also remove: $(BACKUP_DIR)/*.gpg and $(BACKUP_DIR)/staging/ (the staging dumps and their log on the Mac), any copies of the list on laptops/phones, and the pipeline outputs."
 	@echo "On AWS also: terminate the instance (delete-on-termination destroys the EBS volume), delete"
 	@echo "the bucket, release the Elastic IP, revoke the IAM role, confirm no snapshots or AMIs exist,"
 	@echo "then prove nothing survives:  aws resourcegroupstaggingapi get-resources \\"
