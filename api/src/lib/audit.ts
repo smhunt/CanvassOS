@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { Queryable } from '../db.js';
+import { emitAudit } from './analytics.js';
 
 export type AuditAction =
   | 'login'
@@ -122,6 +123,8 @@ export async function audit(db: Queryable, log: FastifyBaseLogger, e: AuditEntry
       `INSERT INTO audit_log (user_id, action, target, detail, ip) VALUES ($1, $2, $3, $4, $5)`,
       [e.userId, e.action, e.target ?? null, e.detail ? JSON.stringify(e.detail) : null, normalizeIp(e.ip)],
     );
+    // After the row, never instead of it. Queues in memory and returns; off unless a key is set.
+    emitAudit(e);
   } catch (err) {
     log.error({ err, audit: e }, 'audit write failed');
   }

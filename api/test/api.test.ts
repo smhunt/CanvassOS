@@ -4319,3 +4319,144 @@ describe('subscriber link (website sync + matcher)', () => {
     assert.equal(led?.status, 'rejected');
   });
 });
+
+describe('product analytics (third-party)', () => {
+  /** Every upload the stub was asked to make — the evidence for what left the building. */
+  let sent: { url: string; body: string }[] = [];
+  const stub: FetchLike = async (input, init) => {
+    const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    sent.push({ url: href, body: String(init?.body ?? '') });
+    return new Response(JSON.stringify({ code: 200 }), { headers: { 'content-type': 'application/json' } });
+  };
+  let anaApp: FastifyInstance;
+  let adminId: string;
+
+  before(async () => {
+    const config = loadConfig({
+      DATABASE_URL,
+      SESSION_SECRET: 'test-secret-test-secret-test-secret-0123456789',
+      DOMAIN: 'canvass.test',
+      COOKIE_SECURE: 'false',
+      BOUNDARY_PATH: resolve(DATA_DIR, 'mc_boundary.json'),
+      SIGN_PHOTO_DIR: photoDir,
+      LOG_LEVEL: 'silent',
+      AMPLITUDE_API_KEY: 'test-amplitude-key',
+    });
+    anaApp = await buildApp({ config, db, fetchImpl: stub, logger: false });
+    await anaApp.ready();
+    adminId = (await db.query<{ id: string }>(`SELECT id FROM app_user WHERE email = $1`, [ADMIN_EMAIL])).rows[0]!.id;
+  });
+
+  after(async () => {
+    await anaApp?.close();
+  });
+
+  it('is off, answers the SDK, and uploads nothing when no key is configured', async () => {
+    sent = [];
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analytics/events',
+      headers: { cookie: adminCookie },
+      payload: { api_key: 'x', events: [{ event_type: 'storage_not_durable', user_id: randomUUID(), time: Date.now() }] },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal((res.json() as { events_ingested: number }).events_ingested, 0);
+    assert.equal(app.analytics, null);
+    assert.equal(sent.length, 0);
+  });
+
+  it('refuses an anonymous caller', async () => {
+    const res = await anaApp.inject({ method: 'POST', url: '/api/analytics/events', payload: { events: [] } });
+    assert.equal(res.statusCode, 401);
+  });
+
+  it('sends no elector name, address, household id, coordinate, email or search text', async () => {
+    sent = [];
+    // A real door with a real elector on it, and the things a canvasser would type about them.
+    const h = households.find((x) => x.lat && x.property_address && !x.household_id!.startsWith('H-LEGAL'))!;
+    const v = voters.find((x) => x.household_id === h.household_id && x.last_name)!;
+    const voterRow = (await db.query<{ id: string }>(`SELECT id FROM voter WHERE household_id = $1 LIMIT 1`, [h.household_id]))
+      .rows[0];
+    const as = (method: 'GET' | 'POST', url: string, payload?: unknown) =>
+      anaApp.inject({ method, url, headers: { cookie: adminCookie }, ...(payload ? { payload } : {}) });
+
+    assert.equal((await as('GET', `/api/search?q=${encodeURIComponent(v.last_name!)}`)).statusCode, 200);
+    assert.equal((await as('GET', `/api/households/${h.household_id}`)).statusCode, 200);
+    const contact = await as('POST', '/api/contacts', {
+      household_id: h.household_id,
+      voter_id: voterRow?.id,
+      result: 'spoke',
+      support: 5,
+      issues: ['roads'],
+      wants_sign: true,
+      needs_ride: true,
+      note: `${v.first_name} ${v.last_name} at ${h.property_address} wants a sign`,
+      client_id: `analytics-${randomUUID()}`,
+    });
+    assert.equal(contact.statusCode, 201, contact.body);
+    const vc = await as('POST', '/api/voter-contacts', {
+      household_id: h.household_id,
+      voter_id: voterRow?.id,
+      channel: 'email',
+      value: `analytics-${randomUUID().slice(0, 8)}@example.com`,
+      consent_updates: true,
+    });
+    assert.ok([200, 201].includes(vc.statusCode), vc.body);
+    const relay = await as('POST', '/api/analytics/events', {
+      api_key: 'placeholder',
+      events: [
+        { event_type: 'screen_viewed', user_id: adminId, time: Date.now(), event_properties: { route: '/map', breakpoint: 'desktop' } },
+        // Each of these must be dropped at the relay, not forwarded.
+        { event_type: 'screen_viewed', user_id: adminId, time: Date.now(), event_properties: { route: `/map?household=${h.household_id}`, breakpoint: 'desktop' } },
+        { event_type: 'help_opened', user_id: adminId, time: Date.now(), event_properties: { topic: 'door', name: v.last_name } },
+        { event_type: 'screen_viewed', user_id: randomUUID(), time: Date.now(), event_properties: { route: '/map', breakpoint: 'desktop' } },
+      ],
+    });
+    assert.equal((relay.json() as { events_ingested: number }).events_ingested, 1);
+
+    await anaApp.analytics!.flush();
+    assert.ok(sent.length >= 1, 'something must have been uploaded');
+    for (const call of sent) assert.match(call.url, /^https:\/\/api2\.amplitude\.com\/2\/httpapi$/);
+    const events = sent.flatMap((c) => (JSON.parse(c.body) as { events: { event_type: string }[] }).events);
+    const types = new Set(events.map((e) => e.event_type));
+    for (const t of ['search_performed', 'household_viewed', 'door_result_recorded', 'doorstep_contact_collected', 'screen_viewed']) {
+      assert.ok(types.has(t), `expected ${t} in ${[...types].join(', ')}`);
+    }
+    assert.equal(events.filter((e) => e.event_type === 'screen_viewed').length, 1, 'the three bad relay events must be dropped');
+
+    // Assert on the bytes, not on the types that produced them (same rule as the advice suite).
+    const bytes = JSON.stringify(events);
+    assert.ok(!bytes.includes(h.household_id!), 'no household id');
+    assert.ok(!/H-[A-Z]+-\d+/.test(bytes), 'no household id of any door');
+    assert.ok(!bytes.includes(v.last_name!), `no elector name (${v.last_name})`);
+    assert.ok(!bytes.includes(h.property_address!), 'no address');
+    assert.ok(!bytes.includes('@'), 'no email');
+    assert.ok(!bytes.includes(String(h.lat).slice(0, 6)), 'no coordinate');
+    if (voterRow) assert.ok(!bytes.includes(voterRow.id), 'no voter id');
+    assert.ok(!/"ip"/.test(bytes), 'no ip field at all');
+    for (const k of ['support', 'issues', 'needs_ride', 'note']) assert.ok(!bytes.includes(`"${k}"`), `no ${k}`);
+
+    // The key goes to Amplitude and nowhere else: never back to a browser.
+    assert.ok(sent.every((c) => c.body.includes('test-amplitude-key')));
+    assert.ok(!relay.body.includes('test-amplitude-key'));
+
+    // Role is stamped by the server from the database, not trusted from the client.
+    const door = events.find((e) => e.event_type === 'door_result_recorded') as unknown as {
+      user_id: string;
+      user_properties?: { role?: string };
+      event_properties: Record<string, unknown>;
+    };
+    assert.equal(door.user_id, adminId);
+    assert.equal(door.user_properties?.role, 'admin');
+    assert.deepEqual(Object.keys(door.event_properties).sort(), [
+      'follow_up', 'has_note', 'in_turf', 'n_named', 'result', 'wants_sign', 'wants_volunteer',
+    ]);
+  });
+
+  it('drops a whole batch that fails the personal-data check rather than sending it', async () => {
+    sent = [];
+    anaApp.analytics!.track(adminId, { event: 'probe', props: { oops: 'H-KOMOKA-00123' } });
+    await anaApp.analytics!.flush();
+    assert.equal(sent.length, 0);
+  });
+});

@@ -80,6 +80,15 @@ const schema = z.object({
   ADVICE_PROVIDER: z.enum(['anthropic']).default('anthropic'),
   ADVICE_MODEL: z.string().min(1).default('claude-sonnet-5'),
 
+  // ---------------------------------------------------------------- product analytics (Amplitude)
+  // The third thing in this stack that talks to a third party. ABSENT = FEATURE OFF, and that is
+  // the default on purpose. Events are allow-listed per event and carry no id of a door, voter or
+  // request, no name, address, coordinate, search text or IP — see lib/analytics.ts. The key stays
+  // here: the browser posts to /api/analytics/events and never talks to Amplitude itself.
+  AMPLITUDE_API_KEY: optionalSecret(),
+  // Fixed per Amplitude org when it is created; must match the org the key belongs to.
+  AMPLITUDE_SERVER_ZONE: z.enum(['US', 'EU']).default('US'),
+
   // Origins allowed to POST the public sign-up form, comma-separated (e.g.
   // "https://sean-hunt.pages.dev,https://sean-hunt.com"). Absent = no cross-origin form at all,
   // which is the safe default: the endpoint still exists but only same-origin callers reach it.

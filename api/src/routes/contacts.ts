@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { currentSession, requireAuth, requireRole } from '../auth/guard.js';
 import { one, q, withTx } from '../db.js';
+import { trackServer } from '../lib/analytics.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { assertHouseholdAccess } from '../lib/scope.js';
@@ -238,6 +239,24 @@ export const contactRoutes: FastifyPluginAsync = async (app) => {
         target: c.id,
         detail: { result: c.result, household_id: c.household_id, voter_id: c.voter_id },
         ip: req.ip,
+      });
+    }
+
+    // One product event per door, not per named voter (the audit rows above are per voter, and
+    // AUDIT_EVENTS maps `contact` to nothing). Door-level fields only: never support, issues,
+    // needs_ride, the note or who was named — see lib/analytics.ts.
+    if (created.length > 0) {
+      trackServer(me.id, {
+        event: 'door_result_recorded',
+        props: {
+          result: body.result,
+          n_named: named.length,
+          wants_sign: body.wants_sign === true,
+          wants_volunteer: body.wants_volunteer === true,
+          follow_up: body.follow_up === true,
+          has_note: Boolean(body.note),
+          in_turf: Boolean(body.turf_id),
+        },
       });
     }
 

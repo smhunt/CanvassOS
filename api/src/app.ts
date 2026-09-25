@@ -13,6 +13,8 @@ import { ApiError } from './lib/errors.js';
 import type { FetchLike } from './lib/streetview.js';
 import { createProvider, type MessageProvider } from './messaging/provider.js';
 import { SendWorker } from './messaging/worker.js';
+import { Analytics, installAnalytics } from './lib/analytics.js';
+import { analyticsRoutes } from './routes/analytics.js';
 import { auditRoutes } from './routes/audit.js';
 import { authRoutes } from './routes/auth.js';
 import { contactRoutes } from './routes/contacts.js';
@@ -54,6 +56,11 @@ declare module 'fastify' {
      * no test accidentally has a five-minute timer pulling a website.
      */
     subscriberSync: SubscriberSync | null;
+    /**
+     * Product analytics (Amplitude). NULL unless AMPLITUDE_API_KEY is set. Shares httpFetch, so a
+     * test hands in a stub and no test ever uploads to a real project. See lib/analytics.ts.
+     */
+    analytics: Analytics | null;
   }
 }
 
@@ -126,6 +133,20 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
     ? new SubscriberSync({ db, log: app.log, config, fetch: app.httpFetch })
     : null;
   app.decorate('subscriberSync', subscriberSync);
+
+  // Installed module-wide because audit() — called from sixty places with no app in scope — is
+  // where the server-side events come from. Only an app with a key installs one, and it removes
+  // only its own on close, so a second keyless app in the same process (the test suite) cannot
+  // switch it off underneath the first.
+  const analytics = Analytics.enabled(config) ? new Analytics({ config, db, log: app.log, httpFetch: app.httpFetch }) : null;
+  app.decorate('analytics', analytics);
+  if (analytics) {
+    const uninstall = installAnalytics(analytics);
+    app.addHook('onClose', async () => {
+      await analytics.close();
+      uninstall();
+    });
+  }
 
   app.addHook('onClose', async () => {
     worker.stopScheduling();
@@ -215,6 +236,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       await api.register(subscribeRoutes);
       await api.register(publicRequestRoutes);
       await api.register(auditRoutes);
+      await api.register(analyticsRoutes);
     },
     { prefix: '/api' },
   );
