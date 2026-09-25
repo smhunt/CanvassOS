@@ -112,6 +112,14 @@ user-gesture rule is respected by construction rather than by test.
   topic for each of the twelve screens. It opens silently everywhere but drive mode, because the
   rest of the app is used at doorsteps and desks; "Read it aloud" is one tap away in each dialog.
 
+### Product analytics, server side — 2026-09-24
+
+Phase A of `docs/analytics-plan.md`: allow-listed events from every `AuditAction` plus one
+`door_result_recorded` per door, forwarded to Amplitude by `api/src/lib/analytics.ts`, and the relay
+`POST /api/analytics/events` for the browser. **Off until `AMPLITUDE_API_KEY` is set**, and no
+Amplitude project has been created for it yet. Not built: Phase B (the browser SDK, page views,
+the offline/PWA events, an opt-out toggle) and Phase C (drive/map/help events, dashboards).
+
 ### Phase 5 planned — 2026-09-06
 
 **SMS and email to electors who opted in.** SMS is the priority channel; email is the fallback; a

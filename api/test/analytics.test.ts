@@ -89,6 +89,16 @@ describe('AUDIT_EVENTS', () => {
     assert.deepEqual(ev?.props, { size: '1-4MB' });
   });
 
+  it('counts a campaign send from the keys the route actually writes', () => {
+    // messaging.ts spreads { size, sms, email, estimated_days } into the detail; a rename there
+    // should fail here rather than quietly send an event with no count.
+    const ev = AUDIT_EVENTS.send_campaign!(
+      { size: 120, sms: 80, email: 40, estimated_days: 1, override_max_audience: false, provider: 'log' },
+      { userId: ME, action: 'send_campaign' },
+    );
+    assert.deepEqual(ev?.props, { audience_size: 120, sms: 80, email: 40, override_max_audience: false, provider: 'log' });
+  });
+
   it('sends no per-voter contact event (the door-level one comes from the route)', () => {
     assert.equal(AUDIT_EVENTS.contact, null);
   });

@@ -277,7 +277,10 @@ export const AUDIT_EVENTS: Record<AuditAction, Mapper | null> = {
   send_campaign: (d) => ({
     event: 'campaign_sent',
     props: pick({
-      queued: num(d, 'queued'),
+      // The route spreads its count object into the detail, so these are top-level keys.
+      audience_size: num(d, 'size'),
+      sms: num(d, 'sms'),
+      email: num(d, 'email'),
       override_max_audience: bool(d, 'override_max_audience'),
       provider: oneOf(d, 'provider', PROVIDERS),
     }),

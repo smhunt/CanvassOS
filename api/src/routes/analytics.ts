@@ -12,6 +12,12 @@
  * own unsent queue in localStorage, and on a phone passed between canvassers that queue would
  * otherwise credit one volunteer's taps to the next — the outbox problem, in analytics.
  *
+ * Two constraints the web side (Phase B) must honour, or this relay will reject its traffic:
+ * - `flushIntervalMillis: 10_000`. Browser SDK 2 defaults to 1 s, which in a busy door session
+ *   trips the 60/min per-user limit below, and the SDK then retries into it.
+ * - identify with `set()` only. `$identify` is accepted with `{ $set }` and nothing else, so
+ *   `setOnce`/`unset`/`add` drop the whole identify as `bad_props`.
+ *
  * The answer is always 200 with an Amplitude-shaped body, including when the feature is off and
  * when events were dropped: a 4xx would make the SDK retry a batch that will never be accepted.
  */
