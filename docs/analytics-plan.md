@@ -1,6 +1,22 @@
 # Instrumenting CanvassOS with Amplitude — research and plan
 
-Status: **research only, nothing built.** Written 2026-09-24, 32 days before election day.
+Status: **Phase A built** (server side: `api/src/lib/analytics.ts`, `api/src/routes/analytics.ts`),
+off until `AMPLITUDE_API_KEY` is set. Phases B and C not started. Written 2026-09-24, 32 days before
+election day.
+
+**Where the build differed from this plan:**
+- The relay answers **200** with an Amplitude-shaped body in every case, including when analytics is
+  off, not 204. A non-200 would make the SDK retry a batch that will never be accepted.
+- The relay also drops an event that has **no** `user_id`, not only one with a different `user_id`.
+- **An offline door is timestamped when it syncs, not when it was knocked.** `POST /api/contacts`
+  carries no client-side time and `contact.at` defaults to `now()`, so `queue_delay_s` and a
+  backdated `time` are not possible server-side. Adding them means a client `recorded_at` field on
+  the contact body, which is a Phase B change to the outbox.
+- `door_result_recorded` is emitted by the contacts route once per door; the per-voter `contact`
+  audit maps to nothing. Its properties: `result, n_named, wants_sign, wants_volunteer, follow_up,
+  has_note, in_turf`.
+- Role is stamped onto every event by the server from `app_user` (cached 5 minutes), never taken
+  from the client.
 
 ## 1. The constraint that decides the design
 
@@ -197,7 +213,7 @@ failures are logged, never thrown (the audit rule).
 |---|---|---|
 | Auth | `login` → `session_signed_in`; `login_failed` → `sign_in_failed`; `logout` → `session_signed_out`; `accept_invite` → `invite_accepted`; `change_password` → `password_changed` | role; failure reason code |
 | Users | `invite`/`reinvite` → `user_invited`; `update_user` → `user_updated` | invitee role, fields_changed (names only) |
-| Canvass | `contact` → `door_result_recorded` | result, n_named, wants_sign, wants_volunteer, follow_up, has_note, `replayed` (a 200 idempotent replay), `queue_delay_s` (server time − the door's `at`). **Event `time` = the door's `at`**, so offline doors land when they were knocked, not when they synced |
+| Canvass | (per door, from the contacts route) → `door_result_recorded` | result, n_named, wants_sign, wants_volunteer, follow_up, has_note, in_turf. The per-voter `contact` audit maps to nothing. No client time yet (see Status) |
 | | `view_turf_doors` → `turf_opened` | turf_id, n_doors, n_done |
 | | `view_household` → `household_viewed` | surface (map / door / search) |
 | | `view_follow_ups` → `follow_ups_viewed` | n |

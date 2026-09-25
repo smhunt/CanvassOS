@@ -907,6 +907,23 @@ candidates: [{ id, voter_id, natural_key, household_id, voter_name, household_ad
 - A match is a pointer. It never writes to `voter`/`household`, never mints or implies messaging
   consent (`/api/subscribe`'s double opt-in remains the only path), and never sends anything.
 
+## Product analytics (any role; OFF by default)
+- `POST /api/analytics/events` — the relay the web app's Amplitude SDK is pointed at (`serverUrl`).
+  Body is the SDK's HTTP v2 batch `{ api_key, events: [...] }`; `api_key` is ignored (the real key
+  is server-side). Every event is checked against `CLIENT_EVENTS` in `api/src/routes/analytics.ts`
+  — a strict per-event property schema, route **patterns** only, identifier-shaped strings only —
+  and rebuilt field by field; `ip` is never forwarded. An event whose `user_id` is not the session
+  user (or is absent) is **dropped, not re-stamped**: the SDK's own queue survives a sign-out on a
+  shared phone. Always answers `200 { code: 200, events_ingested, payload_size_bytes,
+  server_upload_time }` — including when `AMPLITUDE_API_KEY` is unset (nothing is kept) and when
+  events were dropped — because a 4xx would make the SDK retry a batch that can never be accepted.
+  Rate limit 60/min **per user**. Not audited: nothing it carries is personal data, by construction.
+- Server-side events are not an endpoint: `audit()` maps each `AuditAction` through `AUDIT_EVENTS`
+  in `api/src/lib/analytics.ts` (a `Record` over the whole union), and `POST /api/contacts` emits one
+  `door_result_recorded` per door. Never `support`, `issues`, `needs_ride`, a note, search text, an
+  email/phone, a coordinate or the id of a door, voter, sign, photo or request. Batches pass
+  `assertNoPersonalData()` before upload; a failing batch is dropped whole and logged.
+
 ## Audit (admin)
 - `GET /api/audit?limit=200&before=<id>` → `{ entries: [...] }`
 
@@ -930,6 +947,9 @@ candidates: [{ id, voter_id, natural_key, household_id, voter_name, household_ad
   on. `false`/empty is no trust at all; a CIDR or comma-separated list is passed through for
   `proxy-addr` to parse. Coercion is `trustProxyFrom` in `api/src/app.ts`; `api/test/trustproxy.test.ts`
   pins it (a pure unit test, no database).
+- Env (product analytics, both optional): `AMPLITUDE_API_KEY` — **absent means off**, the default; stays on
+  the server. `AMPLITUDE_SERVER_ZONE` — `US` (default) or `EU`, must match the region the Amplitude org
+  was created in. See "Product analytics" above and `docs/analytics-plan.md`.
 - Env (street-level imagery, both optional): `STREETVIEW_API_KEY` — **absent means the feature is off**, which is
   the default; when set it stays on the server and is never served to the browser. `STREETVIEW_PROVIDER` —
   `google` (the default and currently the only accepted value; a zod enum, so a typo fails boot rather than

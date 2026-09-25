@@ -19,6 +19,11 @@ All notable changes to CanvassOS are recorded here. The format follows
   requests with no coordinates (phoned-in and website ones, unmapped doors) are listed under the
   route as needing to be found by address rather than silently left off.
 
+- **Product analytics, server side (off unless `AMPLITUDE_API_KEY` is set).** Phase A of
+  `docs/analytics-plan.md`: allow-listed events from every audited action plus one per door
+  recorded, forwarded to Amplitude with no IP and no id of a door, voter or request, and the relay
+  endpoint `POST /api/analytics/events` that the web app will use in Phase B. Nothing changes for
+  canvassers, and nothing is sent until a key for a dedicated CanvassOS project is configured.
 - **"Request a sign", and the same set of door actions everywhere a door is shown.** Recording that
   a household *asked* for a lawn sign no longer needs a canvass contact behind it: the button writes
   the same `sign` row with status `requested`, at the door's own coordinates, that ticking "wants a

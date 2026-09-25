@@ -183,9 +183,10 @@ importer (one-shot python) ─────────────────�
 ```
 
 Basemap tiles (Esri, and CARTO with a key) are fetched by the browser and never touch the stack; map glyphs are
-self-hosted. The server makes exactly **two** outbound calls, both off unless a key is configured:
-Street View (`api/src/lib/streetview.ts`, two coordinates out, nothing stored) and the reachability
-advice (`api/src/lib/advice.ts`, aggregate counts out, to Anthropic). Both go through
+self-hosted. The server makes exactly **three** outbound calls, all off unless a key is configured:
+Street View (`api/src/lib/streetview.ts`, two coordinates out, nothing stored), the reachability
+advice (`api/src/lib/advice.ts`, aggregate counts out, to Anthropic) and product analytics
+(`api/src/lib/analytics.ts`, allow-listed events out, to Amplitude). All go through
 `app.httpFetch` so tests stub them and no test ever makes a billed call.
 
 Five compose services in `docker-compose.yml`: `db`, `api`, `web`, `caddy`, `importer` (profile
@@ -366,6 +367,23 @@ identical numbers are never re-billed; `ADVICE_API_KEY` absent = the whole thing
 renders its own written guidance; and every failure path returns null, because the numbers are the
 product and the prose is a garnish. The suite asserts the outgoing body against real elector names
 and addresses from the loaded database — keep that test.
+
+**Analytics is an allow-list, and every new AuditAction must be decided.** `api/src/lib/analytics.ts`
+forwards events to Amplitude (off unless `AMPLITUDE_API_KEY` is set). Same s. 23(8) rule as advice
+and Street View, and an analytics vendor is built to receive rows, so: `AUDIT_EVENTS` is a `Record`
+over the whole `AuditAction` union — **a new action does not compile until you write its mapper or
+`null`** — and each mapper picks typed fields by name; never spread `detail` (it holds emails,
+household ids, coordinates and search text, which is fine only because the audit log never leaves).
+Never send `support`, `issues`, `needs_ride`, a note, search text, or the id of a door, voter, sign,
+photo or request. The browser SDK (Phase B, not built yet) must be pointed at the relay
+`POST /api/analytics/events`, never at Amplitude, with **`autocapture: false` and no Session Replay**:
+page-view autocapture would ship `/signs?…&address=…` and `/invite/<token>`, and click capture ships
+the text of a door row. The relay drops an event whose `user_id` is not the session user — the
+passed-phone problem again — rather than re-stamping it. `assertNoPersonalData()` runs on every
+batch, and the suite asserts the uploaded bytes against real names and addresses; keep both.
+Use a dedicated Amplitude project: the org's `default` project is the campaign website's, with
+autocapture and replay on. `make purge` cannot reach Amplitude — delete that project after the
+election. Plan and event catalogue: `docs/analytics-plan.md`.
 
 **The print stylesheet stays loaded, so its rules are scoped behind a body class.**
 `web/src/print/print.css` is imported by the `/turfs/:turfId/sheet` chunk, and a lazily-loaded

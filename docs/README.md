@@ -598,12 +598,12 @@ queries join `household`, and a widened join must not become a widened response 
 **When you add a personal-data field**, add it to the right role branch in `serialize.ts`, update
 `API.md`, and extend the restricted-key assertions in `api/test/api.test.ts`.
 
-### Street-level imagery: the first of two third-party calls
+### Street-level imagery: the first of three third-party calls
 
 `GET /api/households/:id/streetview` returns a photo of the door so a canvasser can recognise the
 house — is it the one behind the hedge, are there steps, is there a gate. It is **off unless
-`STREETVIEW_API_KEY` is set**, which is the default: the stack makes exactly two outbound calls and
-both are off unless configured, so a campaign that wants to make none simply sets no keys. The design in `api/src/lib/streetview.ts` follows
+`STREETVIEW_API_KEY` is set**, which is the default: the stack makes exactly three outbound calls and
+all are off unless configured, so a campaign that wants to make none simply sets no keys. The design in `api/src/lib/streetview.ts` follows
 from s. 23(8) of the *Municipal Elections Act* ("shall not provide it to any other person"):
 
 - **Only coordinates leave the building.** Never a name, an address string, or a household id. A
@@ -649,6 +649,25 @@ prompt is the list "provided to another person" as plainly as anything could be:
 - **Every failure path returns null.** The numbers are the product and the prose is a garnish; a
   provider outage must not take the report down.
 - It goes through `app.httpFetch` like Street View, so no test ever makes a billed call.
+
+### Product analytics: the third third-party call
+
+`api/src/lib/analytics.ts` forwards product events to Amplitude. **Off unless `AMPLITUDE_API_KEY` is
+set.** The full design, event catalogue and phasing are in [`analytics-plan.md`](analytics-plan.md);
+the short version:
+
+- **Allow-list, never deny-list.** Server events come from `audit()` through `AUDIT_EVENTS`, one
+  hand-written mapper per `AuditAction` that picks typed fields by name. It is a `Record` over the
+  union, so a new action does not compile until it is decided. `POST /api/contacts` adds one
+  door-level `door_result_recorded` per door, without support, issues, needs_ride or the note.
+- **The browser never talks to Amplitude.** It posts to `POST /api/analytics/events`, which re-checks
+  each event against a strict per-event schema, drops another user's events, and rebuilds what it
+  keeps. So the volunteer's IP and the key never reach the vendor, and no new origin appears.
+- **Re-checked before it leaves**: `assertNoPersonalData()` (shared with advice) on every batch; a
+  failing batch is dropped whole. The suite asserts the uploaded bytes against real elector names,
+  addresses and household ids.
+- **Never in the request path.** Events queue in memory and flush every 10 s; failures are logged
+  and dropped. Losing a chart on a crash is acceptable; slowing a door write is not.
 
 ### Endpoint groups
 
