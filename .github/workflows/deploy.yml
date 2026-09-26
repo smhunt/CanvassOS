@@ -1,0 +1,83 @@
+# Deploy production: the EC2 box in /srv/canvass (see README "Deploying from GitHub").
+#
+# Runs on a self-hosted runner that lives ON that box, labelled `canvass-prod`. The runner only
+# makes outbound connections to GitHub, so no SSH port is opened for this and no production key is
+# stored in GitHub. That is only safe because the repository is private: a self-hosted runner on a
+# public repo will run a stranger's fork PR. Keep it private, and keep this workflow the only one
+# that names the `canvass-prod` label.
+#
+# Manual only (workflow_dispatch): a deploy is a decision, not a side effect of merging. It always
+# deploys `main`.
+#
+# Order is the point. Backup, then migrations, then the rebuild — an API that reads a column its
+# migration has not added yet answers 500 (CLAUDE.md, the 008 landmine). A changed Caddyfile is
+# reloaded explicitly because `make restart-tunnel` leaves a running Caddy on its old config.
+name: Deploy production
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, canvass-prod]
+    timeout-minutes: 30
+    env:
+      APP_DIR: /srv/canvass
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Move /srv/canvass to this commit
+        id: code
+        run: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          # EC2 gets exactly what is committed. Edits made by hand on the box would be destroyed by
+          # the reset, so refuse rather than discard somebody's hotfix.
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            git status --short --untracked-files=no
+            echo "::error::$APP_DIR has uncommitted changes to tracked files — commit them upstream or revert them on the box first"
+            exit 1
+          fi
+          old=$(git rev-parse HEAD)
+          git fetch -q "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+          git reset -q --hard "$GITHUB_SHA"
+          echo "old=$old" >> "$GITHUB_OUTPUT"
+          echo "Was $(git rev-parse --short "$old"), now $(git log --oneline -1)"
+          if git diff --name-only "$old" HEAD | grep -q '^Caddyfile'; then
+            echo "caddy=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Back up the database
+        run: cd "$APP_DIR" && make backup
+
+      - name: Apply migrations
+        run: cd "$APP_DIR" && make migrate-status && make migrate
+
+      - name: Rebuild api, web and caddy
+        run: cd "$APP_DIR" && make restart-tunnel
+
+      - name: Reload a changed Caddyfile
+        if: steps.code.outputs.caddy == '1'
+        run: docker exec canvass-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+
+      - name: Health check at the origin
+        run: |
+          # `make tunnel-status` exits 0 even when nothing answers, so check the origin directly.
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3031/api/health; then echo; exit 0; fi
+            sleep 2
+          done
+          echo "::error::origin not answering on 127.0.0.1:3031 after 60 s"
+          cd "$APP_DIR" && docker compose ps
+          exit 1
