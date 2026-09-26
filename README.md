@@ -434,6 +434,33 @@ It exists to get four things right, each of which loses data quietly:
 move. `finish` deletes the production tunnel credentials from the Mac on purpose; EC2 keeps its copy
 and `rollback` fetches them back from there.
 
+### Deploying from GitHub
+
+Production deploys are a GitHub Actions workflow, [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml),
+started by hand (**Actions → Deploy production → Run workflow**, or from a Claude session). It always
+deploys `main`, and it does the steps in the order that matters: refuse if `/srv/canvass` has
+uncommitted edits, move it to the new commit, `make backup`, `make migrate`, `make restart-tunnel`,
+`caddy reload` if a Caddyfile changed, then check the origin answers on `127.0.0.1:3031`.
+
+It runs on a **self-hosted runner installed on the EC2 box**, labelled `canvass-prod`. The runner only
+makes outbound connections to GitHub, so no SSH port is opened for it and no production key sits in
+GitHub. That is only safe because the repository is **private** — a self-hosted runner on a public
+repository runs whatever a fork's pull request tells it to. One-time setup, on the box, as the user that
+owns `/srv/canvass` and can run `docker`:
+
+```bash
+# Token: GitHub → the repo → Settings → Actions → Runners → New self-hosted runner (Linux, x64).
+# That page also shows the current runner version and download URL; use those.
+mkdir -p ~/actions-runner && cd ~/actions-runner
+curl -fsSLo runner.tgz <download URL from that page> && tar xzf runner.tgz
+./config.sh --url https://github.com/smhunt/CanvassOS --token <TOKEN> \
+  --name canvass-prod --labels canvass-prod --work _work --unattended
+sudo ./svc.sh install "$USER" && sudo ./svc.sh start
+```
+
+To stop Claude sessions (or anyone) deploying, stop the service (`sudo ./svc.sh stop`); the workflow
+then waits for a runner and times out rather than deploying anywhere else.
+
 ### Loading the list
 
 Copy the two pipeline outputs to `data/` (they are git-ignored) and load them:

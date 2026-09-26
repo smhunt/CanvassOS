@@ -45,6 +45,12 @@ now restarts nothing anybody can see. `scripts/cutover-aws.sh rollback` is the w
 copy of the repo and a database that is a snapshot from the cutover, useful for development and
 misleading if you mistake it for production.
 
+**Deploying is the `Deploy production` workflow** (`.github/workflows/deploy.yml`, manual
+`workflow_dispatch`, `main` only), which runs on a self-hosted runner on the EC2 box: backup, migrate,
+rebuild, Caddy reload if needed, health check. A cloud session has no SSH route to the box, so this is
+how one deploys: merge to `main`, dispatch the workflow, and read its run. See README "Deploying from
+GitHub" for the runner setup and why the repo must stay private.
+
 Data as loaded: **7,140 households, 16,892 electors**, 7,067 mapped, 70 legal descriptions, 3 that
 would not geocode at all, 11 institutions.
 
