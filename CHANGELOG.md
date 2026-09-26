@@ -8,6 +8,17 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ### Added
 
+- **Plan a delivery route.** The sign delivery list has a "Plan a route" button that puts every
+  waiting door with a map position into driving order and opens it in Google Maps — ten stops per
+  link, because that is what a Maps URL carries, with each link starting where the last ended — plus
+  a Waze link per stop, because Waze's deep link takes one destination only. The order is solved in
+  the browser (nearest-neighbour, then 2-opt on straight-line distance): Maps URLs have no
+  "optimise" switch and drive stops exactly as listed. It routes what the list shows, so the ward
+  filter makes it one ward's run, and "Start from where I am" anchors it to the phone's position
+  (asked once, not stored). Only coordinates go into the links — never a name, address or id — and
+  requests with no coordinates (phoned-in and website ones, unmapped doors) are listed under the
+  route as needing to be found by address rather than silently left off.
+
 - **"Request a sign", and the same set of door actions everywhere a door is shown.** Recording that
   a household *asked* for a lawn sign no longer needs a canvass contact behind it: the button writes
   the same `sign` row with status `requested`, at the door's own coordinates, that ticking "wants a

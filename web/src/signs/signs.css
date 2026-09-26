@@ -552,3 +552,41 @@
 .sg-manual__consent {
   margin-top: 0.75rem;
 }
+
+/* ------------------------------------------------------------------ the delivery route */
+
+.sg-route {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.sg-route p {
+  margin: 0;
+}
+.sg-route__warn {
+  color: var(--warn);
+}
+.sg-route__stops {
+  margin: 0;
+  padding-left: 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.sg-route__stop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.75rem;
+}
+.sg-route__title {
+  flex: 1 1 12rem;
+  overflow-wrap: anywhere;
+}
+.sg-route__stop .btn {
+  min-height: var(--tap);
+}
+.sg-route__unmapped {
+  margin: 0;
+  padding-left: 1.2rem;
+}

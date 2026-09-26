@@ -34,6 +34,7 @@ import { EmptyState, ErrorBox, LoadingCards, fmtDate, n, titleCase, wardLabel } 
 import { wardColour } from '../map/palette';
 import { relativeDay } from '../reports/relative';
 import { ManualRequestForm } from './ManualRequestForm';
+import { RoutePanel } from './RoutePanel';
 import {
   ORIGIN_LABELS,
   fromPublicRequests,
@@ -53,6 +54,7 @@ export function SignRequestsPanel() {
   const [ward, setWard] = useState('');
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [routing, setRouting] = useState(false);
   // The bin. Only an organizer can open it, and only they can put something back.
   const [showBin, setShowBin] = useState(false);
   const binned = useCancelledSignRequests(organizer && showBin);
@@ -115,11 +117,19 @@ export function SignRequestsPanel() {
             </select>
           </label>
         )}
+        {shown.length > 0 && !routing && (
+          <button type="button" className="btn btn--small" onClick={() => setRouting(true)}>
+            Plan a route
+          </button>
+        )}
         <p className="muted small sg-toolbar__count" aria-live="polite">
           {n(shown.length)} {shown.length === 1 ? 'door waiting' : 'doors waiting'}
           {ward && ` in ${wardLabel(ward)} — phoned-in requests have no ward and are hidden`}
         </p>
       </div>
+
+      {/* Routes exactly what the list shows, so the ward filter above is also "one ward's run". */}
+      {routing && shown.length > 0 && <RoutePanel rows={shown} onClose={() => setRouting(false)} />}
 
       {doors.isError && (
         <ErrorBox title="Could not load the sign requests" error={doors.error} onRetry={() => void doors.refetch()} />
