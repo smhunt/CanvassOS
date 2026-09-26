@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview --port 4173",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsx --test src/*.test.ts src/canvass/*.test.ts src/help/*.test.ts"
+    "test": "tsx --test src/*.test.ts src/canvass/*.test.ts src/help/*.test.ts src/signs/*.test.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
