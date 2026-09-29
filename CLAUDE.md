@@ -212,9 +212,13 @@ genuinely needs a spatial operator.
 **A changed Caddyfile is not live until Caddy is told.** The Caddyfile is a bind mount, so editing
 it changes nothing about the `caddy` image; `make restart-tunnel` therefore reports the container as
 `Running` and leaves it alone, still serving the old config. This is how the `/sw.js` no-cache fix
-sat undeployed through a deploy that everyone believed had shipped it. After any Caddyfile change:
-`docker exec canvass-caddy-1 caddy reload --config /etc/caddy/Caddyfile` (in place, no dropped
-connections), then prove it at the origin — `curl -sI http://127.0.0.1:3031/sw.js` — not at the
+sat undeployed through a deploy that everyone believed had shipped it. And `caddy reload` is only
+enough when the file was edited in place: `git reset`/`checkout` (every deploy) writes a *new*
+file, and a single-file bind mount keeps showing the container the old inode, so the reload
+re-reads the old config and reports success (seen on EC2, 2026-09-24). After a deploy that changed
+a Caddyfile, recreate it — `docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+--force-recreate --no-deps caddy`, which the deploy workflow does — then prove it at the origin —
+`curl -sI http://127.0.0.1:3031/sw.js` — not at the
 edge, which may be answering from cache. A stale edge copy of one file is purged by URL in
 Cloudflare; it does not need a full purge. The browser side depends on a **Cloudflare Cache Rule**
 (zone `webarchitecture.ca`, host `canvass.webarchitecture.ca`, path `/sw.js`, Browser TTL "respect
@@ -233,10 +237,10 @@ not a theoretical ordering: an API build carrying the cancel feature, pointed at
 008, answers `GET /api/signs/requests` with a **500** — every branch of that query filters on
 `cancelled_at` — which takes out the whole signs screen, not one button. Confirmed on 2026-09-24
 against the un-migrated `canvass` database. Production is on AWS, so that is `ssh canvass-prod`,
-`make migrate`, **then** the rebuild — never the rebuild first. As of that date 008 is applied to
-`canvass_test` only; **production still needs it**, and `canvass_demo` picks it up on the next
-`make demo`. A dev API on the Mac pointed at the frozen `canvass` snapshot needs it too, or the
-signs screen 500s there as well.
+`make migrate`, **then** the rebuild — never the rebuild first (the deploy workflow keeps that
+order). 008 is applied to production (checked 2026-09-26) and arrives on the Mac's `canvass`
+with each staging refresh; `canvass_demo` picks it up on the next `make demo`. The rule outlives
+008: any migration a new API reads must be live before that API is.
 
 Run new migrations against `canvass_test` as well, or the suite drifts out
 of shape; `make demo` already applies them to `canvass_demo` when it rebuilds it.

@@ -440,7 +440,7 @@ Production deploys are a GitHub Actions workflow, [`.github/workflows/deploy.yml
 started by hand (**Actions → Deploy production → Run workflow**, or from a Claude session). It always
 deploys `main`, and it does the steps in the order that matters: refuse if `/srv/canvass` has
 uncommitted edits, move it to the new commit, `make backup`, `make migrate`, `make restart-tunnel`,
-`caddy reload` if a Caddyfile changed, then check the origin answers on `127.0.0.1:3031`.
+recreate Caddy if a Caddyfile changed (a reload would re-read a stale bind mount), then check the origin answers on `127.0.0.1:3031`.
 
 It runs on a **self-hosted runner installed on the EC2 box**, labelled `canvass-prod`. The runner only
 makes outbound connections to GitHub, so no SSH port is opened for it and no production key sits in
