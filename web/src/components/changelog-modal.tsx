@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.6.0';
+export const APP_VERSION = '1.7.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,13 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.7.0',
+    date: '2026-09-29',
+    changes: [
+      'Account has a new Usage data switch. When the campaign turns collection on, the app will count which screens are used and how often results wait for signal — never a voter, a door, an address or anything typed at a doorstep. Nothing is sent yet, and you can switch it off for this device at any time.',
+    ],
+  },
   {
     version: '1.6.0',
     date: '2026-09-29',
