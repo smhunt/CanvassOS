@@ -10,8 +10,10 @@
 # deploys `main`.
 #
 # Order is the point. Backup, then migrations, then the rebuild — an API that reads a column its
-# migration has not added yet answers 500 (CLAUDE.md, the 008 landmine). A changed Caddyfile is
-# reloaded explicitly because `make restart-tunnel` leaves a running Caddy on its old config.
+# migration has not added yet answers 500 (CLAUDE.md, the 008 landmine). A changed Caddyfile means
+# recreating Caddy: `make restart-tunnel` leaves a running Caddy alone, and `caddy reload` is no
+# use after `git reset` — the reset writes a new file, and a single-file bind mount keeps showing
+# the container the old inode, so the reload re-reads the old config.
 name: Deploy production
 
 on:
@@ -33,7 +35,7 @@ jobs:
       APP_DIR: /srv/canvass
     steps:
       - name: Check out main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -67,9 +69,14 @@ jobs:
       - name: Rebuild api, web and caddy
         run: cd "$APP_DIR" && make restart-tunnel
 
-      - name: Reload a changed Caddyfile
+      - name: Recreate Caddy for a changed Caddyfile
         if: steps.code.outputs.caddy == '1'
-        run: docker exec canvass-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+        run: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --force-recreate --no-deps caddy
+          # Prove the container sees the committed file, not a stale inode.
+          docker exec canvass-caddy-1 cat /etc/caddy/Caddyfile | cmp - Caddyfile.tunnel
 
       - name: Health check at the origin
         run: |
