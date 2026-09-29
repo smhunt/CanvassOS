@@ -1,0 +1,71 @@
+/* Coverage tab. Two bars per row: how much of the group has been knocked, and how the doors that
+   gave a stance split. Colours: supportive is the brand, opposed reuses the palette's highlight
+   pink (NONRES_HIGHLIGHT), undecided the not-contacted grey — nothing new to learn. */
+
+.cov-table th[scope='row'] {
+  white-space: nowrap;
+}
+.cov-note {
+  white-space: nowrap;
+}
+.cov-row--archived th,
+.cov-row--archived td {
+  color: var(--muted);
+}
+
+.cov-cover {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 9rem;
+}
+.cov-bar {
+  flex: 1 1 4rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.cov-bar__fill {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+
+.cov-stance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 9rem;
+}
+.cov-stack {
+  display: inline-flex;
+  flex: 1 1 4rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.cov-stack__seg {
+  display: block;
+  height: 100%;
+}
+.cov-stack__seg--sup {
+  background: var(--brand);
+}
+.cov-stack__seg--und {
+  background: #a9b4c0;
+}
+.cov-stack__seg--opp {
+  background: #c93c73;
+}
+.cov-stance__nums {
+  white-space: nowrap;
+}
+.cov-stance__sup {
+  color: var(--brand);
+  font-weight: 600;
+}
+.cov-stance__opp {
+  color: #c93c73;
+}

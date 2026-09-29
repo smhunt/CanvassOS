@@ -47,6 +47,86 @@ interface CanvassRow {
   s5: number;
 }
 
+// ---------------------------------------------------------------- coverage
+
+/**
+ * One group's progress. `attempted` and `spoke` are cumulative and per DOOR — a follow-up
+ * `not_home` after a `spoke` must not un-reach the door — while the stance is the LATEST support
+ * recorded at each door, so two visits to one supporter count once. The overview's `support_hist`
+ * counts visits; this report is about doors, and the two are deliberately not the same number.
+ */
+interface CoverageRow {
+  households: number;
+  voters: number;
+  attempted: number;
+  spoke: number;
+  contacts: number;
+  s1: number;
+  s2: number;
+  s3: number;
+  s4: number;
+  s5: number;
+  follow_up: number;
+}
+interface CoverageWardRow extends CoverageRow {
+  ward: string;
+}
+interface CoverageCommunityRow extends CoverageRow {
+  community: string;
+}
+interface CoverageTurfRow extends CoverageRow {
+  turf_id: string;
+  name: string;
+  ward: string | null;
+  archived: boolean;
+}
+/** A day has no denominator — it is cadence, not coverage — so its support is visits, not doors. */
+interface CoverageDayRow {
+  day: string;
+  contacts: number;
+  doors: number;
+  spoke: number;
+  canvassers: number;
+  s1: number;
+  s2: number;
+  s3: number;
+  s4: number;
+  s5: number;
+}
+
+/**
+ * Per-household facts every grouping is built from, computed once per query so the ward, community
+ * and turf tables cannot disagree about what "attempted" means. `stance` is the newest non-null
+ * support; `follow_up` is read off the newest visit, the same rule as GET /api/follow-ups.
+ */
+const COVERAGE_HH = `
+  hh AS (
+    SELECT h.id, h.ward, h.community, h.n_voters,
+           coalesce(c.n, 0) AS contacts, coalesce(c.spoke, false) AS spoke,
+           s.support AS stance, coalesce(l.follow_up, false) AS follow_up
+    FROM household h
+    LEFT JOIN (SELECT household_id, count(*)::int AS n, bool_or(result = 'spoke') AS spoke
+               FROM contact GROUP BY household_id) c ON c.household_id = h.id
+    LEFT JOIN LATERAL (SELECT support FROM contact WHERE household_id = h.id AND support IS NOT NULL
+                       ORDER BY at DESC LIMIT 1) s ON true
+    LEFT JOIN LATERAL (SELECT follow_up FROM contact WHERE household_id = h.id
+                       ORDER BY at DESC LIMIT 1) l ON true
+  )`;
+const COVERAGE_AGG = `
+  count(hh.id)::int AS households,
+  coalesce(sum(hh.n_voters), 0)::int AS voters,
+  count(*) FILTER (WHERE hh.contacts > 0)::int AS attempted,
+  count(*) FILTER (WHERE hh.spoke)::int AS spoke,
+  coalesce(sum(hh.contacts), 0)::int AS contacts,
+  count(*) FILTER (WHERE hh.stance = 1)::int AS s1,
+  count(*) FILTER (WHERE hh.stance = 2)::int AS s2,
+  count(*) FILTER (WHERE hh.stance = 3)::int AS s3,
+  count(*) FILTER (WHERE hh.stance = 4)::int AS s4,
+  count(*) FILTER (WHERE hh.stance = 5)::int AS s5,
+  count(*) FILTER (WHERE hh.follow_up)::int AS follow_up`;
+
+const coverageOut = <T extends CoverageRow>({ s1, s2, s3, s4, s5, ...rest }: T) => ({ ...rest, support: [s1, s2, s3, s4, s5] });
+
 // ---------------------------------------------------------------- reachability
 
 /** One household's blockers, flattened so the categories can be counted and de-duplicated in TS. */
@@ -321,6 +401,80 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
         mail_share: households ? mailOnlyBlocked / households : 0,
       },
       advice,
+    };
+  });
+
+  /**
+   * GET /api/stats/coverage — organizer/admin. Where the canvass has been, by ward, community, turf
+   * and day, and how support is spread in each. Aggregates only, same class as /reachability: no
+   * name, address or id of a door leaves here (turf names and ids are campaign objects, not list
+   * data). A door in two turfs counts towards both — that is each turf's own progress.
+   */
+  app.get('/coverage', { preHandler: requireRole('organizer') }, async (req) => {
+    const [byWard, byCommunity, byTurf, byDay, canvassers] = await Promise.all([
+      q<CoverageWardRow>(app.db, `WITH ${COVERAGE_HH} SELECT hh.ward, ${COVERAGE_AGG} FROM hh GROUP BY hh.ward ORDER BY hh.ward`),
+      q<CoverageCommunityRow>(
+        app.db,
+        // Mirrors /overview: legal descriptions have no community and are left out of this table.
+        `WITH ${COVERAGE_HH} SELECT hh.community, ${COVERAGE_AGG} FROM hh WHERE hh.community IS NOT NULL
+         GROUP BY hh.community ORDER BY households DESC, hh.community`,
+      ),
+      q<CoverageTurfRow>(
+        app.db,
+        `WITH ${COVERAGE_HH}
+         SELECT t.id AS turf_id, t.name, t.ward, t.archived, ${COVERAGE_AGG}
+         FROM turf t
+         LEFT JOIN turf_household th ON th.turf_id = t.id
+         LEFT JOIN hh ON hh.id = th.household_id
+         GROUP BY t.id, t.name, t.ward, t.archived
+         ORDER BY t.archived, t.ward NULLS LAST, t.name`,
+      ),
+      q<CoverageDayRow>(
+        app.db,
+        // Ontario calendar days, as /activity counts them, so the two tabs agree on "today".
+        `SELECT to_char((at AT TIME ZONE 'America/Toronto')::date, 'YYYY-MM-DD') AS day,
+                count(*)::int AS contacts,
+                count(DISTINCT household_id)::int AS doors,
+                count(DISTINCT household_id) FILTER (WHERE result = 'spoke')::int AS spoke,
+                count(DISTINCT user_id)::int AS canvassers,
+                count(*) FILTER (WHERE support = 1)::int AS s1,
+                count(*) FILTER (WHERE support = 2)::int AS s2,
+                count(*) FILTER (WHERE support = 3)::int AS s3,
+                count(*) FILTER (WHERE support = 4)::int AS s4,
+                count(*) FILTER (WHERE support = 5)::int AS s5
+         FROM contact GROUP BY 1 ORDER BY 1`,
+      ),
+      one<{ n: number }>(app.db, `SELECT count(DISTINCT user_id)::int AS n FROM contact`),
+    ]);
+
+    // Every household has a ward, so the ward table sums to the municipality.
+    const sum = (k: keyof CoverageRow) => byWard.reduce((a, r) => a + r[k], 0);
+    const totals = {
+      households: sum('households'),
+      voters: sum('voters'),
+      attempted: sum('attempted'),
+      spoke: sum('spoke'),
+      contacts: sum('contacts'),
+      support: [sum('s1'), sum('s2'), sum('s3'), sum('s4'), sum('s5')],
+      follow_up: sum('follow_up'),
+      canvassers: canvassers?.n ?? 0,
+      first_day: byDay[0]?.day ?? null,
+      last_day: byDay[byDay.length - 1]?.day ?? null,
+    };
+
+    await audit(app.db, req.log, {
+      userId: currentSession(req).user.id,
+      action: 'view_coverage',
+      detail: { households: totals.households, attempted: totals.attempted, turfs: byTurf.length },
+      ip: req.ip,
+    });
+
+    return {
+      totals,
+      by_ward: byWard.map(coverageOut),
+      by_community: byCommunity.map(coverageOut),
+      by_turf: byTurf.map(coverageOut),
+      by_day: byDay.map(({ s1, s2, s3, s4, s5, ...d }) => ({ ...d, support: [s1, s2, s3, s4, s5] })),
     };
   });
 };

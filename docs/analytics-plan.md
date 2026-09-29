@@ -225,6 +225,7 @@ failures are logged, never thrown (the audit rule).
 | Messaging | `create/update/approve/send/pause/resume/cancel_campaign` → `campaign_*`; `test_send` → `campaign_test_sent`; `inbound_stop` → `sms_stop_received`; `inbound_join` | channel, audience_size, n_sent, n_failed, provider (log / twilio) |
 | Subscriber link | `subscriber_sync`, `suggest_match`, `auto_accept_match`, `decide_match`, `apply_match_ledger` | counts, decision |
 | Reports | `view_reachability` → `report_viewed` (report: reachability) | advice_enabled |
+| Reports | `view_coverage` → `report_viewed` (report: coverage) | n_turfs |
 | Street View | `view_streetview` → `streetview_viewed` | outcome (image / no_imagery / disabled) |
 | Ops | `import` → `list_imported`; `export` | mode (full / diff / apply), counts |
 

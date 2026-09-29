@@ -716,6 +716,103 @@ describe('stats/reachability', () => {
   });
 });
 
+describe('stats/coverage', () => {
+  const coverage = async () => {
+    const res = await call('GET', '/api/stats/coverage', organizerCookie);
+    assert.equal(res.statusCode, 200, res.body);
+    return { body: res.body, data: res.json() as Coverage };
+  };
+  type Row = { households: number; attempted: number; spoke: number; contacts: number; support: number[]; follow_up: number };
+  type Coverage = {
+    totals: Row & { voters: number; canvassers: number; first_day: string | null; last_day: string | null };
+    by_ward: (Row & { ward: string })[];
+    by_community: (Row & { community: string })[];
+    by_turf: (Row & { turf_id: string; name: string; archived: boolean })[];
+    by_day: { day: string; contacts: number; doors: number; spoke: number; canvassers: number; support: number[] }[];
+  };
+
+  it('is organizer-and-above', async () => {
+    const vol = await call('GET', '/api/stats/coverage', volunteerCookie);
+    assert.equal(vol.statusCode, 403);
+  });
+
+  it('counts a door once however often it is knocked, takes its LATEST stance, and leaks no row', async () => {
+    const before = (await coverage()).data;
+    assert.equal(before.totals.households, households.length);
+    assert.equal(
+      before.by_ward.reduce((a, r) => a + r.households, 0),
+      households.length,
+      'every household has a ward, so the ward table is the municipality',
+    );
+    const withCommunity = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM household WHERE community IS NOT NULL`);
+    assert.equal(before.by_community.reduce((a, r) => a + r.households, 0), withCommunity.rows[0]!.n);
+
+    // One mapped door, and a turf built from its street so the turf table has a row we control.
+    const pts = await call('GET', '/api/households/points?limit=1', organizerCookie);
+    const hhId = (pts.json() as { features: { properties: { id: string } }[] }).features[0]!.properties.id;
+    const door = (await db.query<{ ward: string; street_sort: string }>(`SELECT ward, street_sort FROM household WHERE id = $1`, [hhId])).rows[0]!;
+    const prior = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM contact WHERE household_id = $1`, [hhId]);
+    assert.equal(prior.rows[0]!.n, 0, 'the picked door must start clean for the deltas below to mean anything');
+    const turfRes = await call('POST', '/api/turfs', organizerCookie, { name: `Coverage turf ${RUN}`, ward: door.ward, streets: [door.street_sort] });
+    assert.equal(turfRes.statusCode, 201, turfRes.body);
+    const turfId = ((turfRes.json() as { turf: { id: string } }).turf).id;
+    const onStreet = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM turf_household WHERE turf_id = $1`, [turfId]);
+
+    // Three visits: a lukewarm 2, then a 5, then a not-home that promises to come back. The door is
+    // ONE attempted door and ONE spoke door with a stance of 5 — not three attempts, not a 2 and a 5,
+    // and the not-home must not un-reach it.
+    const key = `test-cov-${RUN}`;
+    for (const body of [
+      { result: 'spoke', support: 2, client_id: `${key}-a` },
+      { result: 'spoke', support: 5, client_id: `${key}-b` },
+      { result: 'not_home', follow_up: true, client_id: `${key}-c` },
+    ]) {
+      const r = await call('POST', '/api/contacts', organizerCookie, { household_id: hhId, ...body });
+      assert.equal(r.statusCode, 201, r.body);
+    }
+
+    const { body, data: after } = await coverage();
+    const w0 = before.by_ward.find((r) => r.ward === door.ward)!;
+    const w1 = after.by_ward.find((r) => r.ward === door.ward)!;
+    assert.equal(w1.attempted - w0.attempted, 1, 'three visits, one door attempted');
+    assert.equal(w1.spoke - w0.spoke, 1, 'a later not_home does not un-reach a door');
+    assert.equal(w1.contacts - w0.contacts, 3);
+    assert.equal(w1.support[4] - w0.support[4], 1, 'the latest stance counts');
+    assert.equal(w1.support[1] - w0.support[1], 0, 'the earlier stance does not');
+    assert.equal(w1.follow_up - w0.follow_up, 1);
+    assert.equal(after.totals.contacts - before.totals.contacts, 3);
+    assert.ok(after.totals.canvassers >= 1);
+
+    const turf = after.by_turf.find((r) => r.turf_id === turfId)!;
+    assert.ok(turf, 'the new turf has a row');
+    assert.equal(turf.households, onStreet.rows[0]!.n);
+    assert.equal(turf.archived, false);
+    assert.ok(turf.attempted >= 1 && turf.attempted <= turf.households);
+    assert.ok(turf.support[4] >= 1);
+
+    // Ontario calendar day, as /activity counts them.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const day = after.by_day.find((d) => d.day === today)!;
+    assert.ok(day, `today (${today}) has a row`);
+    assert.ok(day.contacts >= 3 && day.doors >= 1 && day.spoke >= 1 && day.canvassers >= 1);
+    assert.ok(day.support[4] >= 1 && day.support[1] >= 1, 'a day counts visits, so both stances appear');
+    assert.equal(after.totals.last_day, after.by_day[after.by_day.length - 1]!.day);
+
+    // Aggregates only — the same rule as reachability, checked against the bytes actually returned.
+    assert.ok(!/H-[A-Z]+-\d+/.test(body), 'no household id may be returned');
+    assert.ok(!/\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b/.test(body), 'no postal code may be returned');
+    for (const name of voters.slice(0, 40).map((v) => v.last_name).filter(Boolean)) {
+      assert.ok(!body.includes(name as string), `no elector name may be returned (${name})`);
+    }
+    for (const h of households.slice(0, 40).map((h) => h.address).filter(Boolean)) {
+      assert.ok(!body.includes(h as string), 'no address may be returned');
+    }
+
+    const aud = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'view_coverage'`);
+    assert.ok(aud.rows[0]!.n >= 2, 'every look is on the record (two fetches above)');
+  });
+});
+
 describe('stats/overview', () => {
   it('totals equal the CSV totals', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/stats/overview', headers: { cookie: organizerCookie } });

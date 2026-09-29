@@ -288,10 +288,11 @@ export const MESSAGING_HELP: HelpTopic = {
 export const REPORTS_HELP: HelpTopic = {
   title: 'How reports work',
   spoken: [
-    'Reports has three tabs: follow ups, activity, and unreachable.',
+    'Reports has four tabs: follow ups, activity, unreachable, and coverage.',
     'Follow ups lists doors where a canvasser promised to come back.',
     'Activity shows who has been out knocking and how many doors were recorded each day.',
     'Unreachable explains which doors are hard to reach and what to do about each kind.',
+    'Coverage shows how much of each ward, community or turf has been knocked, and how support is spread there.',
     'The notes here come from the doorstep, so treat them as carefully as the voters list.',
   ],
   sections: [
@@ -314,6 +315,10 @@ export const REPORTS_HELP: HelpTopic = {
     {
       heading: 'Advice',
       body: 'If the campaign has switched it on, an Advice box adds a written summary. It is only ever given the counts, never a name or address.',
+    },
+    {
+      heading: 'Coverage',
+      body: 'Group by ward, community, turf or day. “Attempted” and “Spoke” count doors, however many visits each had. “Stance” is the latest support at each door — supportive, undecided, opposed — so a supporter seen twice is one supporter, and it will not match the Stats page, which counts visits.',
     },
   ],
 };

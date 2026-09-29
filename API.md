@@ -767,6 +767,25 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
   Including them would report 390 blocked doors where there are 73. Categories overlap, so no field
   here is the sum of the rows above it.
 
+- `GET /api/stats/coverage` → organizer/admin. Where the canvass has been and how support is spread,
+  by ward, community, turf and Ontario calendar day. Aggregates only — no name, address or door id —
+  the same class as `/reachability`. Audited as `view_coverage`.
+  ```
+  { totals: { households, voters, attempted, spoke, contacts, support: [s1..s5], follow_up,
+              canvassers, first_day, last_day },
+    by_ward:      [{ ward, ...row }],
+    by_community: [{ community, ...row }],           // legal descriptions have no community
+    by_turf:      [{ turf_id, name, ward, archived, ...row }],
+    by_day:       [{ day, contacts, doors, spoke, canvassers, support: [s1..s5] }] }
+  row = { households, voters, attempted, spoke, contacts, support: [s1..s5], follow_up }
+  ```
+  **Two different counts, deliberately.** `attempted` (≥ 1 visit) and `spoke` (≥ 1 `spoke` result)
+  are cumulative per *door* — a later `not_home` does not un-reach a door. `support` is the **latest**
+  non-null support recorded at each door, so it counts doors, not visits; the overview's
+  `support_hist` counts visits and the two are not comparable. `follow_up` is doors whose newest
+  visit ticked follow-up — the same rule as `GET /api/follow-ups`. A door in two turfs counts in both
+  turf rows (each turf's own progress); `by_ward` sums to the municipality, the others do not.
+  `by_day` has no denominator and its `support` is visits that day.
 ## Public sign-up form (no session)
 
 - `POST /api/public/requests` → **public, unauthenticated.** How the campaign website's form reaches

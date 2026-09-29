@@ -168,6 +168,7 @@ export const AUDIT_EVENTS: Record<AuditAction, Mapper | null> = {
     }),
   }),
   view_reachability: (d) => ({ event: 'report_viewed', props: pick({ report: 'reachability', advice: bool(d, 'advice') }) }),
+  view_coverage: (d) => ({ event: 'report_viewed', props: pick({ report: 'coverage', n_turfs: num(d, 'turfs') }) }),
   view_follow_ups: (d) => ({ event: 'follow_ups_viewed', props: pick({ n: num(d, 'n') }) }),
   view_turf_doors: (d) => ({ event: 'turf_opened', props: pick({ n_doors: num(d, 'n_doors') }) }),
   view_sign_requests: (d) => ({ event: 'sign_requests_viewed', props: pick({ n: num(d, 'n') }) }),

@@ -1,6 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ActivityPanel, DEFAULT_DAYS, isActivityDays, type ActivityDays } from '../reports/ActivityPanel';
+import { CoveragePanel, DEFAULT_BY, isCoverageBy, type CoverageBy } from '../reports/CoveragePanel';
 import { FollowUpQueue } from '../reports/FollowUpQueue';
 import { UnreachablePanel } from '../reports/UnreachablePanel';
 import '../reports/reports.css';
@@ -9,6 +10,7 @@ const TABS = [
   { id: 'follow-ups', label: 'Follow-ups' },
   { id: 'activity', label: 'Activity' },
   { id: 'unreachable', label: 'Unreachable' },
+  { id: 'coverage', label: 'Coverage' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -26,6 +28,8 @@ export function ReportsPage() {
   const tab: TabId = TABS.some((t) => t.id === params.get('tab')) ? (params.get('tab') as TabId) : 'follow-ups';
   const daysParam = Number(params.get('days'));
   const days: ActivityDays = isActivityDays(daysParam) ? daysParam : DEFAULT_DAYS;
+  const byParam = params.get('by');
+  const by: CoverageBy = isCoverageBy(byParam) ? byParam : DEFAULT_BY;
 
   // A tab switch pushes, so Back returns to the tab you came from.
   const setTab = (next: TabId) => {
@@ -37,6 +41,12 @@ export function ReportsPage() {
   const setDays = (next: ActivityDays) => {
     const p = new URLSearchParams(params);
     p.set('days', String(next));
+    setParams(p, { replace: true });
+  };
+  // Same for the coverage grouping.
+  const setBy = (next: CoverageBy) => {
+    const p = new URLSearchParams(params);
+    p.set('by', next);
     setParams(p, { replace: true });
   };
 
@@ -60,8 +70,8 @@ export function ReportsPage() {
       <header className="page__head">
         <h1>Reports</h1>
         <p className="muted">
-          Doors waiting on a promised follow-up, and who has been out knocking. Notes here are what canvassers were
-          told at the door — treat them the way you treat the voters list.
+          Doors waiting on a promised follow-up, who has been out knocking, and how far the canvass has got. Notes
+          here are what canvassers were told at the door — treat them the way you treat the voters list.
         </p>
       </header>
 
@@ -87,6 +97,7 @@ export function ReportsPage() {
         {tab === 'follow-ups' && <FollowUpQueue />}
         {tab === 'activity' && <ActivityPanel days={days} onDays={setDays} />}
         {tab === 'unreachable' && <UnreachablePanel />}
+        {tab === 'coverage' && <CoveragePanel by={by} onBy={setBy} />}
       </div>
     </div>
   );

@@ -29,8 +29,9 @@ it; web-only, no endpoint of its own).
 
 **Phase 4 is partly done.** The **diff-based re-import** shipped 2026-09-15 (`make import-diff`, then
 `make import-apply`): it updates the list in place and keeps every contact, sign, consent record,
-turf and sign-up. Still missing: coverage/support reports by ward/community/turf/day, and CSV export
-with audit.
+turf and sign-up. **Coverage/support reports** (`GET /api/stats/coverage`, `/reports?tab=coverage`:
+by ward, community, turf and day; latest stance per door) shipped 2026-09-29. Still missing: CSV export
+with audit — deliberately, see prompt_plan.md.
 
 **Deployed** at `https://canvass.webarchitecture.ca` behind the pre-existing Cloudflare Tunnel — not
 `sean-hunt.com`, because a tunnel hostname must be on Cloudflare DNS and that zone is on OpenSRS

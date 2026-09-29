@@ -568,6 +568,52 @@ export interface Reachability {
   advice: string | null;
 }
 
+// ---------------------------------------------------------------- coverage (GET /api/stats/coverage)
+
+/**
+ * One group's progress. `attempted` / `spoke` are cumulative per door; `support` is the latest
+ * stance recorded at each door (1–5), so it counts doors, not visits — unlike the overview's
+ * `support_hist`, which counts visits. The two must not be shown as the same thing.
+ */
+export interface CoverageRow {
+  households: number;
+  voters: number;
+  attempted: number;
+  spoke: number;
+  contacts: number;
+  support: [number, number, number, number, number];
+  /** Doors whose newest visit is still waiting on a follow-up — the follow-up queue's own rule. */
+  follow_up: number;
+}
+export interface CoverageWard extends CoverageRow {
+  ward: string;
+}
+export interface CoverageCommunity extends CoverageRow {
+  community: string;
+}
+export interface CoverageTurf extends CoverageRow {
+  turf_id: string;
+  name: string;
+  ward: string | null;
+  archived: boolean;
+}
+/** A day is cadence, not coverage: there is no denominator, and `support` here is visits that day. */
+export interface CoverageDay {
+  day: string;
+  contacts: number;
+  doors: number;
+  spoke: number;
+  canvassers: number;
+  support: [number, number, number, number, number];
+}
+export interface Coverage {
+  totals: CoverageRow & { canvassers: number; first_day: string | null; last_day: string | null };
+  by_ward: CoverageWard[];
+  by_community: CoverageCommunity[];
+  by_turf: CoverageTurf[];
+  by_day: CoverageDay[];
+}
+
 /** One turf boundary for the map overlay (GET /api/turfs/shapes). Volunteers get only their own. */
 export interface TurfShape {
   id: string;

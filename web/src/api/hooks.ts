@@ -12,6 +12,7 @@ import type {
   Contact,
   ContactInput,
   DoorsResponse,
+  Coverage,
   Reachability,
   TurfShape,
   FollowUp,
@@ -864,6 +865,14 @@ export function useTurfDoorsForMap(turfId: string | null) {
 }
 
 /** Why part of the list cannot be reached. Aggregates only — no row of the list is in the response. */
+export function useCoverage() {
+  return useQuery({
+    queryKey: ['coverage'],
+    queryFn: () => api.get<Coverage>('/stats/coverage'),
+    staleTime: 60_000,
+  });
+}
+
 export function useReachability() {
   return useQuery({
     queryKey: ['reachability'],

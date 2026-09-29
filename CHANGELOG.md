@@ -8,6 +8,14 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ### Added
 
+- **Coverage report.** Reports → Coverage answers "where have we been, and how is it going there":
+  doors attempted and spoken with, out of the doors there are, by ward, by community, by turf and by
+  day, each with how support is spread and how many doors are still waiting on a follow-up. Support
+  here is the *latest* stance recorded at each door — a supporter visited twice is one supporter —
+  which is why its numbers differ from the Stats page, where the histogram counts visits. Days are
+  Ontario calendar days, as on the Activity tab. Counts only, no names or addresses, and every look
+  is on the audit log like the other reports.
+
 - **Plan a delivery route.** The sign delivery list has a "Plan a route" button that puts every
   waiting door with a map position into driving order and opens it in Google Maps — ten stops per
   link, because that is what a Maps URL carries, with each link starting where the last ended — plus
