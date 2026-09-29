@@ -18,6 +18,21 @@ import { useCallback, useSyncExternalStore } from 'react';
 
 export const TABLET_QUERY = '(min-width: 720px) and (min-height: 600px)';
 
+/** The width stops from the header of styles.css, by name. Change them together with the CSS. */
+export const COMPACT_QUERY = '(max-width: 479.98px)';
+export const TABLET_WIDTH_QUERY = '(min-width: 720px)';
+export const DESKTOP_QUERY = '(min-width: 1100px)';
+export type Breakpoint = 'phone' | 'compact' | 'tablet' | 'desktop';
+
+/** Which of the four stops the viewport is in right now — a name, never a pixel width. */
+export function currentBreakpoint(): Breakpoint {
+  if (typeof window === 'undefined' || !window.matchMedia) return 'phone';
+  if (window.matchMedia(DESKTOP_QUERY).matches) return 'desktop';
+  if (window.matchMedia(TABLET_WIDTH_QUERY).matches) return 'tablet';
+  if (window.matchMedia(COMPACT_QUERY).matches) return 'compact';
+  return 'phone';
+}
+
 /** Subscribes to a media query so a resize — or a Split View drag — re-renders with the truth. */
 export function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(

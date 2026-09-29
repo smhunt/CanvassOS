@@ -16,6 +16,8 @@
  * the sync panel, because "saved" would then be a lie past the next reload.
  */
 
+import { track } from '../analytics';
+
 export const OUTBOX = 'outbox';
 export const TURF_CACHE = 'turf_cache';
 export const META = 'meta';
@@ -46,6 +48,12 @@ const KEY_PATH: Record<StoreName, string> = {
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 let memoryOnly = false;
+/** Said once per page load: from here on, every queued door lives only as long as this tab. */
+function markMemoryOnly(): void {
+  if (memoryOnly) return;
+  memoryOnly = true;
+  track('storage_not_durable', {});
+}
 const memory = new Map<StoreName, Map<string, unknown>>();
 
 /** True once anything has forced the in-memory fallback — surfaced to the volunteer, never hidden. */
@@ -61,7 +69,7 @@ function mem(store: StoreName): Map<string, unknown> {
 }
 
 function fallback(): null {
-  memoryOnly = true;
+  markMemoryOnly();
   return null;
 }
 
@@ -118,7 +126,7 @@ export async function idbGetAll<T>(store: StoreName): Promise<T[]> {
     try {
       return await exec<T[]>(db, store, 'readonly', (s) => s.getAll());
     } catch {
-      memoryOnly = true;
+      markMemoryOnly();
     }
   }
   return [...mem(store).values()] as T[];
@@ -130,7 +138,7 @@ export async function idbGet<T>(store: StoreName, key: string): Promise<T | unde
     try {
       return await exec<T | undefined>(db, store, 'readonly', (s) => s.get(key));
     } catch {
-      memoryOnly = true;
+      markMemoryOnly();
     }
   }
   return mem(store).get(key) as T | undefined;
@@ -144,7 +152,7 @@ export async function idbPut<T extends object>(store: StoreName, value: T): Prom
       await exec<IDBValidKey>(db, store, 'readwrite', (s) => s.put(value));
       return;
     } catch {
-      memoryOnly = true;
+      markMemoryOnly();
     }
   }
   mem(store).set(key, value);
@@ -157,7 +165,7 @@ export async function idbDelete(store: StoreName, key: string): Promise<void> {
       await exec<undefined>(db, store, 'readwrite', (s) => s.delete(key));
       return;
     } catch {
-      memoryOnly = true;
+      markMemoryOnly();
     }
   }
   mem(store).delete(key);
@@ -169,7 +177,7 @@ export async function idbClear(store: StoreName): Promise<void> {
     try {
       await exec<undefined>(db, store, 'readwrite', (s) => s.clear());
     } catch {
-      memoryOnly = true;
+      markMemoryOnly();
     }
   }
   mem(store).clear();

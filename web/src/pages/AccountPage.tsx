@@ -6,6 +6,7 @@ import { SignOutButton } from '../components/SignOutButton';
 import { APP_VERSION, ChangelogModal, REPO_URL, type AboutTab } from '../components/changelog-modal';
 import { useUser } from '../components/Shell';
 import { VoiceSettings } from '../components/VoiceSettings';
+import { optedOut, setOptedOut } from '../analytics';
 import { LoadingRows, RoleChip, fmtDate, n } from '../components/ui';
 
 const MIN_PASSWORD = 10;
@@ -121,6 +122,11 @@ export function AccountPage() {
         <VoiceSettings />
       </section>
 
+      <section className="card" aria-labelledby="usage-h">
+        <h2 id="usage-h">Usage data</h2>
+        <UsageDataToggle />
+      </section>
+
       <section className="card" aria-labelledby="data-h">
         <h2 id="data-h">Data</h2>
         {meta.isPending && <LoadingRows rows={4} label="Loading the import details…" />}
@@ -181,5 +187,35 @@ export function AccountPage() {
 
       <ChangelogModal open={about !== null} tab={about ?? 'changelog'} onTab={setAbout} onClose={() => setAbout(null)} />
     </div>
+  );
+}
+
+/**
+ * Opt out of product analytics, on this device. It is a UI preference in localStorage like the
+ * voice, and it is honest about what the campaign collects: counts about how the app is used,
+ * never a door, a name or an address — those never leave the stack whatever this is set to.
+ */
+function UsageDataToggle() {
+  const [off, setOff] = useState(() => optedOut());
+  return (
+    <>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={!off}
+          onChange={(e) => {
+            const next = !e.target.checked;
+            setOptedOut(next);
+            setOff(next);
+          }}
+        />{' '}
+        Send anonymous usage counts to help improve the app
+      </label>
+      <p className="muted small">
+        Which screens get used, how often results wait for signal, whether the app was added to the home screen.
+        Never a voter, a door, an address or anything typed at a doorstep, and nothing at all unless the campaign
+        has switched collection on. Saved on this device only.
+      </p>
+    </>
   );
 }

@@ -131,6 +131,13 @@ describe('relay: rebuild()', () => {
     assert.ok(!('library' in out));
   });
 
+  it('accepts a known tab id on a tabbed screen, including the coverage report', () => {
+    const out = rebuild({ ...ok, event_properties: { route: '/reports', breakpoint: 'desktop', tab: 'coverage' } }, ME, NOW);
+    assert.ok(typeof out === 'object');
+    assert.deepEqual(out.event_properties, { route: '/reports', breakpoint: 'desktop', tab: 'coverage' });
+    assert.equal(rebuild({ ...ok, event_properties: { route: '/reports', breakpoint: 'desktop', tab: 'ward-3' } }, ME, NOW), 'bad_props');
+  });
+
   it("drops another user's event instead of re-stamping it (a phone passed between canvassers)", () => {
     assert.equal(rebuild({ ...ok, user_id: randomUUID() }, ME, NOW), 'other_user');
     assert.equal(rebuild({ ...ok, user_id: undefined }, ME, NOW), 'other_user');

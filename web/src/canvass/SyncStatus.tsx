@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useOutbox, usePhotoQueue } from '../offline/useOutbox';
+import { track } from '../analytics';
 import { clearTurfCache, cachedTurfSummaries } from '../offline/turfCache';
 import { discardEntry, retryEntry, syncNow, type OutboxEntry, type OutboxSnapshot } from '../offline/outbox';
 import { n } from '../components/ui';
@@ -248,6 +249,7 @@ function SyncPanel({ snapshot, onClose }: { snapshot: OutboxSnapshot; onClose: (
                   type="button"
                   className="btn btn--danger-outline"
                   onClick={() => {
+                    track('saved_data_cleared', { n_turfs: cached.length, n_photos: photos.photos.length });
                     void clearTurfCache().then(() => {
                       setConfirmClear(false);
                       refreshCached();

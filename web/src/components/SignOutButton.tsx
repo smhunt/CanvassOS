@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLogout } from '../api/hooks';
+import { reset, track } from '../analytics';
 import { useOutbox, usePhotoQueue } from '../offline/useOutbox';
 
 interface Props {
@@ -29,7 +30,12 @@ export function SignOutButton({ className = 'btn', role }: Props) {
   const held = photos.photos.length;
   const waiting = results + held > 0;
 
-  const signOut = () => logout.mutate(undefined, { onSettled: () => nav('/login', { replace: true }) });
+  const signOut = () =>
+    logout.mutate(undefined, {
+      // The same passed-phone rule as the outbox: nothing buffered follows the next person in.
+      onSuccess: () => reset(),
+      onSettled: () => nav('/login', { replace: true }),
+    });
 
   const what = [
     results > 0 ? `${results} ${results === 1 ? 'result' : 'results'}` : null,
@@ -48,8 +54,10 @@ export function SignOutButton({ className = 'btn', role }: Props) {
         onClick={() => {
           if (waiting && !warned) {
             setWarned(true);
+            track('sign_out_blocked_by_queue', { n_pending: results, n_photos: held, proceeded: false });
             return;
           }
+          if (waiting) track('sign_out_blocked_by_queue', { n_pending: results, n_photos: held, proceeded: true });
           signOut();
         }}
       >

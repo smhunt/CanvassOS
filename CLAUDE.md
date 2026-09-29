@@ -380,11 +380,14 @@ over the whole `AuditAction` union — **a new action does not compile until you
 `null`** — and each mapper picks typed fields by name; never spread `detail` (it holds emails,
 household ids, coordinates and search text, which is fine only because the audit log never leaves).
 Never send `support`, `issues`, `needs_ride`, a note, search text, or the id of a door, voter, sign,
-photo or request. The browser SDK (Phase B, not built yet) must be pointed at the relay
-`POST /api/analytics/events`, never at Amplitude, with **`autocapture: false` and no Session Replay**:
-page-view autocapture would ship `/signs?…&address=…` and `/invite/<token>`, and click capture ships
-the text of a door row. The relay drops an event whose `user_id` is not the session user — the
-passed-phone problem again — rather than re-stamping it. `assertNoPersonalData()` runs on every
+photo or request. The browser side (`web/src/analytics/index.ts`, since 1.7.0) is a **hand-rolled
+tracker, not the Amplitude SDK**, pointed at the relay `POST /api/analytics/events` and never at
+Amplitude; it has no autocapture to switch off, `screenFor()` is the one place a URL is read and it
+returns only the route *pattern* (a resolved `/signs?…&address=…` or `/invite/<token>` never leaves),
+and it runs only inside the signed-in `Shell`. Its `Catalogue` type mirrors `CLIENT_EVENTS` by hand —
+add an event in both places or the relay drops it. `reset()` on sign-out empties the batch and
+rotates the device id; the relay still drops an event whose `user_id` is not the session user — the
+passed-phone problem again — rather than re-stamping it. Opt-out is `mc-canvass.analytics-off`. `assertNoPersonalData()` runs on every
 batch, and the suite asserts the uploaded bytes against real names and addresses; keep both.
 Use a dedicated Amplitude project: the org's `default` project is the campaign website's, with
 autocapture and replay on. `make purge` cannot reach Amplitude — delete that project after the

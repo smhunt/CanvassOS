@@ -7,6 +7,8 @@
  * is owned elsewhere, so this module keeps a single entry point and mounts its own UI.
  */
 
+import { track } from './analytics';
+
 /** Remembering a "no" matters more than the install: a banner that comes back is a banner people learn to hate. */
 const LS_DISMISSED = 'mc.pwa.install-dismissed';
 
@@ -94,6 +96,7 @@ function setupInstall(): void {
   window.addEventListener('appinstalled', () => {
     rememberDismissed(); // installed once is a permanent "stop asking"
     remove();
+    track('app_installed', { platform: isIOS() ? 'ios' : 'chromium' });
   });
 
   window.addEventListener('beforeinstallprompt', (e) => {
@@ -130,6 +133,8 @@ function remove(): void {
 function show(offer: Offer): void {
   if (document.getElementById(ROOT_ID)) return;
   injectStyles();
+  const platform = offer.kind === 'ios' ? 'ios' : 'chromium';
+  track('install_prompt_shown', { platform });
 
   const root = document.createElement('div');
   root.id = ROOT_ID;
@@ -172,6 +177,7 @@ function show(offer: Offer): void {
   no.addEventListener('click', () => {
     rememberDismissed();
     remove();
+    track('install_prompt_dismissed', { platform });
   });
   actions.append(no);
 
@@ -183,6 +189,7 @@ function show(offer: Offer): void {
   close.addEventListener('click', () => {
     rememberDismissed();
     remove();
+    track('install_prompt_dismissed', { platform });
   });
 
   root.append(text, actions, close);

@@ -1,3 +1,4 @@
+import { track } from '../analytics';
 import { useEffect } from 'react';
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { onSynced, submitOrQueue } from '../offline/outbox';
@@ -357,6 +358,7 @@ export function useDoors(turfId: string | undefined) {
         if (definite) throw err;
         const hit = await readCachedTurf(id);
         if (!hit) throw err;
+        track('turf_cache_fallback_used', { age_s: Math.max(0, Math.round((Date.now() - hit.cached_at) / 1000)) });
         return { ...hit.response, from_cache: true, cached_at: hit.cached_at };
       }
     },

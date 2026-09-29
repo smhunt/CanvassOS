@@ -1,8 +1,12 @@
 # Instrumenting CanvassOS with Amplitude — research and plan
 
-Status: **Phase A built** (server side: `api/src/lib/analytics.ts`, `api/src/routes/analytics.ts`),
-off until `AMPLITUDE_API_KEY` is set. Phases B and C not started. Written 2026-09-24, 32 days before
-election day.
+Status: **Phases A and B built.** A (2026-09-24): the server side — `api/src/lib/analytics.ts`,
+`api/src/routes/analytics.ts`. B (2026-09-29): the browser side — `web/src/analytics/index.ts`, a
+hand-rolled tracker rather than the Amplitude SDK (see §3), `screen_viewed`, the offline and PWA
+events, sign-out `reset()`, and the opt-out switch under Account → Usage data. **No Amplitude project
+or key exists yet**, so production runs the tracker against a relay that discards; creating the
+project and sending the one test event (§9) is the step that remains, and it is the campaign's to
+take.
 
 **Where the build differed from this plan:**
 - The relay answers **200** with an Amplitude-shaped body in every case, including when analytics is
@@ -119,11 +123,18 @@ Why the relay rather than the SDK talking to Amplitude directly:
 6. **Off by default:** no `AMPLITUDE_API_KEY` means the relay answers `204` and discards. That keeps
    the demo stack and local dev silent without extra code.
 
-Why keep the browser SDK at all: it provides device_id, session_id, batching, retry with backoff
-and a persistent queue across reloads, and a field app on LTE needs all of that. A hand-rolled
-~80-line tracker (`sendBeacon` on `pagehide` plus an in-memory batch) is a workable alternative if
-bundle size matters. It would lose events that were queued offline, which the server-side events
-in §5 mostly make up for.
+**Decision (2026-09-29): the browser side is the hand-rolled tracker, not the SDK.** The SDK
+would have brought device_id, session_id, batching and a persistent queue across reloads. Two of
+those are liabilities here: the persistent localStorage queue outlives a sign-out — the passed-phone
+problem the relay drops events to defend against — and the SDK's init emits identify calls the
+relay's `{ $set }`-only schema would reject, which could only be verified by reading its dist. It
+is also ~40 KB gzipped in a PWA on rural LTE. `web/src/analytics/index.ts` is ~250 lines: a typed
+`track()` over the same catalogue as `CLIENT_EVENTS`, an in-memory batch flushed every 10 s, on
+`online`, and by `sendBeacon` on `pagehide`, a device id in localStorage that `reset()` rotates,
+and `screenFor()` as the one place a URL is read (it returns the pattern it matched). What it
+loses: events tracked with no signal die with the tab. The server-side events in §5 cover the
+actions that matter. The tests (`web/src/analytics/analytics.test.ts`) hold the envelope to the
+relay's regexes and assert no path, query or id leaves.
 
 ### Browser SDK configuration
 
@@ -322,9 +333,10 @@ The repo's own rule applies: *"too much risk this close to the election."*
   (server only, no browser change), and the outgoing-body test. This covers every door, sign,
   consent and message event with correct timestamps, and touches no client code the canvassers
   run.
-- **Phase B (about 1 day):** the browser SDK behind `RequireAuth`, `screen_viewed`, and the offline
-  and PWA events (the §6 "are we losing doors" set), sign-out `reset()`, the opt-out toggle, and the
-  docs in §7.
+- **Phase B — built 2026-09-29:** the tracker behind the signed-in shell, `screen_viewed`, the
+  offline and PWA events (the §6 "are we losing doors" set), sign-out `reset()`, the opt-out toggle
+  under Account, and the docs in §7. `app_updated` was left out: it needs the service worker to
+  report the version it replaced, which is more plumbing than the answer is worth this month.
 - **Phase C (optional, after an earlier deploy has soaked):** drive mode, map, help, performance
   events, and dashboards (funnel, offline health, adoption).
 

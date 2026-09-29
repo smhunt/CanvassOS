@@ -4,6 +4,20 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Usage data switch, and the app now counts how it is used (still off).** Account → Usage data
+  turns anonymous usage counts on or off for this device. What is counted: which screens are
+  opened, how often door results wait for signal and how long, whether saved data was cleared,
+  whether the app was added to the home screen, and whether a sign-out was warned about a waiting
+  queue. What is never counted: a voter, a door, an address, a note, a search, or the address in a
+  page's URL — the app reports the *kind* of screen, never the page itself. Nothing at all is sent
+  until the campaign configures a destination, which it has not; until then the server discards
+  what arrives. Phase B of `docs/analytics-plan.md`, built as a small tracker of our own rather
+  than the vendor's SDK, for reasons recorded there.
+
 ## [1.6.0] - 2026-09-29
 
 ### Added

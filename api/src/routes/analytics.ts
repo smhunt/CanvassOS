@@ -52,7 +52,7 @@ export const ROUTE_PATTERNS = [
 ] as const;
 const route = z.enum(ROUTE_PATTERNS);
 const breakpoint = z.enum(['phone', 'compact', 'tablet', 'desktop']);
-const TABS = ['place', 'requests', 'map', 'pickup', 'follow-ups', 'activity', 'unreachable'] as const;
+const TABS = ['place', 'requests', 'map', 'pickup', 'follow-ups', 'activity', 'unreachable', 'coverage'] as const;
 const queueKind = z.enum(['contact', 'sign', 'voter_contact', 'other']);
 const platform = z.enum(['chromium', 'ios', 'other']);
 

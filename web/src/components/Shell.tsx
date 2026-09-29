@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import { useMeta } from '../api/hooks';
+import { configure, identify, screenFor, setUser, track } from '../analytics';
+import { currentBreakpoint } from '../canvass/useBreakpoint';
+import { isIosInstalled } from '../pwa';
+import { listVoices, readVoicePref } from '../speech';
+import { APP_VERSION } from './changelog-modal';
 import type { User } from '../api/types';
 import { isAdmin, isOrganizer } from '../auth';
 import { helpFor } from '../help/route';
@@ -38,6 +43,34 @@ export function Shell() {
     setMenuOpen(false);
     setUserOpen(false);
   }, [loc.pathname]);
+
+  // Analytics runs only inside the signed-in shell: never on /login, /invite or /subscribe. The
+  // user id is the opaque uuid. What is described here is the device and the app, never a door.
+  useEffect(() => {
+    configure({ appVersion: APP_VERSION });
+    setUser(user.id);
+    let installed = false;
+    let pointer: 'coarse' | 'fine' = 'fine';
+    try {
+      installed = isIosInstalled() || window.matchMedia('(display-mode: standalone)').matches;
+      pointer = window.matchMedia('(pointer: coarse)').matches ? 'coarse' : 'fine';
+    } catch {
+      /* no matchMedia — the defaults stand */
+    }
+    const uri = readVoicePref();
+    const voice = uri ? listVoices().find((v) => v.voiceURI === uri) : undefined;
+    identify({
+      app_version: APP_VERSION,
+      installed,
+      breakpoint: currentBreakpoint(),
+      pointer,
+      voice_kind: !uri ? 'none' : voice && !voice.localService ? 'online' : 'local',
+    });
+  }, [user.id]);
+  // Page views by hand, and only the pattern: `screenFor` never returns the path or the query.
+  useEffect(() => {
+    track('screen_viewed', { ...screenFor(loc.pathname, loc.search), breakpoint: currentBreakpoint() });
+  }, [loc.pathname, loc.search]);
   useEffect(() => {
     if (!menuOpen && !userOpen) return;
     const onDown = (e: MouseEvent) => {

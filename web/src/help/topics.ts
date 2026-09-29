@@ -418,6 +418,7 @@ export const ACCOUNT_HELP: HelpTopic = {
     'You can change your password here, which signs you out on every other device.',
     'You can choose the voice the app speaks with, and test it.',
     'The data section shows when the voters list was imported, and reminds you it is confidential.',
+    'Usage data lets you switch off anonymous usage counts for this device.',
     'You can sign out at the top or bottom of this page, or from your name in the top bar.',
   ],
   sections: [
@@ -436,6 +437,10 @@ export const ACCOUNT_HELP: HelpTopic = {
     {
       heading: 'Online voices',
       body: 'Some voices are online, which means the words are sent to that provider to be spoken. That is acceptable only because the app never speaks a name or an address.',
+    },
+    {
+      heading: 'Usage data',
+      body: 'A switch for anonymous usage counts — which screens are used, how often results wait for signal. It never includes a voter, a door, an address or a note, and nothing is sent unless the campaign has turned collection on. The setting is saved on this device only.',
     },
     {
       heading: 'Data',

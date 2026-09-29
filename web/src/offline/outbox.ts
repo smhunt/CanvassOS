@@ -16,6 +16,7 @@
  * sent. Entries are keyed and reconciled by the id we generated; the response is only ever read for
  * its data.
  */
+import { track } from '../analytics';
 import { ApiError, api } from '../api/client';
 import type { ContactResult } from '../api/types';
 import { META, OUTBOX, idbDelete, idbGetAll, idbPut, isMemoryOnly } from './db';
@@ -270,11 +271,15 @@ export async function submitOrQueue<T>(
     return { queued: false, data };
   } catch (err) {
     if (classify(err) === 'rejected') throw err;
+    track('write_queued', { kind: queueKind(endpoint) });
     return { queued: true, entry: await enqueue(endpoint, body, meta, err) };
   }
 }
 
 // ------------------------------------------------------------------ flushing
+
+const queueKind = (endpoint: OutboxEndpoint): 'contact' | 'sign' | 'other' =>
+  endpoint === '/contacts' ? 'contact' : endpoint === '/signs' ? 'sign' : 'other';
 
 const dueAt = (e: OutboxEntry): number =>
   (e.last_tried_at ?? e.queued_at) + Math.min(FIRST_DELAY_MS * 2 ** Math.max(0, e.attempts - 1), MAX_DELAY_MS);
@@ -299,6 +304,7 @@ function schedule(): void {
 }
 
 async function park(entry: OutboxEntry, reason: ParkedReason, err: unknown): Promise<void> {
+  track('queue_entry_parked', { kind: queueKind(entry.endpoint), attempts: entry.attempts, last_status: statusOf(err) ?? 0 });
   await persist({
     ...entry,
     state: 'parked',
@@ -347,6 +353,9 @@ export async function flush(): Promise<void> {
       .sort((a, b) => a.queued_at - b.queued_at);
     if (due.length === 0) return;
     notify();
+    let nSent = 0;
+    let nFailed = 0;
+    const oldest = due[0]!.queued_at;
     for (const entry of due) {
       try {
         const res = await api.post(entry.endpoint, entry.body);
@@ -354,10 +363,12 @@ export async function flush(): Promise<void> {
         // consulted: the entry is identified by the id we generated and nothing else.
         await drop(entry.id);
         landed = true;
+        nSent += 1;
         // The one thing the response body is read for. A sign photo taken in a field has been
         // waiting on this exact fact — the server id — and it is only knowable here.
         await handOverSignId(entry, res);
       } catch (err) {
+        nFailed += 1;
         const kind = classify(err);
         if (kind === 'rejected') {
           await park(entry, 'rejected', err);
@@ -380,6 +391,8 @@ export async function flush(): Promise<void> {
         break;
       }
     }
+    // Counts and an age, never what was in an entry.
+    track('queue_flushed', { n_sent: nSent, n_failed: nFailed, oldest_age_s: Math.max(0, Math.round((Date.now() - oldest) / 1000)) });
   } finally {
     syncing = false;
     if (landed) {
