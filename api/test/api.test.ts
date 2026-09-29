@@ -757,11 +757,13 @@ describe('stats/coverage', () => {
     assert.equal(turfRes.statusCode, 201, turfRes.body);
     const turfId = ((turfRes.json() as { turf: { id: string } }).turf).id;
     const onStreet = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM turf_household WHERE turf_id = $1`, [turfId]);
-
+    const key = `test-cov-${RUN}`;
+    // Later suites assert exact turf and contact counts, so this one takes its own rows back out
+    // rather than leaving them for after(); the audit rows go with the user there.
+    try {
     // Three visits: a lukewarm 2, then a 5, then a not-home that promises to come back. The door is
     // ONE attempted door and ONE spoke door with a stance of 5 — not three attempts, not a 2 and a 5,
     // and the not-home must not un-reach it.
-    const key = `test-cov-${RUN}`;
     for (const body of [
       { result: 'spoke', support: 2, client_id: `${key}-a` },
       { result: 'spoke', support: 5, client_id: `${key}-b` },
@@ -810,6 +812,13 @@ describe('stats/coverage', () => {
 
     const aud = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'view_coverage'`);
     assert.ok(aud.rows[0]!.n >= 2, 'every look is on the record (two fetches above)');
+    } finally {
+      const mine = await db.query<{ id: string }>(`SELECT id FROM contact WHERE client_id LIKE $1`, [`${key}%`]);
+      await db.query(`DELETE FROM audit_log WHERE action = 'contact' AND target = ANY($1::text[])`, [mine.rows.map((r) => r.id)]);
+      await db.query(`DELETE FROM audit_log WHERE action = 'create_turf' AND target = $1`, [turfId]);
+      await db.query(`DELETE FROM contact WHERE client_id LIKE $1`, [`${key}%`]);
+      await db.query(`DELETE FROM turf WHERE id = $1`, [turfId]);
+    }
   });
 });
 
