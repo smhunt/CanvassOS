@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.5.0';
+export const APP_VERSION = '1.6.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,15 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.6.0',
+    date: '2026-09-29',
+    changes: [
+      'New Coverage tab under Reports: how many doors have been attempted and spoken with in each ward, community and turf, and day by day, with how support is spread in each. Support counts doors, not visits — a supporter seen twice is one supporter — so it will not match the Stats page, which counts visits.',
+      'Plan a delivery route: the sign delivery list can put every waiting door into driving order and open it in Google Maps ten stops at a time, with a Waze link per stop. Only map positions go into the links, never a name or address. Requests with no map position are listed underneath so they are not forgotten.',
+      'Sign requests can be raised from any door card, not only after a visit, and the delivery list is one list with the origin of each request shown on it.',
+    ],
+  },
   {
     version: '1.5.0',
     date: '2026-09-24',
@@ -472,8 +481,8 @@ export const ROADMAP: RoadmapGroup[] = [
     category: 'Planned — Phase 4: reporting and admin',
     icon: '📈',
     items: [
-      { label: 'Coverage and support reports by ward, community, turf and day', priority: 'high' },
-      { label: 'CSV export with an audit entry for every download', priority: 'medium' },
+      { label: 'Coverage and support reports by ward, community, turf and day', priority: 'high', done: true },
+      { label: 'CSV export with an audit entry for every download — deferred on purpose: every export is another copy of the list leaving the system', priority: 'low' },
       { label: 'Aerial imagery layer from the county GIS — current, free, and covers the rural roads', priority: 'low' },
     ],
   },

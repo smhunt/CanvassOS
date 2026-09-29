@@ -4,7 +4,7 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.6.0] - 2026-09-29
 
 ### Added
 
@@ -113,6 +113,14 @@ All notable changes to CanvassOS are recorded here. The format follows
   `/sw.js` purged by URL. `CLAUDE.md` has the landmine and the reload command. The zone-wide
   Browser Cache TTL was also rewriting the header to four hours on the way to the browser; a Cache
   Rule scoped to `canvass.webarchitecture.ca/sw.js` now makes Cloudflare respect the origin.
+
+### Changed
+
+- **Deploying is a GitHub Actions workflow** (`Deploy production`, manual, `main` only) on a
+  self-hosted runner installed on the EC2 box, so a deploy no longer needs a laptop with the SSH key.
+  Order kept: backup, migrate, rebuild, health check at the origin. A changed Caddyfile now
+  *recreates* Caddy instead of reloading it — after `git reset` a reload re-reads the old file
+  through a stale bind mount and reports success while shipping nothing.
 
 ## [1.5.0] - 2026-09-24
 
