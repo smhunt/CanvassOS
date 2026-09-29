@@ -10,10 +10,16 @@
  * and the only way to do better would be to send every door to a routing API, which is exactly
  * what this module is built not to do.
  *
- * What leaves the browser, and only when somebody taps a link: coordinates. Never a name, an
- * address string or a household id — the same rule as the Street View proxy (CLAUDE.md), because
- * a list of supporters' doors in a URL is the list, and a coordinate pair is the least of it a
- * navigation app can work with.
+ * What leaves the browser, and only when somebody taps a Google link: each stop's street address
+ * with its community ("282 ELM ST, ILDERTON, ON"), so the Maps app lists the stops by address
+ * rather than as "Dropped pin". Chosen 2026-09-29 by the campaign: a six-decimal coordinate
+ * already names the house, so the address adds little that Google did not have, and a driver can
+ * read it. It is still list data under MEA s. 23, which is why it stops there — never a name, a
+ * phone number or a household id. `RoutePanel` builds `address` from the row's `door_address`,
+ * never from its `title`, which falls back to the requester's name. A stop without a
+ * civic-number address (a legal description, an unknown) goes as its coordinates, because Google
+ * cannot find "CON 5 PT LOT 12" and a stop geocoded to the wrong place is a sign never delivered.
+ * Waze keeps coordinates: its deep link is one stop at a time, and the address is on the screen.
  */
 import { distanceM, type Coords } from '../canvass/directions';
 
@@ -22,6 +28,8 @@ export interface RouteStop {
   title: string;
   lat: number;
   lon: number;
+  /** "282 ELM ST, ILDERTON, ON" — see the header for what may go here. Null sends coordinates. */
+  address?: string | null;
 }
 
 /**
@@ -33,6 +41,20 @@ export interface RouteStop {
 export const STOPS_PER_LEG = 10;
 
 const key = (c: Coords): string => `${c.lat.toFixed(6)},${c.lon.toFixed(6)}`;
+
+/** The start is the phone's own fix and always a coordinate; a stop is its address when it has one. */
+const place = (c: Coords & { address?: string | null }): string =>
+  c.address ? encodeURIComponent(c.address) : key(c);
+
+/**
+ * Only an address Google can actually find: it must start with a civic number. Legal descriptions,
+ * "Address unknown" and anything else fall back to the coordinates the import geocoded.
+ */
+export function routeAddress(address: string | null, community: string | null): string | null {
+  const a = address?.trim();
+  if (!a || !/^\d/.test(a)) return null;
+  return `${a}, ${community?.trim() || 'Middlesex Centre'}, ON`;
+}
 
 /**
  * Nearest-neighbour then 2-opt, on an open path (the run ends at the last sign, it does not drive
@@ -114,18 +136,18 @@ export interface RouteLeg {
  * first leg's origin is the phone's fix when there is one and blank otherwise — Google then starts
  * from the device's own location, which is what a driver wants anyway.
  */
-export function googleLegs(stops: Coords[], start: Coords | null): RouteLeg[] {
+export function googleLegs(stops: (Coords & { address?: string | null })[], start: Coords | null): RouteLeg[] {
   const legs: RouteLeg[] = [];
   for (let i = 0; i < stops.length; i += STOPS_PER_LEG) {
     const chunk = stops.slice(i, i + STOPS_PER_LEG);
-    const origin = i === 0 ? start : (stops[i - 1] as Coords);
-    const destination = chunk[chunk.length - 1] as Coords;
+    const origin = i === 0 ? start : stops[i - 1];
+    const destination = chunk[chunk.length - 1] as RouteStop;
     const waypoints = chunk.slice(0, -1);
     const params = [
       'api=1',
-      ...(origin ? [`origin=${key(origin)}`] : []),
-      `destination=${key(destination)}`,
-      ...(waypoints.length > 0 ? [`waypoints=${waypoints.map(key).join('%7C')}`] : []),
+      ...(origin ? [`origin=${place(origin)}`] : []),
+      `destination=${place(destination)}`,
+      ...(waypoints.length > 0 ? [`waypoints=${waypoints.map(place).join('%7C')}`] : []),
       'travelmode=driving',
     ];
     legs.push({ first: i + 1, last: i + chunk.length, url: `https://www.google.com/maps/dir/?${params.join('&')}` });

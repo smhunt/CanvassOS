@@ -6,6 +6,16 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The delivery route's Google Maps links name each stop by its street address** ("282 ELM ST,
+  ILDERTON, ON") instead of a bare coordinate, so the Maps app lists addresses rather than
+  "Dropped pin". Still never a name, phone or id: the address comes from the door's own list field,
+  not the row heading (which can fall back to a requester's name). A stop without a civic-number
+  address — a legal description, an unknown — keeps its coordinates, since Google cannot find
+  it and a misplaced stop is a sign never delivered. The phone's starting point and the per-stop
+  Waze links stay coordinates.
+
 ### Fixed
 
 - The "signed out anyway with results waiting" usage count is sent before the sign-out request

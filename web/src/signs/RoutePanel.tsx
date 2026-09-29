@@ -5,7 +5,8 @@
  * only the rows with a map position. A phoned-in or website request carries a typed address and no
  * coordinates, and an unmapped legal-description door has none either; those are named below the
  * route rather than dropped, because a stop silently missing from the run is a sign never
- * delivered. Typed addresses are deliberately NOT sent to Google to be geocoded: see route.ts.
+ * delivered. A door's address does go to Google as the stop's label (route.ts says what may);
+ * a typed address from a phoned-in request is still not sent off to be geocoded.
  *
  * The phone's position is asked for once, on tap, and only to anchor the order. It is not stored.
  */
@@ -13,7 +14,7 @@ import { useMemo, useState } from 'react';
 import { formatDistance, describeGeolocationFailure, preflightGeolocation } from '../canvass/nearMe';
 import type { Coords } from '../canvass/directions';
 import { distanceM } from '../canvass/directions';
-import { googleLegs, orderStops, tourLengthM, wazeUrl, type RouteStop } from './route';
+import { googleLegs, orderStops, routeAddress, tourLengthM, wazeUrl, type RouteStop } from './route';
 import type { UnifiedRequest } from './rows';
 
 export function RoutePanel({ rows, onClose }: { rows: UnifiedRequest[]; onClose: () => void }) {
@@ -35,7 +36,8 @@ export function RoutePanel({ rows, onClose }: { rows: UnifiedRequest[]; onClose:
       const at = `${r.lat},${r.lon}`;
       if (seen.has(at)) continue;
       seen.add(at);
-      stops.push({ key: r.key, title: r.title, lat: r.lat, lon: r.lon });
+      // `door_address`, never `title`: a title can fall back to the requester's name.
+      stops.push({ key: r.key, title: r.title, lat: r.lat, lon: r.lon, address: routeAddress(r.door_address, r.community) });
     }
     return { stops, unmapped };
   }, [rows]);

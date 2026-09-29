@@ -1,7 +1,7 @@
 /** Unit tests for the delivery-route ordering and link building (no DOM, no network). */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { STOPS_PER_LEG, googleLegs, orderStops, tourLengthM, wazeUrl, type RouteStop } from './route';
+import { STOPS_PER_LEG, googleLegs, orderStops, routeAddress, tourLengthM, wazeUrl, type RouteStop } from './route';
 
 const stop = (i: number, lat: number, lon: number): RouteStop => ({ key: `k${i}`, title: `Stop ${i}`, lat, lon });
 
@@ -72,13 +72,38 @@ describe('googleLegs', () => {
     assert.equal(url.searchParams.get('waypoints'), null);
   });
 
-  it('carries coordinates and nothing else', () => {
+  it('carries coordinates and nothing else when no stop has an address', () => {
     for (const leg of googleLegs(stops, null)) {
       for (const [k, v] of new URL(leg.url).searchParams) {
         if (k === 'api' || k === 'travelmode') continue;
         assert.match(v, /^(-?\d+\.\d{6},-?\d+\.\d{6}\|?)+$/, `${k}=${v}`);
       }
     }
+  });
+
+  it('labels a stop by its address, and chains the next leg from that address', () => {
+    const named = stops.map((c, i) => ({ ...c, address: i % 2 ? `${100 + i} ELM ST, ILDERTON, ON` : null }));
+    const params = googleLegs(named, { lat: 43.01, lon: -81.49 }).map((l) => new URL(l.url).searchParams);
+    assert.equal(params[0]?.get('origin'), '43.010000,-81.490000', 'the phone is always a coordinate');
+    const wp = params[0]?.get('waypoints')?.split('|') ?? [];
+    assert.equal(wp[0], '43.000000,-81.500000');
+    assert.equal(wp[1], '101 ELM ST, ILDERTON, ON');
+    assert.equal(params[0]?.get('destination'), '109 ELM ST, ILDERTON, ON');
+    assert.equal(params[1]?.get('origin'), params[0]?.get('destination'));
+  });
+});
+
+describe('routeAddress', () => {
+  it('adds the community and the province', () => {
+    assert.equal(routeAddress('282 ELM ST', 'ILDERTON'), '282 ELM ST, ILDERTON, ON');
+    assert.equal(routeAddress(' 4 MAIN ST ', null), '4 MAIN ST, Middlesex Centre, ON');
+  });
+
+  it('refuses anything Google could not find, so the stop keeps its coordinates', () => {
+    assert.equal(routeAddress('CON 5 PT LOT 12', 'ARVA'), null);
+    assert.equal(routeAddress('Address unknown', 'ARVA'), null);
+    assert.equal(routeAddress(null, 'ARVA'), null);
+    assert.equal(routeAddress('', 'ARVA'), null);
   });
 });
 

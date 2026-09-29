@@ -126,6 +126,8 @@ export interface UnifiedRequest {
   household_id: string | null;
   /** The heading: the door's address, or what the person typed, or their name as a last resort. */
   title: string;
+  /** The door's own address from the list, and only that — never typed text or a name. Null off a door row. */
+  door_address: string | null;
   ward: string | null;
   community: string | null;
   lat: number | null;
@@ -156,6 +158,7 @@ export function fromSignRequests(rows: DeliveryRequest[]): UnifiedRequest[] {
     origin: r.origin,
     household_id: r.household_id,
     title: r.address,
+    door_address: r.address,
     ward: r.ward || null,
     community: r.community,
     lat: r.lat,
@@ -184,6 +187,7 @@ export function fromPublicRequests(rows: PublicRequest[] | undefined): UnifiedRe
       origin: r.source === 'manual' ? 'manual' : 'website',
       household_id: r.household_id,
       title: r.address ?? r.name,
+      door_address: null,
       ward: null,
       community: null,
       lat: null,
