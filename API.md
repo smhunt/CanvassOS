@@ -927,15 +927,16 @@ candidates: [{ id, voter_id, natural_key, household_id, voter_name, household_ad
   consent (`/api/subscribe`'s double opt-in remains the only path), and never sends anything.
 
 ## Product analytics (any role; OFF by default)
-- `POST /api/analytics/events` — the relay the web app's Amplitude SDK is pointed at (`serverUrl`).
-  Body is the SDK's HTTP v2 batch `{ api_key, events: [...] }`; `api_key` is ignored (the real key
+- `POST /api/analytics/events` — the relay the web app's tracker (`web/src/analytics/index.ts`, a
+  hand-rolled one, not the Amplitude SDK) posts to; nothing in the browser talks to Amplitude.
+  Body is Amplitude's HTTP v2 batch shape `{ events: [...] }` (`api_key`, if sent, is ignored — the real key
   is server-side). Every event is checked against `CLIENT_EVENTS` in `api/src/routes/analytics.ts`
   — a strict per-event property schema, route **patterns** only, identifier-shaped strings only —
   and rebuilt field by field; `ip` is never forwarded. An event whose `user_id` is not the session
-  user (or is absent) is **dropped, not re-stamped**: the SDK's own queue survives a sign-out on a
+  user (or is absent) is **dropped, not re-stamped**: a client-side queue can survive a sign-out on a
   shared phone. Always answers `200 { code: 200, events_ingested, payload_size_bytes,
   server_upload_time }` — including when `AMPLITUDE_API_KEY` is unset (nothing is kept) and when
-  events were dropped — because a 4xx would make the SDK retry a batch that can never be accepted.
+  events were dropped — because a 4xx would make a client retry a batch that can never be accepted.
   Rate limit 60/min **per user**. Not audited: nothing it carries is personal data, by construction.
 - Server-side events are not an endpoint: `audit()` maps each `AuditAction` through `AUDIT_EVENTS`
   in `api/src/lib/analytics.ts` (a `Record` over the whole union), and `POST /api/contacts` emits one

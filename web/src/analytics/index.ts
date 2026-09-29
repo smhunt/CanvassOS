@@ -323,7 +323,16 @@ export async function flush(): Promise<void> {
   }
 }
 
-/** Leaving the page: hand the batch to the browser, which delivers it after the tab is gone. */
+/**
+ * Hand the batch to the browser now, which delivers it even after the page is gone. Used on
+ * `pagehide`, and by sign-out BEFORE the logout request: `reset()` empties the buffer and the
+ * session cookie goes with the logout, so an event tracked in the same tap would otherwise never
+ * arrive — and the one that says "they handed the phone over anyway" is exactly that event.
+ */
+export function flushNow(): void {
+  beacon();
+}
+
 function beacon(): void {
   if (userId === null || buffer.length === 0) return;
   const nav = g().navigator as (Navigator & { sendBeacon?: (url: string, data: BodyInit) => boolean }) | undefined;

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLogout } from '../api/hooks';
-import { reset, track } from '../analytics';
+import { flushNow, reset, track } from '../analytics';
 import { useOutbox, usePhotoQueue } from '../offline/useOutbox';
 
 interface Props {
@@ -30,12 +30,15 @@ export function SignOutButton({ className = 'btn', role }: Props) {
   const held = photos.photos.length;
   const waiting = results + held > 0;
 
-  const signOut = () =>
+  const signOut = () => {
+    // While the cookie is still valid: after the logout the relay would refuse the batch.
+    flushNow();
     logout.mutate(undefined, {
       // The same passed-phone rule as the outbox: nothing buffered follows the next person in.
       onSuccess: () => reset(),
       onSettled: () => nav('/login', { replace: true }),
     });
+  };
 
   const what = [
     results > 0 ? `${results} ${results === 1 ? 'result' : 'results'}` : null,

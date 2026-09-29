@@ -1,7 +1,8 @@
 /**
  * POST /api/analytics/events — the only way a browser event reaches Amplitude.
  *
- * The web app's Amplitude SDK is pointed here (`serverUrl`), never at Amplitude, so:
+ * The web app's tracker (`web/src/analytics/index.ts` — hand-rolled, not the Amplitude SDK) posts
+ * here and nowhere else, so:
  * - the volunteer's IP never reaches the vendor (this server uploads, and sends no `ip`);
  * - the API key stays server-side, like STREETVIEW_API_KEY and ADVICE_API_KEY;
  * - every event is re-checked against CLIENT_EVENTS: an unknown event, an unknown property, or a
@@ -12,14 +13,14 @@
  * own unsent queue in localStorage, and on a phone passed between canvassers that queue would
  * otherwise credit one volunteer's taps to the next — the outbox problem, in analytics.
  *
- * Two constraints the web side (Phase B) must honour, or this relay will reject its traffic:
- * - `flushIntervalMillis: 10_000`. Browser SDK 2 defaults to 1 s, which in a busy door session
- *   trips the 60/min per-user limit below, and the SDK then retries into it.
- * - identify with `set()` only. `$identify` is accepted with `{ $set }` and nothing else, so
- *   `setOnce`/`unset`/`add` drop the whole identify as `bad_props`.
+ * Two constraints the web side honours by construction (they are why the SDK was not used):
+ * - one batch every 10 s at most. A 1 s flush in a busy door session would trip the 60/min
+ *   per-user limit below and then retry into it.
+ * - identify with `$set` only. `$identify` is accepted with `{ $set }` and nothing else, so a
+ *   `$setOnce`/`$unset`/`$add` would drop the whole identify as `bad_props`.
  *
  * The answer is always 200 with an Amplitude-shaped body, including when the feature is off and
- * when events were dropped: a 4xx would make the SDK retry a batch that will never be accepted.
+ * when events were dropped: a 4xx would make a client retry a batch that will never be accepted.
  */
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -119,7 +120,7 @@ const userProps = z
   .strict();
 const identify = z.object({ $set: userProps }).strict();
 
-// Device fields the SDK fills in. Bounded and character-limited so none of them can carry text.
+// Device fields the tracker fills in. Bounded and character-limited so none of them can carry text.
 const token = (max: number) => z.string().regex(/^[A-Za-z0-9 ._()/-]+$/).max(max);
 const envelope = z.object({
   event_type: z.string().max(60),

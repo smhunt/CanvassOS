@@ -4,6 +4,13 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The "signed out anyway with results waiting" usage count is sent before the sign-out request
+  rather than after it, when the session that could carry it is already gone.
+
 ## [1.7.0] - 2026-09-29
 
 ### Added

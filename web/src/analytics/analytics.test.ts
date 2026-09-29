@@ -1,6 +1,6 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { _bufferSize, _resetForTests, configure, flush, identify, optedOut, reset, screenFor, setOptedOut, setUser, track } from './index';
+import { _bufferSize, _resetForTests, configure, flush, flushNow, identify, optedOut, reset, screenFor, setOptedOut, setUser, track } from './index';
 
 // The tracker reads window/navigator/localStorage/fetch at call time, never at import, so each is
 // a hand-made fake here — no DOM library, matching speech.test.ts. What these tests hold the module
@@ -248,4 +248,22 @@ test('a storage that throws costs a persisted device id and nothing else', async
   await flush();
   assert.equal(sent.length, 1);
   assert.match(events()[0]!.device_id as string, /^[A-Za-z0-9._-]{5,100}$/);
+});
+
+test('flushNow beacons the batch under the current user, so a sign-out can send before reset', async () => {
+  configure({ appVersion: '1.7.0' });
+  setUser(ME);
+  track('sign_out_blocked_by_queue', { n_pending: 2, n_photos: 0, proceeded: true });
+  flushNow();
+  reset();
+  assert.equal(beacons.length, 1);
+  const body = JSON.parse(await beacons[0]!.blob.text()) as { events: Record<string, unknown>[] };
+  assert.equal(body.events.length, 1);
+  assert.equal(body.events[0]!.user_id, ME);
+  assert.deepEqual(body.events[0]!.event_properties, { n_pending: 2, n_photos: 0, proceeded: true });
+  assert.equal(_bufferSize(), 0);
+  // And nothing to send is nothing sent.
+  setUser(OTHER);
+  flushNow();
+  assert.equal(beacons.length, 1);
 });
