@@ -6,6 +6,21 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Twice-daily staging refresh on the Mac (`scripts/staging-sync.sh`, `make staging-sync-install`).**
+  A LaunchAgent at 04:15 and 16:15 restores the newest production dump from S3 into the Mac's
+  `canvass`, so the rollback copy is refreshed instead of frozen at the cutover. A run missed while
+  the Mac was asleep or off is logged and skipped, never replayed. It
+  reads production only through S3 — no ssh, no remote psql — so it cannot be turned round to write
+  to production. It restores in one transaction (a bad dump leaves the previous hour in place),
+  refuses when the Mac's api or a cloudflared is running (a rollback would have made the Mac
+  production again), refuses while anything is connected to `canvass`, never restores an older dump
+  over a newer one, checks the newest audit row did not go backwards, and raises a macOS
+  notification on every refusal and whenever the newest dump in S3 is more than 13 hours old. It
+  keeps three days of dumps and a log (counts, keys and times only) in `backups/staging/`;
+  `make purge` uninstalls it. It is a staging refresh, not replication.
+
 ### Changed
 
 - **The delivery route's Google Maps links name each stop by its street address** ("282 ELM ST,

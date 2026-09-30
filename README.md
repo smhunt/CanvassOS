@@ -652,7 +652,33 @@ never holds plaintext personal information.
 
 ```
 30 3 * * * cd /srv/canvass && ./scripts/backup-offsite.sh >> /var/log/canvass-backup.log 2>&1
+30 0-2,4-23 * * * cd /srv/canvass && PHOTO_VOL=none ./scripts/backup-offsite.sh >> /var/log/canvass-backup.log 2>&1
 ```
+
+The second line is an hourly database-only run, so production's off-box copy is never more than an
+hour old; it is independent of the Mac's twice-daily staging refresh (below), which takes whatever
+is newest. `PHOTO_VOL=none` skips the photos tarball, which would otherwise re-upload every photograph every
+hour; photos ship with the 03:30 run only, so **the newest `photos/` tarball can be up to a day older
+than the newest `db/` dump** — nothing in the key names says so. Hourly is ~720 objects and ~1 GB
+under the 30-day lifecycle, and the local 14-day prune keeps ~500 MB on the box.
+
+**Twice-daily staging refresh on the Mac.** `make staging-sync-install` (run from the main checkout
+on the Mac) loads a LaunchAgent that, at 04:15 and 16:15, takes the newest `db/` dump from S3 and
+restores it into the Mac's `canvass` in one transaction
+([`scripts/staging-sync.sh`](scripts/staging-sync.sh); log in `backups/staging/staging-sync.log`,
+`make staging-sync-status` for the state). **No catch-up:** a time missed while the Mac was asleep or
+off is logged and skipped — the next refresh is the next normal window. It reads
+production **only through S3** — there is no ssh or remote connection in it, so it cannot be inverted
+into a write to production. It refuses when the Mac's `api` container or a `cloudflared` is running
+(after a rollback the Mac *is* production, and an hourly restore would destroy its writes), refuses
+while anything is connected to `canvass`, never goes backwards, and notifies on every refusal and
+when the newest dump is over 13 hours old. It keeps three days of dumps; the log holds counts, keys
+and times only. **It is a staging refresh, not replication**: up to ~12 hours of writes can be
+missing from it, which is why `cutover-aws.sh rollback --with-data` still takes
+a fresh dump. The installed copy lives in `~/Library/Application Support/canvass-staging-sync/`, so
+re-run `make staging-sync-install` after changing the script. The restored database is plaintext on
+the Mac's disk; `make purge` uninstalls the job, and `backups/staging/` goes with the other encrypted
+dumps in the post-election inventory.
 
 Bucket design and the rule against Object Lock are in "C. AWS EC2 behind the Cloudflare Tunnel"
 above. On EC2 the instance role supplies the credentials; from a workstation, set `AWS_PROFILE`.
