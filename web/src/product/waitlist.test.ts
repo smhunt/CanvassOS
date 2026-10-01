@@ -1,7 +1,14 @@
 /** Unit tests for the waitlist call: what is sent, and the outcome for each answer (no DOM, no network). */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { CONSENT_TEXT, JOINED_FALLBACK, joinWaitlist, outcomeText, type WaitlistRequest } from './waitlist';
+import {
+  CONSENT_TEXT,
+  JOINED_FALLBACK,
+  MAILING_ADDRESS,
+  joinWaitlist,
+  outcomeText,
+  type WaitlistRequest,
+} from './waitlist';
 
 const body: WaitlistRequest = {
   email: 'pat@example.com',
@@ -69,6 +76,7 @@ describe('joinWaitlist', () => {
 describe('CONSENT_TEXT', () => {
   it('names who is asking and how to reach them, as CASL requires', () => {
     assert.match(CONSENT_TEXT, /Ecoworks \(getstarted@ecoworks\.ca\)/);
+    assert.ok(MAILING_ADDRESS.length > 0, 'CASL needs a mailing address on the request');
     assert.ok(CONSENT_TEXT.length >= 20 && CONSENT_TEXT.length <= 1000, 'the API accepts 20 to 1000 characters');
   });
 });

@@ -172,7 +172,8 @@ export const WaitlistForm = forwardRef<HTMLInputElement>(function WaitlistForm(_
         <span>{CONSENT_TEXT}</span>
       </label>
       <p className="waitlist__sender">
-        CanvassOS is made by {SENDER.name}. Questions: <a href={`mailto:${SENDER.email}`}>{SENDER.email}</a>
+        CanvassOS is made by {SENDER.name} ({SENDER.legal}). Questions:{' '}
+        <a href={`mailto:${SENDER.email}`}>{SENDER.email}</a>
         {MAILING_ADDRESS && <>&nbsp;· {MAILING_ADDRESS}</>}
       </p>
       {error && (

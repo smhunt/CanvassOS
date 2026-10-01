@@ -19,8 +19,8 @@ All notable changes to CanvassOS are recorded here. The format follows
   blurred in the pixels at capture (`web/tools/tour_shots.py`, demo stack only).
 - **The waitlist form** on that page posts to `POST /api/waitlist` with the consent wording it
   shows, sends no cookie, and shows one success state whatever the server knows. The consent names
-  who is asking, Ecoworks (getstarted@ecoworks.ca), as CASL requires; the mailing address CASL also
-  requires is `MAILING_ADDRESS` in `web/src/product/waitlist.ts`, still to be filled in.
+  who is asking, Ecoworks (getstarted@ecoworks.ca), with its legal name (Web Architecture Inc.) and
+  mailing address, as CASL requires (`SENDER` and `MAILING_ADDRESS` in `web/src/product/waitlist.ts`).
 
 - **Product waitlist endpoint.** `POST /api/waitlist` lets other campaigns ask to hear when
   CanvassOS opens to them: email, name, role, municipality, province, next election year, optional

@@ -35,10 +35,10 @@ export const PROVINCES = ['ON', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 
  */
 /**
  * Who is asking for consent, as CASL requires a consent request to say: a name, and a way to reach
- * them. CASL also requires a mailing address; set MAILING_ADDRESS before promoting the page.
+ * them, and a mailing address. Ecoworks is the business name of Web Architecture Inc.
  */
-export const SENDER = { name: 'Ecoworks', email: 'getstarted@ecoworks.ca' } as const;
-export const MAILING_ADDRESS = '';
+export const SENDER = { name: 'Ecoworks', legal: 'Web Architecture Inc.', email: 'getstarted@ecoworks.ca' } as const;
+export const MAILING_ADDRESS = '2 Mayapple Crescent, Ilderton, ON';
 
 export const CONSENT_TEXT =
   `Email me from ${SENDER.name} (${SENDER.email}) when CanvassOS opens to new campaigns, and occasionally ` +
