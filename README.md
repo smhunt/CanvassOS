@@ -44,6 +44,12 @@ database of entirely fabricated residents on real public street names — see
 
 ## What it does
 
+**Anyone not signed in.** `/login` shows a short product page behind the sign-in dialog: what
+CanvassOS does, a screenshot tour taken from the demo stack with every name and contact detail
+blurred, and a waitlist form for other campaigns (`POST /api/waitlist`; admins read it at
+`GET /api/waitlist`). Signing in works exactly as before; Escape or "Learn about CanvassOS" just
+reveals the page.
+
 **Volunteers, on a phone.** Sign in, see the turfs assigned to you, open one, and walk the doors in
 the order you pass them. Eight one-thumb result buttons; seven of them record in a single tap.
 "Spoke" opens support 1–5, the sign / volunteer / ride / follow-up flags, a note, and — with consent

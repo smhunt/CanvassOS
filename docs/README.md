@@ -511,6 +511,22 @@ The exceptions to "everything is JSON" are all images: `POST /api/signs/:id/phot
 send through `client.ts` — `web/src/offline/photoQueue.ts` builds the `FormData` and the `fetch` by
 hand, then converts the failure into the same `ApiError` so it classifies like everything else (§6).
 
+Two public pages also bypass `client.ts`, because a passer-by has no session and the shared client's
+401 handling (clear the session, bounce to `/login`) would be wrong for them: `/subscribe`
+(`web/src/subscribe/api.ts`) and the product page's waitlist form (`web/src/product/waitlist.ts`,
+`POST /api/waitlist`). Both send `credentials: 'omit'` and turn every answer into a small closed set
+of outcomes the form must handle.
+
+### The product page behind sign-in
+
+Signed out, `/login` renders `web/src/product/ProductSite.tsx` (lazy-loaded) with the sign-in form in
+a modal `<dialog>` over it. The page is static marketing copy plus the waitlist form: it calls no
+other endpoint and shows no campaign data, so it discloses nothing from the voters list. "Learn about
+CanvassOS" closes the dialog and opens `Tour.tsx`, whose screenshots in `web/public/tour/` are
+captured from the **demo stack only** by `web/tools/tour_shots.py`, with names, addresses, phones and
+emails blurred in the DOM before capture so the pixels never hold them. Re-run that script, never a
+manual capture of the real app, when the screens change.
+
 ### Session cookie
 
 Login sets `canvass_sid` — the `session.id` UUID, signed by `@fastify/cookie` with `SESSION_SECRET`:

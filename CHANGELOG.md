@@ -8,6 +8,18 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ### Added
 
+- **A product page behind the sign-in dialog.** Signed out, `/login` now shows what CanvassOS is
+  (the canvassing day, drive mode for rural roads, the *Municipal Elections Act* safeguards) with
+  sign-in as a modal dialog over it. Escape or "Learn about CanvassOS" closes the dialog and "Sign
+  in" on the page reopens it, so a volunteer signs in exactly as before. The page makes no API
+  call except the waitlist form, and is lazy-loaded so the sign-in box never waits for it.
+- **A screenshot tour.** "Learn about CanvassOS" closes sign-in and starts an eight-step tour (map,
+  turfs, door list, recording a visit, drive mode, lawn signs, reports, the paper sheet). Every
+  image comes off the demo stack's invented residents with names, addresses, phones and emails
+  blurred in the pixels at capture (`web/tools/tour_shots.py`, demo stack only).
+- **The waitlist form** on that page posts to `POST /api/waitlist` with the consent wording it
+  shows, sends no cookie, and shows one success state whatever the server knows.
+
 - **Product waitlist endpoint.** `POST /api/waitlist` lets other campaigns ask to hear when
   CanvassOS opens to them: email, name, role, municipality, province, next election year, optional
   notes and the verbatim consent wording they ticked. Public, rate limited to 5 an hour per address,

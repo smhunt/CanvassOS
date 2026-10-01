@@ -12,9 +12,10 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview --port 4173",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsx --test src/*.test.ts src/canvass/*.test.ts src/help/*.test.ts src/signs/*.test.ts src/analytics/*.test.ts"
+    "test": "tsx --test src/*.test.ts src/canvass/*.test.ts src/help/*.test.ts src/signs/*.test.ts src/analytics/*.test.ts src/product/*.test.ts"
   },
   "dependencies": {
+    "@fontsource-variable/overpass": "^5.3.0",
     "@tanstack/react-query": "^5.62.0",
     "maplibre-gl": "^5.0.0",
     "react": "^18.3.1",

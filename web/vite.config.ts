@@ -44,6 +44,10 @@ function appShellServiceWorker(): Plugin {
     generateBundle(_options, bundle) {
       const files = Object.keys(bundle)
         .filter((f) => f !== 'sw.js' && !f.endsWith('.map'))
+        // The signed-out product page (its chunk, stylesheet and the Overpass font) is for visitors,
+        // not volunteers: keep it out of the shell every phone installs. Sign-in itself still works
+        // offline, because the dialog is in the main bundle.
+        .filter((f) => !/ProductSite|overpass/i.test(f))
         .map((f) => `/${f}`);
       const assets = ['/', ...files, ...PUBLIC_SHELL_FILES].map((p) => encodeURI(p));
       let h = 0;

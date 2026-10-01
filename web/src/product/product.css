@@ -1,0 +1,741 @@
+/*
+ * The public product page, the sign-in dialog over it, and the tour. Scoped under .product,
+ * .signin and .tour so none of it reaches the app. Uses the app's breakpoint scale (720 / 1100;
+ * see the top of styles.css) and nothing else.
+ *
+ * The look comes from the work itself: township survey lines, a walked route, and lawn-sign
+ * yellow as the one loud colour. Light only, like a printed map.
+ */
+
+.product,
+.tour {
+  --p-ink: #17232b;
+  --p-paper: #eef3f1;
+  --p-sheet: #ffffff;
+  --p-line: #cbd7d2;
+  --p-muted: #52626a;
+  --p-field: #2e6b4e;
+  --p-route: #2b5fa8;
+  --p-sign: #f2c230;
+  --p-sign-ink: #1d1a0f;
+  --p-font: 'Overpass Variable', var(--font);
+  color-scheme: light;
+  font-family: var(--p-font);
+  color: var(--p-ink);
+}
+
+.product {
+  min-height: 100%;
+  background: var(--p-paper);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------------------- shared controls */
+
+.p-btn {
+  font: inherit;
+  font-weight: 700;
+  min-height: var(--tap);
+  padding: 0.55rem 1.3rem 0.45rem;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.p-btn--sign {
+  background: var(--p-sign);
+  color: var(--p-sign-ink);
+  border-color: var(--p-sign-ink);
+}
+.p-btn--ink {
+  background: var(--p-ink);
+  color: #fff;
+}
+.p-btn--quiet {
+  background: transparent;
+  color: var(--p-ink);
+  border-color: var(--p-ink);
+}
+.p-btn--small {
+  min-height: 38px;
+  padding: 0.35rem 1rem 0.25rem;
+}
+.p-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (hover: hover) {
+  .p-btn--sign:hover:not(:disabled) {
+    background: #ffd447;
+  }
+  .p-btn--quiet:hover:not(:disabled) {
+    background: rgba(23, 35, 43, 0.06);
+  }
+}
+.p-link {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0.25rem 0;
+  color: var(--p-ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+  cursor: pointer;
+}
+.product :focus-visible,
+.tour :focus-visible {
+  outline: 3px solid var(--p-route);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- top bar */
+
+.product__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0.9rem 1rem;
+  color: var(--p-ink);
+}
+.product__nav {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+}
+.product__nav .p-link {
+  display: none;
+  text-decoration: none;
+  font-weight: 600;
+}
+@media (min-width: 720px) {
+  .product__nav .p-link {
+    display: inline;
+  }
+}
+
+.product main > section {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 3rem 1rem;
+}
+.product h1,
+.product h2,
+.product h3 {
+  font-family: var(--p-font);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.product h2 {
+  font-size: clamp(1.6rem, 3.2vw, 2.2rem);
+  font-weight: 800;
+  line-height: 1.12;
+  max-width: 24ch;
+}
+
+/* ---------------------------------------------------------------- hero */
+
+.hero {
+  display: grid;
+  gap: 2rem;
+  align-items: center;
+}
+.hero h1 {
+  font-size: clamp(2.1rem, 3.6vw, 2.9rem);
+  font-weight: 850;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  max-width: 18ch;
+}
+.hero__lede {
+  margin: 1.2rem 0 0;
+  max-width: 54ch;
+  color: var(--p-muted);
+}
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.6rem;
+}
+.hero__aside {
+  margin: 1rem 0 0;
+  font-size: 0.92rem;
+  color: var(--p-muted);
+}
+.hero__map {
+  background: var(--p-sheet);
+  border: 1px solid var(--p-line);
+  border-radius: 6px;
+  padding: 0.75rem;
+  box-shadow:
+    0 1px 0 var(--p-line),
+    0 18px 40px -24px rgba(23, 35, 43, 0.45);
+}
+@media (min-width: 1100px) {
+  .hero {
+    grid-template-columns: 1.15fr 1fr;
+    gap: 3.5rem;
+    padding-top: 4rem;
+  }
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+  color: var(--p-muted);
+}
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.legend__swatch {
+  width: 12px;
+  height: 11px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.legend__swatch--knocked {
+  background: var(--p-route);
+}
+.legend__swatch--support {
+  background: var(--p-field);
+}
+.legend__swatch--sign {
+  background: var(--p-sign);
+  outline: 1px solid var(--p-sign-ink);
+}
+
+/* The turf map. */
+.turf-hero {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.turf-hero__lots line {
+  stroke: var(--p-line);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+}
+.turf-hero__turf {
+  fill: rgba(43, 95, 168, 0.06);
+  stroke: var(--p-route);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 5;
+}
+.turf-hero__roads line {
+  stroke: #9fb0aa;
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+.turf-hero__road-name {
+  font: 600 11px var(--p-font);
+  fill: var(--p-muted);
+}
+.turf-hero__house {
+  fill: #fff;
+  stroke: #8a9a95;
+  stroke-width: 1.5;
+}
+.turf-hero__route {
+  fill: none;
+  stroke: var(--p-route);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: turf-route linear both;
+}
+@keyframes turf-route {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+.turf-hero__door .turf-hero__house,
+.turf-hero__sign {
+  animation: turf-door 0.35s ease-out both;
+  animation-delay: inherit;
+}
+.turf-hero__door--knocked .turf-hero__house {
+  fill: var(--p-route);
+  stroke: var(--p-route);
+}
+.turf-hero__door--support .turf-hero__house {
+  fill: var(--p-field);
+  stroke: var(--p-field);
+}
+.turf-hero__door--sign .turf-hero__house {
+  fill: var(--p-field);
+  stroke: var(--p-field);
+}
+.turf-hero__sign rect {
+  fill: var(--p-sign);
+  stroke: var(--p-sign-ink);
+  stroke-width: 1.2;
+}
+.turf-hero__sign line {
+  stroke: var(--p-sign-ink);
+  stroke-width: 1.5;
+}
+/* Doors the route has not reached look like any other house until it does. */
+@keyframes turf-door {
+  from {
+    fill: #fff;
+    stroke: #8a9a95;
+    opacity: 0.9;
+  }
+}
+.turf-hero__sign {
+  animation-name: turf-sign;
+}
+@keyframes turf-sign {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.turf-hero__door--none .turf-hero__house {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .turf-hero__route,
+  .turf-hero__door .turf-hero__house,
+  .turf-hero__sign {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------- a canvassing day */
+
+.day__cols {
+  display: grid;
+  gap: 2rem;
+  margin-top: 2rem;
+}
+@media (min-width: 720px) {
+  .day__cols {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.day__col {
+  border-top: 3px solid var(--p-ink);
+  padding-top: 1rem;
+}
+.day__col h3 {
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+.day__col dl {
+  margin: 1rem 0 0;
+}
+.day__col dt {
+  font-weight: 700;
+  margin-top: 1rem;
+}
+.day__col dd {
+  margin: 0.15rem 0 0;
+  color: var(--p-muted);
+}
+
+/* ---------------------------------------------------------------- rural roads */
+
+.rural {
+  display: grid;
+  gap: 2rem;
+  align-items: center;
+}
+@media (min-width: 720px) {
+  .rural {
+    grid-template-columns: auto 1fr;
+    gap: 3.5rem;
+  }
+}
+/* The one loud thing on the page: a rural road sign in lawn-sign yellow. */
+.rural__sign {
+  justify-self: start;
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  min-width: 12rem;
+  padding: 1.3rem 1.6rem 1.1rem;
+  background: var(--p-sign);
+  color: var(--p-sign-ink);
+  border: 4px solid var(--p-sign-ink);
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 4px var(--p-sign);
+  outline: 2px solid var(--p-sign);
+  outline-offset: -10px;
+  font-weight: 700;
+  text-align: center;
+}
+.rural__sign strong {
+  font-size: 2.6rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.rural__copy p {
+  max-width: 60ch;
+  color: var(--p-muted);
+  margin: 1rem 0 0;
+}
+
+/* ---------------------------------------------------------------- the rules */
+
+.rules {
+  /* A rule the width of the content, not of the section's padding box. */
+  background: linear-gradient(var(--p-line), var(--p-line)) 1rem 0 / calc(100% - 2rem) 1px no-repeat;
+}
+.rules__lede {
+  max-width: 62ch;
+  margin: 1rem 0 0;
+  color: var(--p-muted);
+}
+.rules__list {
+  list-style: none;
+  padding: 0;
+  margin: 2rem 0 0;
+  display: grid;
+  gap: 0.25rem 2.5rem;
+}
+@media (min-width: 720px) {
+  .rules__list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.rules__list li {
+  padding: 0.75rem 0 0.75rem 1.9rem;
+  border-bottom: 1px dashed var(--p-line);
+  position: relative;
+}
+/* A ticked box, the mark a volunteer makes on a walk sheet. */
+.rules__list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.95rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 2px solid var(--p-field);
+  border-radius: 3px;
+  background:
+    linear-gradient(45deg, transparent 45%, var(--p-field) 45% 60%, transparent 60%) 0.1rem 0.25rem / 0.4rem 0.4rem
+      no-repeat,
+    linear-gradient(-45deg, transparent 42%, var(--p-field) 42% 56%, transparent 56%) 0.32rem 0.05rem / 0.5rem 0.6rem
+      no-repeat;
+}
+
+/* ---------------------------------------------------------------- waitlist */
+
+.waitlist {
+  display: grid;
+  gap: 2rem;
+}
+@media (min-width: 1100px) {
+  .waitlist {
+    grid-template-columns: 1fr 1.15fr;
+    gap: 4rem;
+  }
+}
+.waitlist__intro > p {
+  max-width: 48ch;
+  color: var(--p-muted);
+  margin: 1rem 0 0;
+}
+.faq {
+  margin: 2rem 0 0;
+}
+.faq dt {
+  font-weight: 700;
+  margin-top: 1rem;
+}
+.faq dd {
+  margin: 0.15rem 0 0;
+  color: var(--p-muted);
+  max-width: 46ch;
+}
+.waitlist__form,
+.waitlist__done {
+  background: var(--p-sheet);
+  border: 1px solid var(--p-line);
+  border-top: 6px solid var(--p-sign);
+  border-radius: 6px;
+  padding: 1.4rem 1.2rem;
+}
+.waitlist__form {
+  display: grid;
+  gap: 1rem;
+}
+.waitlist__row {
+  display: grid;
+  gap: 1rem;
+}
+@media (min-width: 720px) {
+  .waitlist__row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .waitlist__row:has(.p-field--narrow) {
+    grid-template-columns: 1fr 7rem;
+  }
+}
+.p-field {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.p-field em {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--p-muted);
+}
+.p-field input,
+.p-field select,
+.p-field textarea {
+  font: inherit;
+  font-weight: 400;
+  min-height: var(--tap);
+  padding: 0.5rem 0.7rem 0.4rem;
+  border: 1.5px solid #9fb0aa;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--p-ink);
+}
+.p-field textarea {
+  resize: vertical;
+}
+.p-check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.6rem;
+  align-items: start;
+  font-size: 0.92rem;
+  color: var(--p-muted);
+}
+.p-check input {
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-top: 0.15rem;
+  accent-color: var(--p-field);
+}
+.waitlist__form .p-btn {
+  justify-self: start;
+}
+.waitlist__error {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 4px solid #b3261e;
+  background: #fdecea;
+  color: #7a1913;
+}
+.waitlist__done {
+  align-self: start;
+}
+.waitlist__done h3 {
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+.waitlist__done p {
+  margin: 0.5rem 0 0;
+}
+.waitlist__trap {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.product__foot {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+  border-top: 1px solid var(--p-line);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.92rem;
+  color: var(--p-muted);
+}
+.product__foot p {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- dialogs */
+
+.signin,
+.tour {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  max-height: calc(100dvh - 2rem);
+}
+.signin::backdrop,
+.tour::backdrop {
+  background: rgba(23, 35, 43, 0.42);
+  backdrop-filter: blur(3px);
+}
+.signin {
+  width: min(420px, calc(100vw - 2rem));
+}
+.signin .auth-card {
+  max-width: none;
+  box-shadow: 0 24px 60px -20px rgba(23, 35, 43, 0.55);
+}
+.signin__learn {
+  border-top: 1px solid var(--border);
+  padding-top: 0.9rem;
+  margin: 0.25rem 0 0;
+}
+.signin__learn .p-link {
+  /* The sign-in card keeps the app's own colours and dark mode; only the link style is shared. */
+  color: var(--link);
+  font-weight: 600;
+}
+
+.tour {
+  width: min(1120px, calc(100vw - 1.5rem));
+}
+.tour__inner {
+  position: relative;
+  display: grid;
+  background: var(--p-sheet);
+  border-radius: 10px;
+  overflow: auto;
+  max-height: calc(100dvh - 2rem);
+}
+@media (min-width: 1100px) {
+  /* One fixed size for every step, so moving between a desktop and a phone shot does not jump. */
+  .tour__inner {
+    grid-template-columns: 1fr 340px;
+    height: min(780px, calc(100dvh - 2rem));
+  }
+}
+.tour__shot {
+  margin: 0;
+  background: var(--p-paper);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  min-height: 0;
+}
+.tour__shot img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.tour__shot--desktop img {
+  max-height: 62dvh;
+  border: 1px solid var(--p-line);
+  border-radius: 6px;
+  box-shadow: 0 14px 30px -18px rgba(23, 35, 43, 0.5);
+}
+/* A phone shot is framed like a phone. */
+.tour__shot--phone img {
+  max-height: 62dvh;
+  width: auto;
+  border: 8px solid var(--p-ink);
+  border-radius: 26px;
+}
+@media (min-width: 1100px) {
+  .tour__shot--desktop img,
+  .tour__shot--phone img {
+    max-height: calc(min(780px, 100dvh - 2rem) - 2rem);
+  }
+}
+.tour__text {
+  padding: 1.4rem 1.3rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.tour__count {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--p-route);
+}
+.tour__text h2 {
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1.15;
+  margin: 0;
+}
+/* Focus moves to each step's title so a screen reader reads it; it is not a control, so no ring. */
+.tour__text h2:focus,
+.tour__text h2:focus-visible {
+  outline: none;
+}
+.tour__text p {
+  margin: 0;
+}
+.tour__note {
+  font-size: 0.8rem;
+  color: var(--p-muted);
+}
+.tour__nav {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: auto;
+  padding-top: 0.8rem;
+}
+.tour__dots {
+  display: flex;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+}
+.tour__dots button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.tour__dots button::after {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--p-line);
+}
+.tour__dots button[aria-current='step']::after {
+  background: var(--p-route);
+  transform: scale(1.25);
+}
+.tour__foot {
+  font-size: 0.88rem;
+  color: var(--p-muted);
+}
+.tour__close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: var(--tap);
+  height: var(--tap);
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--p-ink);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
