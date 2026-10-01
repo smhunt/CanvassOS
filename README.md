@@ -638,6 +638,64 @@ diverge.
 </details>
 
 <details>
+<summary><b>Checking production is healthy</b></summary>
+
+[`scripts/health-report.sh`](scripts/health-report.sh) collects the whole picture in one ssh round
+trip and prints it. `./scripts/health-report.sh install` schedules it at 08:00 daily on a Mac and
+raises a notification; it exits non-zero and names what is wrong when a threshold is crossed.
+
+```bash
+./scripts/health-report.sh run       # now
+./scripts/health-report.sh status    # is it scheduled, and the last report
+```
+
+**It is read-only, and that is the contract.** Every remote command reads — `uptime`, `free`, `df`,
+`docker inspect`/`logs`, `aws s3 ls`. Nothing restarts, prunes or deploys. A health check that can
+change what it is checking turns a quiet morning into an outage, so do not add `docker builder
+prune` to it however often the report mentions the build cache. (`staging-sync.sh` bans an ssh leg
+for the opposite reason: it *writes*, so it must not be able to reach production. This one only
+reads. The two rules agree.) The report carries **counts and status only** — never a name, an
+address or a household id; it sits unencrypted on the Mac and is read at a glance.
+
+It also checks the public hostname **from the Mac, not from the box**: the origin can be perfectly
+healthy while the tunnel is down, and that is the failure a canvasser meets first.
+
+**What normal looks like**, measured 2026-09-30, six days after the cutover — the point of writing
+numbers down is that "is 49% a lot?" has no answer without them:
+
+| | Healthy | Worth a look |
+|---|---|---|
+| load average | `0.08`–`0.3` (t3.medium, 2 vCPU) | sustained > 1.5 |
+| memory | ~1.0 GB of 3.8 GB, swap untouched | swap in use at all |
+| disk | 49% of 29 GB | ≥ 75% (`DISK_WARN_PCT`) |
+| container restarts | **0** | any non-zero |
+| API error-level lines | 0 per day | any |
+| HTTP 5xx | 0–2 per day | > 5 (`HTTP5XX_WARN`) |
+| newest db backup | < 24h, **and bigger than the last one** | > 26h, or it shrank |
+
+The backup **size trend is the real check**, not its presence: the campaign keeps canvassing, so
+the dump keeps growing (1,540,890 → 1,592,786 bytes over the first six days). A dump that stops
+growing is what a silently broken backup looks like from the outside, and it looks identical to a
+healthy one if you only check that a file arrived.
+
+**Two things that grow without a cap**, both found by the first run of this report:
+
+- **Docker build cache.** 1.38 GB reclaimable after a week of deploys, and nothing prunes it —
+  `docker builder prune` on the box, by hand, when the report says so.
+- **The nightly photo tarball.** `backup-offsite.sh` re-tars, re-encrypts and re-uploads *every*
+  photo every night, so an immutable 1 MB photograph taken in week one is backed up again every
+  day until the election. At 59 photos that is 55 MB a night and five local copies already
+  outweigh twenty-seven database dumps. See the note in **Sign photos** below.
+
+**One alarm threshold is tuned to a decision that was never taken.** `STALE_HOURS` in
+`staging-sync.sh` is 13, chosen when hourly uploads to S3 were expected. With the nightly-only cron
+that actually runs, the 16:15 refresh sees a 12.75h-old dump — it passes with **15 minutes to
+spare**. Either approve the hourly upload line or raise that threshold to ~20h, which still catches
+a genuinely missed nightly (24.75h at the next 04:15) without crying wolf. An alarm that fires on
+normal operation is one nobody reads.
+</details>
+
+<details>
 <summary><b>Backups and restore</b></summary>
 
 `make backup` runs `pg_dump | gzip | gpg --symmetric --cipher-algo AES256` with `BACKUP_PASSPHRASE`
