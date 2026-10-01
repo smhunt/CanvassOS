@@ -220,7 +220,9 @@ mc-canvass/
 │   │   ├── 004_subscriber_contacts.sql  voter_contact.source; a contact need not be a door on the list
 │   │   ├── 005_sign_request_address.sql sign_address: where the sign was actually asked for
 │   │   ├── 006_public_requests.sql      public_request: website sign-ups and hand-entered requests
-│   │   └── 007_subscriber_link.sql      subscriber_link, match_candidate (the phase 8 matcher)
+│   │   ├── 007_subscriber_link.sql      subscriber_link, match_candidate (the phase 8 matcher)
+│   │   ├── 008_sign_request_cancel.sql  sign.cancelled_*: a request withdrawn, stamped not deleted
+│   │   └── 009_product_waitlist.sql     product_waitlist: other campaigns' CanvassOS enquiries (not voter data)
 │   └── migrate.sh               applies pending migrations, records them in schema_migration
 │
 ├── importer/                    one-shot loader: import.py (stdlib + psycopg), diff.py (the pure re-import
@@ -327,8 +329,8 @@ recorded in the `schema_migration` table that `db/migrate.sh` creates on demand
 together, so a failure leaves nothing half-applied, and "pending" is simply "a file in
 `db/migrations/` whose basename is not a row in that table".
 
-Seven migrations have been applied, `001_signs.sql` through `007_subscriber_link.sql`, and none is
-pending (`make migrate-status` is the authority; this sentence goes stale). They have to be
+The migrations are `001_signs.sql` through `009_product_waitlist.sql`; which of them a given
+database has applied is answered by `make migrate-status`, not by this sentence, which goes stale. They have to be
 applied to `canvass_test` and `canvass_demo` as well, or the test suite and the demo drift out of
 shape — `make demo` does exactly that (`schema.sql` into a fresh database, then `migrate.sh`).
 
@@ -453,6 +455,18 @@ NANP form, email lower-cased — so the same number offered twice in two formats
 index `WHERE consent_gotv AND withdrawn_at IS NULL` is the GOTV send list.
 
 It is still destroyed by `make purge` with everything else.
+
+**The product waitlist (`009_product_waitlist.sql`) is not voter data.** `product_waitlist` holds
+other campaigns — candidates, campaign managers, volunteer coordinators elsewhere — who asked on the
+public marketing page to hear when CanvassOS opens to them: `email` (UNIQUE, trimmed and lower-cased
+by the API), `name`, `role` (`candidate|campaign_manager|volunteer_coordinator|other`, a CHECK, not
+an enum), free-text `municipality`, two-letter `province`, `next_election`
+(`2026`–`2030` or `unsure`), optional `notes`, the verbatim CASL `consent_text`, and
+`created_at`/`updated_at`. It stands entirely apart from the election data: no foreign key to or
+from `household`, `voter` or `voter_contact`, no route joins it to them, and so it is not on the
+importer's `dependents` list either. A repeat sign-up upserts on `email` and refreshes `updated_at`.
+`POST /api/waitlist` (public) writes it; `GET /api/waitlist` (admin) reads it, audited as
+`view_waitlist`.
 
 **Audit.** `audit_log` (bigserial, `at`, nullable `user_id`, `action`, `target`, `detail` jsonb, `ip`)
 is append-only and indexed on `(user_id, at DESC)`. The full action union is in

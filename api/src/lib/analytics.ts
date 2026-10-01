@@ -305,6 +305,10 @@ export const AUDIT_EVENTS: Record<AuditAction, Mapper | null> = {
   auto_accept_match: () => ({ event: 'match_auto_accepted' }),
   apply_match_ledger: (d) => ({ event: 'match_ledger_applied', props: pick({ rows: num(d, 'rows'), relinked: num(d, 'relinked') }) }),
   decide_match: (d) => ({ event: 'match_decided', props: pick({ decision: oneOf(d, 'decision', DECISIONS) }) }),
+  // product waitlist (other campaigns). Deliberately not sent: it is a marketing-page form about
+  // other people's campaigns, not usage of this one, and nothing about it needs a vendor's eyes.
+  waitlist_signup: null,
+  view_waitlist: null,
 };
 
 // ------------------------------------------------------------------------------------ the sink

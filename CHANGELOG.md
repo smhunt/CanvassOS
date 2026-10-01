@@ -6,6 +6,17 @@ All notable changes to CanvassOS are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Product waitlist endpoint.** `POST /api/waitlist` lets other campaigns ask to hear when
+  CanvassOS opens to them: email, name, role, municipality, province, next election year, optional
+  notes and the verbatim consent wording they ticked. Public, rate limited to 5 an hour per address,
+  with a honeypot field; a repeat sign-up updates the same row, and the answer is identical either
+  way so the form cannot be used to check who is already on the list. Admins can read the list at
+  `GET /api/waitlist` (audited as `view_waitlist`). Stored in its own table, `product_waitlist`
+  (migration `009_product_waitlist.sql`), which is not voter data and is never joined to it.
+  Nothing is sent to anyone and nothing reaches analytics.
+
 ### Changed
 
 - **The delivery route's Google Maps links name each stop by its street address** ("282 ELM ST,

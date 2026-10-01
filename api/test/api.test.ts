@@ -1404,6 +1404,147 @@ describe('public sign-up form (unauthenticated)', () => {
   });
 });
 
+describe('product waitlist (other campaigns)', () => {
+  const CONSENT =
+    'Yes, email me when CanvassOS opens to new campaigns. I can unsubscribe at any time.';
+  const wlEmail = (who: string): string => `wl-${who}+${RUN}@example.test`;
+  const valid = (who: string, over: Record<string, unknown> = {}) => ({
+    email: wlEmail(who),
+    name: 'Pat Organiser',
+    role: 'campaign_manager',
+    municipality: 'Strathroy-Caradoc',
+    province: 'ON',
+    next_election: '2026',
+    consent_text: CONSENT,
+    ...over,
+  });
+  // The route allows 5/hour per IP for the whole run, so every test posts from its own address.
+  const post = (payload: unknown, ip: string) =>
+    app.inject({ method: 'POST', url: '/api/waitlist', payload, remoteAddress: ip });
+  const rowFor = (who: string) =>
+    db.query<Record<string, unknown>>(`SELECT * FROM product_waitlist WHERE email = $1`, [wlEmail(who)]);
+
+  after(async () => {
+    const ids = (
+      await db.query<{ id: string }>(`SELECT id FROM product_waitlist WHERE email LIKE $1`, [`wl-%+${RUN}@example.test`])
+    ).rows.map((r) => r.id);
+    if (ids.length > 0) {
+      await db.query(`DELETE FROM audit_log WHERE action = 'waitlist_signup' AND target = ANY($1::text[])`, [ids]);
+      await db.query(`DELETE FROM product_waitlist WHERE id = ANY($1::uuid[])`, [ids]);
+    }
+  });
+
+  it('takes a sign-up with no session, lower-cases the email and keeps the consent wording verbatim', async () => {
+    const res = await post(valid('first', { email: `  WL-First+${RUN}@Example.TEST `, province: 'on', notes: '  ' }), '10.77.0.1');
+    assert.equal(res.statusCode, 202, res.body);
+    assert.deepEqual(res.json(), {
+      ok: true,
+      message: "You're on the list. We'll email you when CanvassOS opens to new campaigns.",
+    });
+    const rows = await rowFor('first');
+    assert.equal(rows.rowCount, 1);
+    const row = rows.rows[0]!;
+    assert.equal(row.email, wlEmail('first'));
+    assert.equal(row.province, 'ON');
+    assert.equal(row.role, 'campaign_manager');
+    assert.equal(row.notes, null, 'a blank note is stored as NULL, not as something somebody said');
+    assert.equal(row.consent_text, CONSENT);
+
+    // Audited without the person in it: category answers only.
+    const a = await db.query<{ user_id: string | null; detail: Record<string, unknown> }>(
+      `SELECT user_id, detail FROM audit_log WHERE action = 'waitlist_signup' AND target = $1`,
+      [row.id],
+    );
+    assert.equal(a.rowCount, 1);
+    assert.equal(a.rows[0]!.user_id, null);
+    assert.deepEqual(a.rows[0]!.detail, { role: 'campaign_manager', province: 'ON', next_election: '2026', has_notes: false });
+    const flat = JSON.stringify(a.rows[0]!.detail);
+    assert.ok(!flat.includes('example.test') && !flat.includes('Pat') && !flat.includes('Strathroy'));
+  });
+
+  it('upserts a repeat sign-up and answers it byte-for-byte the same', async () => {
+    const one = await post(valid('repeat'), '10.77.0.2');
+    const before = (await rowFor('repeat')).rows[0]!;
+    const two = await post(
+      valid('repeat', { name: 'Pat O.', role: 'candidate', next_election: 'unsure', notes: 'Two wards, rural.' }),
+      '10.77.0.2',
+    );
+    assert.equal(one.statusCode, 202);
+    assert.equal(two.statusCode, one.statusCode);
+    assert.equal(two.body, one.body, 'no oracle: a known email gets the same answer as a new one');
+
+    const rows = await rowFor('repeat');
+    assert.equal(rows.rowCount, 1, 'one row per email');
+    const after2 = rows.rows[0]!;
+    assert.equal(after2.id, before.id);
+    assert.equal(after2.name, 'Pat O.');
+    assert.equal(after2.role, 'candidate');
+    assert.equal(after2.next_election, 'unsure');
+    assert.equal(after2.notes, 'Two wards, rural.');
+    assert.equal((after2.created_at as Date).getTime(), (before.created_at as Date).getTime());
+    assert.ok((after2.updated_at as Date).getTime() > (before.updated_at as Date).getTime(), 'updated_at refreshed');
+  });
+
+  it('swallows a honeypot hit without storing it, and answers normally', async () => {
+    const real = await post(valid('honest'), '10.77.0.3');
+    const bot = await post(valid('bot', { website: 'http://spam.example' }), '10.77.0.3');
+    assert.equal(bot.statusCode, 202);
+    assert.equal(bot.body, real.body);
+    assert.equal((await rowFor('bot')).rowCount, 0, 'a honeypot hit stores nothing');
+  });
+
+  it('rejects a bad body with the standard validation envelope', async () => {
+    const res = await post(valid('invalid', { role: 'mayor', province: 'Ontario' }), '10.77.0.4');
+    assert.equal(res.statusCode, 400);
+    const body = res.json() as { error: { code: string; message: string } };
+    assert.equal(body.error.code, 'validation_error');
+    assert.match(body.error.message, /role:/);
+    assert.match(body.error.message, /province:/);
+    assert.equal((await rowFor('invalid')).rowCount, 0);
+
+    const noConsent = await post(valid('invalid', { consent_text: undefined }), '10.77.0.4');
+    assert.equal(noConsent.statusCode, 400, 'the consent wording is required');
+    const badYear = await post(valid('invalid', { next_election: '2031' }), '10.77.0.4');
+    assert.equal(badYear.statusCode, 400);
+  });
+
+  it('is rate limited to 5 an hour per IP', async () => {
+    let last = 0;
+    for (let i = 0; i < 6; i++) {
+      const res = await post(valid('limited'), '10.77.0.5');
+      last = res.statusCode;
+      if (i < 5) assert.equal(last, 202, `attempt ${i + 1}`);
+    }
+    assert.equal(last, 429);
+  });
+
+  it('is admin-only to read, newest first, and the read is audited', async () => {
+    assert.equal((await app.inject({ method: 'GET', url: '/api/waitlist' })).statusCode, 401);
+    assert.equal((await call('GET', '/api/waitlist', volunteerCookie)).statusCode, 403);
+    assert.equal((await call('GET', '/api/waitlist', organizerCookie)).statusCode, 403);
+
+    const res = await call('GET', '/api/waitlist', adminCookie);
+    assert.equal(res.statusCode, 200, res.body);
+    const { waitlist } = res.json() as { waitlist: Array<Record<string, unknown>> };
+    const mine = waitlist.filter((r) => String(r.email).endsWith(`+${RUN}@example.test`));
+    assert.ok(mine.length >= 3);
+    assert.deepEqual(Object.keys(mine[0]!).sort(), [
+      'consent_text', 'created_at', 'email', 'id', 'municipality', 'name', 'next_election', 'notes',
+      'province', 'role', 'updated_at',
+    ]);
+    const times = waitlist.map((r) => new Date(String(r.created_at)).getTime());
+    assert.deepEqual(times, [...times].sort((x, y) => y - x), 'newest first');
+
+    const a = await db.query<{ detail: { n: number } }>(
+      `SELECT a.detail FROM audit_log a JOIN app_user u ON u.id = a.user_id
+        WHERE a.action = 'view_waitlist' AND u.email = $1 ORDER BY a.id DESC LIMIT 1`,
+      [ADMIN_EMAIL],
+    );
+    assert.equal(a.rowCount, 1);
+    assert.equal(a.rows[0]!.detail.n, waitlist.length);
+  });
+});
+
 describe('hand-entered sign requests (source = manual)', () => {
   /** Rows this describe creates, in every source — the unit of cleanup. */
   const cleanup: string[] = [];

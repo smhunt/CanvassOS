@@ -887,6 +887,52 @@ all work on them unchanged — there is no separate table and no migration.
   - `404` for an unknown id.
   - Audit `delete_manual_request`, detail `{ wants, had_household }`.
 
+## Product waitlist (no session to join; admin to read)
+
+Other campaigns asking to hear when CanvassOS opens to them, posted by the marketing page in `web/`
+(same origin, so no CORS). Stored in `product_waitlist` (migration 009), which is **not election
+data**: it has no key to `voter`, `household` or `voter_contact` and is never joined to them. CASL,
+not the MEA, governs it.
+
+- `POST /api/waitlist` → **public, unauthenticated.**
+  ```
+  { email, name, role, municipality, province, next_election, notes?, consent_text, website? }
+  → 202 { ok: true, message: "You're on the list. We'll email you when CanvassOS opens to new campaigns." }
+  ```
+  | Field | Rule |
+  |---|---|
+  | `email` | required, valid email, max 200; trimmed and **lower-cased** before storage (one row per address) |
+  | `name` | required, 1–120 chars |
+  | `role` | `candidate` \| `campaign_manager` \| `volunteer_coordinator` \| `other` |
+  | `municipality` | required free text, 1–120 chars |
+  | `province` | two letters, upper-cased by the API (`on` → `ON`); not checked against a list |
+  | `next_election` | `2026` \| `2027` \| `2028` \| `2029` \| `2030` \| `unsure` (strings) |
+  | `notes` | optional, max 500; blank or `null` is stored as NULL |
+  | `consent_text` | required, 20–1000 chars, the **verbatim** CASL wording shown beside the tick box, stored as given |
+  | `website` | honeypot: leave empty. Anything in it → the same 202, nothing written |
+
+  - **No oracle.** New address, address already on the list, honeypot hit: byte-identical `202`.
+    A repeat sign-up **upserts on email**: it replaces name, role, municipality, province,
+    next_election, notes and consent_text and refreshes `updated_at`; `created_at` is kept.
+  - Validation failure → `400` in the standard envelope, one `path: message` per issue joined by
+    `; `, e.g. `{ "role": "mayor", "province": "Ontario" }` with everything else valid:
+    ```
+    400 { "error": { "code": "validation_error",
+          "message": "role: Invalid enum value. Expected 'candidate' | 'campaign_manager' | 'volunteer_coordinator' | 'other', received 'mayor'; province: a two-letter province or territory code, e.g. ON" } }
+    ```
+    A validation 400 says nothing about our data, so it is safe to be specific.
+  - Rate limited to **5/hour per IP** → `429 { error: { code: "rate_limited", message } }`.
+  - Sends nothing (no email, no analytics event).
+  - Audit `waitlist_signup` (no user id), target = the row id, detail
+    `{ role, province, next_election, has_notes }` — never the email, name, municipality or notes.
+
+- `GET /api/waitlist` → **admin only** (organizer/volunteer `403`, signed out `401`).
+  `{ waitlist: [{ id, email, name, role, municipality, province, next_election, notes, consent_text,
+  created_at, updated_at }] }`, newest `created_at` first, unpaginated. Audit `view_waitlist`,
+  detail `{ n }`.
+
+Neither audit action is forwarded to product analytics (`AUDIT_EVENTS` maps both to `null`).
+
 ## Subscriber link (phase 8)
 
 The campaign website keeps its own sign-up list (Cloudflare D1, double opt-in, unsubscribes). A

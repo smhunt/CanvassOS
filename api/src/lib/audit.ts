@@ -104,7 +104,14 @@ export type AuditAction =
   | 'suggest_match'
   | 'auto_accept_match'
   | 'apply_match_ledger'
-  | 'decide_match';
+  | 'decide_match'
+  // The CanvassOS product waitlist (migration 009): other campaigns asking to hear when the product
+  // opens to them. Not election data and never joined to it. The signup is a NULL-user row like
+  // `public_request` (nobody was signed in); the detail carries only the category answers — role,
+  // province, election year, has_notes — never the email, name, municipality or notes. Reading the
+  // list is an admin read of names and emails, so it is on the record like any other.
+  | 'waitlist_signup'
+  | 'view_waitlist';
 
 export interface AuditEntry {
   userId: string | null;

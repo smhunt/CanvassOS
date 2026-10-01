@@ -31,6 +31,7 @@ import { subscribeRoutes } from './routes/subscribe.js';
 import { SubscriberSync } from './subscriber/sync.js';
 import { assignmentRoutes, turfRoutes } from './routes/turfs.js';
 import { userRoutes } from './routes/users.js';
+import { waitlistRoutes } from './routes/waitlist.js';
 import { voterContactRoutes } from './routes/voter-contacts.js';
 
 declare module 'fastify' {
@@ -235,6 +236,8 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       // than under it because it is the one messaging route an anonymous visitor may call.
       await api.register(subscribeRoutes);
       await api.register(publicRequestRoutes);
+      // Public, no session: the CanvassOS marketing page's "tell me when it opens" form.
+      await api.register(waitlistRoutes);
       await api.register(auditRoutes);
       await api.register(analyticsRoutes);
     },
