@@ -529,6 +529,15 @@
   margin-top: 0.15rem;
   accent-color: var(--p-field);
 }
+.waitlist__sender {
+  margin: -0.4rem 0 0;
+  font-size: 0.85rem;
+  color: var(--p-muted);
+}
+.waitlist__sender a,
+.product__foot a {
+  color: inherit;
+}
 .waitlist__form .p-btn {
   justify-self: start;
 }

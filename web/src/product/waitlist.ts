@@ -33,9 +33,16 @@ export const PROVINCES = ['ON', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 
  * The words beside the tick box. The form renders this string and posts the same string as
  * `consent_text`, so the stored record says exactly what the person agreed to.
  */
+/**
+ * Who is asking for consent, as CASL requires a consent request to say: a name, and a way to reach
+ * them. CASL also requires a mailing address; set MAILING_ADDRESS before promoting the page.
+ */
+export const SENDER = { name: 'Ecoworks', email: 'getstarted@ecoworks.ca' } as const;
+export const MAILING_ADDRESS = '';
+
 export const CONSENT_TEXT =
-  'Email me when CanvassOS opens to new campaigns, and occasionally before then about how it is coming along. ' +
-  'I can unsubscribe at any time.';
+  `Email me from ${SENDER.name} (${SENDER.email}) when CanvassOS opens to new campaigns, and occasionally ` +
+  'before then about how it is coming along. I can unsubscribe at any time.';
 
 export type WaitlistRequest = {
   email: string;

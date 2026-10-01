@@ -1,5 +1,15 @@
 import { forwardRef, useState, type FormEvent } from 'react';
-import { CONSENT_TEXT, ELECTIONS, PROVINCES, ROLES, joinWaitlist, outcomeText, type WaitlistRequest } from './waitlist';
+import {
+  CONSENT_TEXT,
+  ELECTIONS,
+  MAILING_ADDRESS,
+  SENDER,
+  PROVINCES,
+  ROLES,
+  joinWaitlist,
+  outcomeText,
+  type WaitlistRequest,
+} from './waitlist';
 
 type Fields = Omit<WaitlistRequest, 'consent_text'>;
 
@@ -161,6 +171,10 @@ export const WaitlistForm = forwardRef<HTMLInputElement>(function WaitlistForm(_
         <input type="checkbox" required checked={consent} onChange={(e) => setConsent(e.target.checked)} />
         <span>{CONSENT_TEXT}</span>
       </label>
+      <p className="waitlist__sender">
+        CanvassOS is made by {SENDER.name}. Questions: <a href={`mailto:${SENDER.email}`}>{SENDER.email}</a>
+        {MAILING_ADDRESS && <>&nbsp;· {MAILING_ADDRESS}</>}
+      </p>
       {error && (
         <p className="waitlist__error" role="alert">
           {error}

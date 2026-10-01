@@ -3,6 +3,7 @@ import './product.css';
 import { useRef, type RefObject } from 'react';
 import { Wordmark } from '../components/Shell';
 import { goToWaitlist } from './goToWaitlist';
+import { SENDER } from './waitlist';
 import { TurfHero } from './TurfHero';
 import { WaitlistForm } from './WaitlistForm';
 
@@ -173,7 +174,10 @@ export function ProductSite({ onSignIn, onTour, waitlistField }: Props) {
       </main>
 
       <footer className="product__foot">
-        <p>Built for, and used every day on, a 2026 mayoral campaign in Middlesex Centre, Ontario.</p>
+        <p>
+          Built for, and used every day on, a 2026 mayoral campaign in Middlesex Centre, Ontario. Made by {SENDER.name}:{' '}
+          <a href={`mailto:${SENDER.email}`}>{SENDER.email}</a>
+        </p>
         <button type="button" className="p-link" onClick={onSignIn}>
           Volunteer or organiser? Sign in
         </button>

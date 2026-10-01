@@ -66,6 +66,13 @@ describe('joinWaitlist', () => {
   });
 });
 
+describe('CONSENT_TEXT', () => {
+  it('names who is asking and how to reach them, as CASL requires', () => {
+    assert.match(CONSENT_TEXT, /Ecoworks \(getstarted@ecoworks\.ca\)/);
+    assert.ok(CONSENT_TEXT.length >= 20 && CONSENT_TEXT.length <= 1000, 'the API accepts 20 to 1000 characters');
+  });
+});
+
 describe('outcomeText', () => {
   it('gives every failure a sentence a person can act on', () => {
     assert.equal(outcomeText({ kind: 'invalid', message: 'email is not valid' }), 'email is not valid');
