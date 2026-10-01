@@ -583,6 +583,16 @@
 .product__foot p {
   margin: 0;
 }
+.product__build {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+}
+.product__commit {
+  font-family: var(--mono);
+}
 
 /* ---------------------------------------------------------------- dialogs */
 

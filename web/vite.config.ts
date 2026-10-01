@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
@@ -22,6 +23,24 @@ const https =
   existsSync(certPath) && existsSync(keyPath)
     ? { cert: readFileSync(certPath), key: readFileSync(keyPath) }
     : undefined;
+
+// What this build is, for the footer (src/build-info.ts): the GIT_COMMIT / BUILD_TIME build args
+// inside Docker (set by the Makefile), git itself in dev, "unknown" when neither is there.
+function fromGit(args: string): string | null {
+  try {
+    return (
+      execSync(`git ${args}`, { stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString()
+        .trim() || null
+    );
+  } catch {
+    return null;
+  }
+}
+const BUILD = {
+  commit: process.env.GIT_COMMIT?.trim() || fromGit('rev-parse --short HEAD') || 'unknown',
+  builtAt: process.env.BUILD_TIME?.trim() || new Date().toISOString(),
+};
 
 /** Files copied verbatim from public/ that belong to the app shell (not part of the Rollup bundle). */
 const PUBLIC_SHELL_FILES = [
@@ -86,10 +105,17 @@ self.addEventListener('fetch', (event) => {
 
 export default defineConfig({
   plugins: [react(), appShellServiceWorker()],
+  define: { __BUILD__: JSON.stringify(BUILD) },
   server: { port: WEB_PORT, strictPort: true, host: true, https, proxy: API_PROXY },
   // package.json's `preview` script passes --port explicitly; keep the default here in step
   // with it so the two cannot disagree when CANVASS_WEB_PORT is set.
-  preview: { port: Number(process.env.CANVASS_PREVIEW_PORT ?? 4173), strictPort: true, host: true, https, proxy: API_PROXY },
+  preview: {
+    port: Number(process.env.CANVASS_PREVIEW_PORT ?? 4173),
+    strictPort: true,
+    host: true,
+    https,
+    proxy: API_PROXY,
+  },
   build: {
     target: 'es2020',
     sourcemap: false,

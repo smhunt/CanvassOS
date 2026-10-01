@@ -32,7 +32,7 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
 - `PATCH /api/users/:id` `{ role?, active?, name? }` → `{ user }`. Cannot deactivate the last admin.
 
 ## Reference data
-- `GET /api/meta` → `{ wards: [{ ward, n_households, n_voters }], communities: [{ community, n_households, n_voters }], import: { id, source_label, finished_at, n_voters, n_households }, boundary: GeoJSON Polygon }`
+- `GET /api/meta` → `{ wards: [{ ward, n_households, n_voters }], communities: [{ community, n_households, n_voters }], import: { id, source_label, finished_at, n_voters, n_households }, boundary: GeoJSON Polygon }, build: { version, commit, built_at, env: 'production' | 'demo' | 'development' } }` (the `build` block is what the footer shows; `api/src/build.ts`)
   (boundary served from `data/mc_boundary.json`.)
 
 ## Households
@@ -994,7 +994,7 @@ candidates: [{ id, voter_id, natural_key, household_id, voter_name, household_ad
 - `GET /api/audit?limit=200&before=<id>` → `{ entries: [...] }`
 
 ## Health
-- `GET /api/health` → `{ ok: true, db: true, import_id }` (no auth; used by compose healthcheck).
+- `GET /api/health` → `{ ok: true, db: true, import_id, version, commit, env }` (no auth; used by the compose healthcheck and read by the deploy workflow to show what it put live; `built_at` is only on the signed-in `/api/meta`).
   Returns `503 { ok: false, db: false, import_id: null }` when the database is unreachable — note this is
   the plain shape, not the `{ error: ... }` envelope, because the container healthcheck only reads the status code.
 

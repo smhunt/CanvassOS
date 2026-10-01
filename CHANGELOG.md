@@ -4,10 +4,20 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.8.0] - 2026-10-01
 
 ### Added
 
+- **What is running, in the footer.** Every signed-in screen (and the product page) ends with the
+  version, the environment (production, demo or development, derived in `api/src/build.ts`: the
+  `canvass_demo` database means demo; `APP_ENV` overrides; a dev domain means development; else the
+  image's `NODE_ENV`), the host, the commit the web and the API were each built from, and the build
+  time, with a warning when the two commits or versions differ. Tapping the version opens the same
+  Changelog / How it works / Roadmap notes as Account. `GET /api/health` now carries `version`,
+  `commit` and `env` (so a deploy shows what it put live) and `GET /api/meta` carries `build` with
+  `built_at` too. The commit and time reach the images as `GIT_COMMIT` / `BUILD_TIME` build args,
+  set by the Makefile from git and passed through `docker-compose.yml`. `web/src/version.test.ts`
+  keeps `APP_VERSION`, both `package.json` files and this file on one version, release for release.
 - **A product page behind the sign-in dialog.** Signed out, `/login` now shows what CanvassOS is
   (the canvassing day, drive mode for rural roads, the *Municipal Elections Act* safeguards) with
   sign-in as a modal dialog over it. Escape or "Learn about CanvassOS" closes the dialog and "Sign

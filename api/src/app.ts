@@ -18,6 +18,7 @@ import { analyticsRoutes } from './routes/analytics.js';
 import { auditRoutes } from './routes/audit.js';
 import { authRoutes } from './routes/auth.js';
 import { contactRoutes } from './routes/contacts.js';
+import { loadBuildInfo, type BuildInfo } from './build.js';
 import { healthRoutes } from './routes/health.js';
 import { householdRoutes } from './routes/households.js';
 import { messagingRoutes } from './routes/messaging.js';
@@ -38,6 +39,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     db: Db;
     config: Config;
+    /** Version, commit, build time and environment, read once at boot (see build.ts). */
+    build: BuildInfo;
     /**
      * The only outbound HTTP the API makes (Street View imagery). Decorated rather than called as
      * a global so the test suite can hand in a stub — no test ever makes a real, billed request.
@@ -113,6 +116,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
   const db = opts.db ?? createPool(config.DATABASE_URL);
   app.decorate('db', db);
   app.decorate('config', config);
+  app.decorate('build', loadBuildInfo(config));
   // Bound to globalThis explicitly: an unbound `fetch` reference throws "Illegal invocation".
   app.decorate('httpFetch', opts.fetchImpl ?? ((input, init) => globalThis.fetch(input, init)));
   if (!opts.db) {

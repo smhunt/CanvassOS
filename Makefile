@@ -6,6 +6,9 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose
+# What is running, for the app's footer: docker-compose.yml passes these to the api and web builds.
+export GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+export BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 # Tunnel mode: Caddy on 127.0.0.1:3031, TLS at the Cloudflare edge (see README).
 COMPOSE_TUNNEL := docker compose -f docker-compose.yml -f docker-compose.tunnel.yml
 # Adds a loopback-only database port for the local dev API and the test suite.

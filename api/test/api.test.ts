@@ -23,6 +23,7 @@
  * other contacts exist. Point it at a dedicated test database, not a shared one.
  */
 import assert from 'node:assert/strict';
+import { deriveEnv } from '../src/build.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
@@ -879,10 +880,40 @@ describe('health', () => {
   it('reports db and import id without auth', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' });
     assert.equal(res.statusCode, 200);
-    const b = res.json() as { ok: boolean; db: boolean; import_id: number };
+    const b = res.json() as { ok: boolean; db: boolean; import_id: number; version: string; commit: string; env: string; built_at?: string };
     assert.equal(b.ok, true);
     assert.equal(b.db, true);
     assert.ok(b.import_id >= 1);
+    // What is running, so a deploy can show what it put live. The build time stays behind sign-in.
+    assert.match(b.version, /^\d+\.\d+\.\d+$/);
+    assert.ok(b.commit.length > 0);
+    assert.ok(['production', 'demo', 'development'].includes(b.env), b.env);
+    assert.equal(b.built_at, undefined);
+  });
+});
+
+describe('build info', () => {
+  it('is on /api/meta with the build time, and matches /api/health', async () => {
+    const [meta, health] = await Promise.all([
+      app.inject({ method: 'GET', url: '/api/meta', headers: { cookie: adminCookie } }),
+      app.inject({ method: 'GET', url: '/api/health' }),
+    ]);
+    const b = (meta.json() as { build: { version: string; commit: string; built_at: string; env: string } }).build;
+    const h = health.json() as { version: string; commit: string; env: string };
+    assert.deepEqual({ version: b.version, commit: b.commit, env: b.env }, { version: h.version, commit: h.commit, env: h.env });
+    assert.ok(!Number.isNaN(Date.parse(b.built_at)), b.built_at);
+  });
+
+  it('derives the environment: the demo database wins, then APP_ENV, then a dev domain, then NODE_ENV', () => {
+    const base = { DATABASE_URL: 'postgresql://u:p@db:5432/canvass', DOMAIN: 'canvass.webarchitecture.ca', APP_ENV: undefined };
+    assert.equal(deriveEnv(base, 'production'), 'production');
+    assert.equal(deriveEnv(base, undefined), 'development');
+    assert.equal(deriveEnv({ ...base, DOMAIN: 'dev.ecoworks.ca' }, 'production'), 'development');
+    assert.equal(deriveEnv({ ...base, DOMAIN: 'localhost' }, 'production'), 'development');
+    assert.equal(deriveEnv({ ...base, APP_ENV: 'development' }, 'production'), 'development');
+    assert.equal(deriveEnv({ ...base, DOMAIN: 'dev.ecoworks.ca', APP_ENV: 'production' }, undefined), 'production');
+    assert.equal(deriveEnv({ ...base, DATABASE_URL: 'postgresql://u:p@localhost:5443/canvass_demo', APP_ENV: 'production' }, 'production'), 'demo');
+    assert.equal(deriveEnv({ ...base, DATABASE_URL: 'postgresql://u:p@localhost:5443/canvass_demo?sslmode=disable' }, 'production'), 'demo');
   });
 });
 

@@ -1,6 +1,8 @@
 import '@fontsource-variable/overpass/wght.css';
 import './product.css';
-import { useRef, type RefObject } from 'react';
+import { useRef, useState, type RefObject } from 'react';
+import { WEB_BUILD } from '../build-info';
+import { APP_VERSION, ChangelogModal, type AboutTab } from '../components/changelog-modal';
 import { Wordmark } from '../components/Shell';
 import { goToWaitlist } from './goToWaitlist';
 import { SENDER } from './waitlist';
@@ -21,6 +23,7 @@ type Props = {
  */
 export function ProductSite({ onSignIn, onTour, waitlistField }: Props) {
   const localField = useRef<HTMLInputElement>(null);
+  const [about, setAbout] = useState<AboutTab | null>(null);
   const field = waitlistField ?? localField;
 
   const toWaitlist = () => goToWaitlist(field);
@@ -178,10 +181,28 @@ export function ProductSite({ onSignIn, onTour, waitlistField }: Props) {
           Built for, and used every day on, a 2026 mayoral campaign in Middlesex Centre, Ontario. Made by {SENDER.name}:{' '}
           <a href={`mailto:${SENDER.email}`}>{SENDER.email}</a>
         </p>
+        <p className="product__build">
+          <button type="button" className="p-link" onClick={() => setAbout('changelog')}>
+            CanvassOS v{APP_VERSION}
+          </button>
+          <span className="product__commit">{WEB_BUILD.commit}</span>
+          <button type="button" className="p-link" onClick={() => setAbout('how')}>
+            How it works
+          </button>
+          <button type="button" className="p-link" onClick={() => setAbout('roadmap')}>
+            Roadmap
+          </button>
+        </p>
         <button type="button" className="p-link" onClick={onSignIn}>
           Volunteer or organiser? Sign in
         </button>
       </footer>
+      <ChangelogModal
+        open={about !== null}
+        tab={about ?? 'changelog'}
+        onTab={setAbout}
+        onClose={() => setAbout(null)}
+      />
     </div>
   );
 }

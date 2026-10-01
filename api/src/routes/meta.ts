@@ -39,7 +39,7 @@ async function loadBoundary(path: string, log: { warn: (o: unknown, m: string) =
   }
 }
 
-/** GET /api/meta → wards, communities, latest import, boundary polygon. Any logged-in role. */
+/** GET /api/meta → wards, communities, latest import, boundary polygon, and the build. Any logged-in role. */
 export const metaRoutes: FastifyPluginAsync = async (app) => {
   const boundary = await loadBoundary(app.config.BOUNDARY_PATH, app.log);
 
@@ -61,6 +61,6 @@ export const metaRoutes: FastifyPluginAsync = async (app) => {
          FROM import_run WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1`,
       ),
     ]);
-    return { wards, communities, import: imp ?? null, boundary };
+    return { wards, communities, import: imp ?? null, boundary, build: app.build };
   });
 };

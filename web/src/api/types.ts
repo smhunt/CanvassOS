@@ -22,6 +22,8 @@ export interface Meta {
   communities: { community: string; n_households: number; n_voters: number }[];
   import: { id: number; source_label: string; finished_at: string; n_voters: number; n_households: number } | null;
   boundary: Polygon | MultiPolygon | null;
+  /** What the API is running (see api/src/build.ts); shown in the footer beside the web's own. */
+  build: { version: string; commit: string; built_at: string; env: 'production' | 'demo' | 'development' };
 }
 
 export type Quality = 'good' | 'approx' | 'legal' | 'check';

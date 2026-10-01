@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.7.0';
+export const APP_VERSION = '1.8.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,16 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.8.0',
+    date: '2026-10-01',
+    changes: [
+      'The bottom of every screen now says what is running: the version, whether this is production, the demo or a development copy, which commit the web and the API were each built from, and when. Tap the version for these notes, the guide and the roadmap.',
+      'Signed out, the sign-in page shows what CanvassOS is, with a screenshot tour taken from the demo\u2019s invented residents and a waitlist for other campaigns. Signing in works exactly as before.',
+      'The delivery route\u2019s Google Maps links name each stop by its street address, so the Maps app lists addresses instead of "Dropped pin". Still never a name.',
+      'A usage count sent at sign-out was being sent after the sign-out, too late to arrive. It now goes first.',
+    ],
+  },
   {
     version: '1.7.0',
     date: '2026-09-29',
@@ -77,7 +87,7 @@ export const CHANGELOG: Release[] = [
     changes: [
       'The app now runs on an always-on server instead of the office Mac, so it stays reachable when that machine sleeps, reboots or leaves the network.',
       'Backups now run every night on their own and are copied somewhere other than the server they came from, encrypted the whole way.',
-      'Tightened how a visitor\'s address is recorded in the access log — that log is the record the Municipal Elections Act requires the campaign to keep.',
+      "Tightened how a visitor's address is recorded in the access log — that log is the record the Municipal Elections Act requires the campaign to keep.",
     ],
   },
   {
@@ -131,9 +141,7 @@ export const CHANGELOG: Release[] = [
   {
     version: '0.5.3',
     date: '2026-09-11',
-    changes: [
-      'Screens now show a placeholder shaped like the content that is loading, instead of a bare spinner.',
-    ],
+    changes: ['Screens now show a placeholder shaped like the content that is loading, instead of a bare spinner.'],
   },
   {
     version: '0.5.2',
@@ -338,6 +346,12 @@ export const HOW_IT_WORKS: HowItWorksStep[] = [
     icon: '📲',
   },
   {
+    title: 'See what is running',
+    description:
+      'The bottom of every screen says which version this is, whether it is production, the demo or a development copy, and which commit the web and the API were built from. If those two differ, it says so. Tap the version for the changelog, this guide and the roadmap.',
+    icon: '🏷️',
+  },
+  {
     title: 'The rules you are agreeing to',
     description:
       'The voters list is personal information supplied under the Ontario Municipal Elections Act. Use it for this campaign and nothing else. Never copy, photograph, export or forward the list, and never merge it into another contact list. Every sign-in, search and household view is written to an audit log. The whole database is destroyed after election day.',
@@ -378,7 +392,11 @@ export const ROADMAP: RoadmapGroup[] = [
       { label: 'Turfs cut from a list of streets, with doors in walking order', priority: 'high', done: true },
       { label: 'Assignments — turf to volunteer, with open / in progress / done', priority: 'high', done: true },
       { label: 'Door screen: one-thumb result buttons, support, flags and notes', priority: 'high', done: true },
-      { label: 'Volunteers scoped to their assigned turfs, with voter names at the door', priority: 'high', done: true },
+      {
+        label: 'Volunteers scoped to their assigned turfs, with voter names at the door',
+        priority: 'high',
+        done: true,
+      },
       { label: 'Latest-status colouring on the map', priority: 'medium', done: true },
     ],
   },
@@ -395,9 +413,21 @@ export const ROADMAP: RoadmapGroup[] = [
     category: 'Shipped — Phase 3: field hardening',
     icon: '✅',
     items: [
-      { label: 'Works offline: results queue on the phone and sync when you get signal back', priority: 'high', done: true },
-      { label: 'Your assigned turf is cached, so the door list works with no connection', priority: 'high', done: true },
-      { label: 'Walking order along the street, and nearest-first ordering from your GPS', priority: 'high', done: true },
+      {
+        label: 'Works offline: results queue on the phone and sync when you get signal back',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'Your assigned turf is cached, so the door list works with no connection',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'Walking order along the street, and nearest-first ordering from your GPS',
+        priority: 'high',
+        done: true,
+      },
       { label: 'Printable paper turf sheet, for a dead battery or no signal at all', priority: 'medium', done: true },
       { label: 'Add to home screen, so it opens like an app', priority: 'medium', done: true },
       { label: 'Street-level image of a door — optional, off unless a key is configured', priority: 'low', done: true },
@@ -407,10 +437,22 @@ export const ROADMAP: RoadmapGroup[] = [
     category: 'Shipped — drive mode, for the concession roads',
     icon: '✅',
     items: [
-      { label: 'The next door ahead of the vehicle, not the nearest — with distance and side of the road', priority: 'high', done: true },
-      { label: 'Reads the next door aloud and keeps the screen awake, so the phone is never touched while moving', priority: 'high', done: true },
+      {
+        label: 'The next door ahead of the vehicle, not the nearest — with distance and side of the road',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'Reads the next door aloud and keeps the screen awake, so the phone is never touched while moving',
+        priority: 'high',
+        done: true,
+      },
       { label: 'Never speaks a name, whatever the on-screen toggle says', priority: 'high', done: true },
-      { label: 'Explains itself aloud on first use, with a help button that repeats it', priority: 'medium', done: true },
+      {
+        label: 'Explains itself aloud on first use, with a help button that repeats it',
+        priority: 'medium',
+        done: true,
+      },
       { label: 'Choose the voice it speaks in, from Account', priority: 'low', done: true },
       { label: 'The same help button and spoken explanation on every other screen', priority: 'medium', done: true },
       { label: 'Road test on a real concession road', priority: 'high' },
@@ -421,19 +463,47 @@ export const ROADMAP: RoadmapGroup[] = [
     icon: '✅',
     items: [
       { label: 'Tag more than one person at a door in a single visit', priority: 'high', done: true },
-      { label: 'Collect a phone number or email at the door, with consent recorded per purpose', priority: 'high', done: true },
-      { label: 'A withdrawal is stamped and kept, never deleted — that record is the proof', priority: 'high', done: true },
+      {
+        label: 'Collect a phone number or email at the door, with consent recorded per purpose',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'A withdrawal is stamped and kept, never deleted — that record is the proof',
+        priority: 'high',
+        done: true,
+      },
     ],
   },
   {
     category: 'Shipped — Phase 5: messaging',
     icon: '✅',
     items: [
-      { label: 'SMS and email to electors who opted in — SMS first, email as the fallback', priority: 'high', done: true },
-      { label: 'Nobody is messaged without an explicit yes; STOP is honoured before the next send', priority: 'high', done: true },
-      { label: 'Sending window and weekend hours enforced in code (CRTC), not left to whoever clicks', priority: 'high', done: true },
-      { label: 'Send it to yourself first, then approve by typing a word — two gates before anything goes out', priority: 'high', done: true },
-      { label: 'A drip across the day, because a Canadian long code is throttled and the excess fails silently', priority: 'high', done: true },
+      {
+        label: 'SMS and email to electors who opted in — SMS first, email as the fallback',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'Nobody is messaged without an explicit yes; STOP is honoured before the next send',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'Sending window and weekend hours enforced in code (CRTC), not left to whoever clicks',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'Send it to yourself first, then approve by typing a word — two gates before anything goes out',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'A drip across the day, because a Canadian long code is throttled and the excess fails silently',
+        priority: 'high',
+        done: true,
+      },
     ],
   },
   {
@@ -441,9 +511,17 @@ export const ROADMAP: RoadmapGroup[] = [
     icon: '✅',
     items: [
       { label: 'Every lawn sign and every outstanding request on one map', priority: 'high', done: true },
-      { label: 'Turf boundaries on the main map — yours, or everyone\u2019s with yours highlighted', priority: 'high', done: true },
+      {
+        label: 'Turf boundaries on the main map — yours, or everyone\u2019s with yours highlighted',
+        priority: 'high',
+        done: true,
+      },
       { label: 'Open the turf you were last in, and switch turfs from a drawer', priority: 'medium', done: true },
-      { label: 'A turf built from streets gets an approximate outline drawn round its doors', priority: 'low', done: true },
+      {
+        label: 'A turf built from streets gets an approximate outline drawn round its doors',
+        priority: 'low',
+        done: true,
+      },
       { label: 'Tap a boundary on the map to open that turf', priority: 'medium', done: true },
       { label: 'Print the paper sheet straight from the turf drawer', priority: 'medium', done: true },
     ],
@@ -452,17 +530,32 @@ export const ROADMAP: RoadmapGroup[] = [
     category: 'Shipped — why part of the list cannot be reached',
     icon: '✅',
     items: [
-      { label: 'A report separating what blocks a door-knock from what only blocks the post', priority: 'high', done: true },
+      {
+        label: 'A report separating what blocks a door-knock from what only blocks the post',
+        priority: 'high',
+        done: true,
+      },
       { label: 'Written guidance for each reason, and which ward to look at first', priority: 'high', done: true },
-      { label: 'Optional AI advice written from the counts alone — no name or address ever leaves', priority: 'medium', done: true },
+      {
+        label: 'Optional AI advice written from the counts alone — no name or address ever leaves',
+        priority: 'medium',
+        done: true,
+      },
     ],
   },
   {
     category: 'Next — reaching people who are not at the door',
     icon: '📣',
     items: [
-      { label: 'Geographically targeted ads for the rural communities — Meta, Instagram and whichever others accept political advertising in Canada', priority: 'high' },
-      { label: 'Census data by neighbourhood (not by person) to decide which streets to walk first', priority: 'medium' },
+      {
+        label:
+          'Geographically targeted ads for the rural communities — Meta, Instagram and whichever others accept political advertising in Canada',
+        priority: 'high',
+      },
+      {
+        label: 'Census data by neighbourhood (not by person) to decide which streets to walk first',
+        priority: 'medium',
+      },
     ],
   },
   {
@@ -479,18 +572,61 @@ export const ROADMAP: RoadmapGroup[] = [
     category: 'Shipped — taking a newer voters list',
     icon: '✅',
     items: [
-      { label: 'Load an updated list in place, keeping every contact, sign, consent record and turf', priority: 'high', done: true },
-      { label: 'Preview exactly what a new list would change before anything is written', priority: 'high', done: true },
-      { label: 'People at a new address are flagged as possible moves, never merged automatically', priority: 'medium', done: true },
+      {
+        label: 'Load an updated list in place, keeping every contact, sign, consent record and turf',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'Preview exactly what a new list would change before anything is written',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'People at a new address are flagged as possible moves, never merged automatically',
+        priority: 'medium',
+        done: true,
+      },
+    ],
+  },
+  {
+    category: 'Shipped — opening CanvassOS to other campaigns',
+    icon: '✅',
+    items: [
+      {
+        label: 'A product page behind the sign-in dialog, with a screenshot tour that blurs every name and address',
+        priority: 'high',
+        done: true,
+      },
+      {
+        label: 'A waitlist for other campaigns, with the consent wording stored exactly as shown',
+        priority: 'high',
+        done: true,
+      },
+      { label: 'A screen in the admin to read the waitlist', priority: 'medium' },
+      { label: 'Pricing, and what a second campaign needs to get started', priority: 'high' },
     ],
   },
   {
     category: 'Planned — Phase 4: reporting and admin',
     icon: '📈',
     items: [
+      {
+        label:
+          'What is running, in the footer: version, environment, commit and build time, with the notes one tap away',
+        priority: 'medium',
+        done: true,
+      },
       { label: 'Coverage and support reports by ward, community, turf and day', priority: 'high', done: true },
-      { label: 'CSV export with an audit entry for every download — deferred on purpose: every export is another copy of the list leaving the system', priority: 'low' },
-      { label: 'Aerial imagery layer from the county GIS — current, free, and covers the rural roads', priority: 'low' },
+      {
+        label:
+          'CSV export with an audit entry for every download — deferred on purpose: every export is another copy of the list leaving the system',
+        priority: 'low',
+      },
+      {
+        label: 'Aerial imagery layer from the county GIS — current, free, and covers the rural roads',
+        priority: 'low',
+      },
     ],
   },
 ];
@@ -549,7 +685,16 @@ export function ChangelogModal({ open, tab, onTab, onClose }: Props) {
             About CanvassOS <span className="muted">v{APP_VERSION}</span>
           </h2>
           <button type="button" className="btn btn--icon" onClick={onClose} aria-label="Close about this app">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <line x1="5" y1="5" x2="19" y2="19" />
               <line x1="19" y1="5" x2="5" y2="19" />
             </svg>
@@ -574,7 +719,13 @@ export function ChangelogModal({ open, tab, onTab, onClose }: Props) {
           ))}
         </div>
 
-        <div className="modal__body" id={`about-panel-${tab}`} role="tabpanel" aria-labelledby={`about-tab-${tab}`} tabIndex={0}>
+        <div
+          className="modal__body"
+          id={`about-panel-${tab}`}
+          role="tabpanel"
+          aria-labelledby={`about-tab-${tab}`}
+          tabIndex={0}
+        >
           {tab === 'changelog' && <ChangelogPanel />}
           {tab === 'how' && <HowItWorksPanel />}
           {tab === 'roadmap' && <RoadmapPanel />}
@@ -590,7 +741,8 @@ function ChangelogPanel() {
       {CHANGELOG.map((r) => (
         <section key={r.version} className="about__block">
           <h3 className="about__title">
-            <span className="tag tag--mini tag--neutral mono">v{r.version}</span> <span className="muted small">{r.date}</span>
+            <span className="tag tag--mini tag--neutral mono">v{r.version}</span>{' '}
+            <span className="muted small">{r.date}</span>
           </h3>
           <ul className="about__list">
             {r.changes.map((c) => (
@@ -652,7 +804,9 @@ function RoadmapPanel() {
           </ul>
         </section>
       ))}
-      <p className="muted small">Phases follow the build plan in prompt_plan.md. Dates depend on how fast the doors get knocked.</p>
+      <p className="muted small">
+        Phases follow the build plan in prompt_plan.md. Dates depend on how fast the doors get knocked.
+      </p>
     </div>
   );
 }

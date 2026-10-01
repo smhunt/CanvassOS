@@ -705,10 +705,10 @@ Summary only — [`../API.md`](../API.md) is the contract.
 
 | Group | Prefix | Minimum role | Notes |
 |---|---|---|---|
-| Health | `/api/health` | none | `{ ok, db, import_id }`; the compose healthcheck. 503 when the DB is down |
+| Health | `/api/health` | none | `{ ok, db, import_id, version, commit, env }`; the compose healthcheck, and what a deploy prints. 503 when the DB is down |
 | Auth | `/api/auth/*` | none / any | `login`, `logout`, `me`, `accept-invite`, `change-password`. `login` and `accept-invite` are rate-limited 10/min/IP |
 | Users | `/api/users*` | list: organizer · invite/reinvite/patch: admin | Invite tokens are stored sha256-hashed; the raw token appears only in `invite_url` |
-| Reference | `/api/meta` | any | wards, communities, latest import, and the municipal boundary polygon read once at boot from `BOUNDARY_PATH` |
+| Reference | `/api/meta` | any | wards, communities, latest import, the municipal boundary polygon read once at boot from `BOUNDARY_PATH`, and `build` (version, commit, build time, environment) for the footer |
 | Households | `/api/households/*` | `points`: any · `:id` and `:id/streetview`: any (**turf-scoped**) · `legal`: organizer | `points` returns `application/geo+json`, all matching households in one payload, `Cache-Control: private, max-age=60`. `:id/streetview` is image bytes, `503 streetview_disabled` when no key is configured, `404 no_imagery` where there is no photo — see above |
 | Search | `/api/search` | organizer | trigram + substring over `voter.full_name` and `household.address`. Audited |
 | Streets | `/api/streets` | organizer | one row per street × ward × community; the turf builder's input |

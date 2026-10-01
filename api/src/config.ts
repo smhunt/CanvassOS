@@ -18,6 +18,9 @@ const schema = z.object({
     .string()
     .min(32, 'SESSION_SECRET must be at least 32 characters (used to sign the session cookie)'),
   DOMAIN: z.string().min(1).default('localhost'),
+  // Which environment this is, for the footer. Normally derived (see build.ts); set it only when
+  // the derivation is wrong, e.g. `development` for the full Docker stack on a laptop.
+  APP_ENV: z.enum(['production', 'demo', 'development']).optional(),
   ADMIN_EMAIL: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().email().optional()),
   ADMIN_PASSWORD: optionalSecret(10),
   PORT: z.coerce.number().int().positive().default(3000),

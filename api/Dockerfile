@@ -19,6 +19,10 @@ RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 # ---- runtime --------------------------------------------------------------------------------
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production PORT=3000
+# What is running, for the footer: set by the Makefile (`make restart-tunnel`, `make up`) from git.
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=
+ENV GIT_COMMIT=$GIT_COMMIT BUILD_TIME=$BUILD_TIME
 WORKDIR /app
 RUN apk add --no-cache curl && addgroup -S canvass && adduser -S -G canvass -H canvass
 COPY --from=deps  --chown=canvass:canvass /app/node_modules ./node_modules

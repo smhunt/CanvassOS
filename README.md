@@ -874,7 +874,10 @@ return the left-most, caller-supplied `X-Forwarded-For` entry, and `req.ip` is w
 and the login rate limiter are built on), `COOKIE_SECURE` (true; `false` for plain-HTTP dev),
 `BOUNDARY_PATH` (`../data/mc_boundary.json`; compose mounts it at `/data/mc_boundary.json`),
 `SIGN_PHOTO_DIR` (compose sets the `signphotos` volume; locally defaults to `./data/sign-photos`),
-`LOG_LEVEL`.
+`LOG_LEVEL`, `APP_ENV` (optional: `production` | `demo` | `development`; normally derived, see
+`api/src/build.ts`, and shown in the app's footer with the version and commit. The commit and build
+time are the `GIT_COMMIT` / `BUILD_TIME` build args, which the Makefile sets from git for every
+compose build; `docker compose` run by hand shows "unknown").
 
 ### Running the tests
 

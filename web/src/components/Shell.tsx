@@ -5,6 +5,7 @@ import { configure, identify, screenFor, setUser, track } from '../analytics';
 import { currentBreakpoint } from '../canvass/useBreakpoint';
 import { isIosInstalled } from '../pwa';
 import { listVoices, readVoicePref } from '../speech';
+import { BuildLine } from './BuildLine';
 import { APP_VERSION } from './changelog-modal';
 import type { User } from '../api/types';
 import { isAdmin, isOrganizer } from '../auth';
@@ -171,7 +172,12 @@ export function Shell() {
                 <RoleChip role={user.role} />
               </div>
               {links.map((l) => (
-                <NavLink key={l.to} to={l.to} role="menuitem" className={({ isActive }) => `menu__item${isActive ? ' menu__item--active' : ''}`}>
+                <NavLink
+                  key={l.to}
+                  to={l.to}
+                  role="menuitem"
+                  className={({ isActive }) => `menu__item${isActive ? ' menu__item--active' : ''}`}
+                >
                   {l.label}
                 </NavLink>
               ))}
@@ -204,18 +210,30 @@ export function ImportLabel({ prefix = 'Data: ' }: { prefix?: string }) {
 function Footer() {
   return (
     <footer className="footer">
-      <ImportLabel />
-      <span className="footer__sep" aria-hidden="true">
-        ·
-      </span>
-      <span>Municipal Elections Act — election use only, access is logged</span>
+      <div className="footer__row">
+        <ImportLabel />
+        <span className="footer__sep" aria-hidden="true">
+          ·
+        </span>
+        <span>Municipal Elections Act — election use only, access is logged</span>
+      </div>
+      <BuildLine />
     </footer>
   );
 }
 
 function MenuIcon({ open }: { open: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
       {open ? (
         <>
           <line x1="5" y1="5" x2="19" y2="19" />

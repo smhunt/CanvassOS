@@ -421,9 +421,66 @@ table.visually-hidden {
   color: var(--muted);
   font-size: 0.8rem;
   display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border-top: 1px solid var(--border);
+}
+.footer__row {
+  display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
-  border-top: 1px solid var(--border);
+}
+
+/* What is running (components/BuildLine.tsx): version, environment, commits, build time. */
+.build {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+}
+.build__version,
+.build__link {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--link);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  min-height: 0;
+}
+.build__version {
+  font-weight: 700;
+}
+.build__env {
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.build__env--production {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.build__env--demo {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.build__env--development {
+  background: var(--info-bg);
+  color: var(--brand);
+}
+.build__warn {
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: 700;
+}
+.build__links {
+  display: flex;
+  gap: 0.75rem;
 }
 
 /*

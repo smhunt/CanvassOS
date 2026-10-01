@@ -38,7 +38,12 @@ services:
     #   - "127.0.0.1:5432:5432"
 
   api:
-    build: ./api
+    build:
+      context: ./api
+      args:
+        # Set by the Makefile from git; "unknown" when compose is run by hand.
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-}
     restart: unless-stopped
     depends_on:
       db:
@@ -67,7 +72,12 @@ services:
 
   # Build-only: produces the static SPA and drops it into the `webroot` volume.
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        # Set by the Makefile from git; "unknown" when compose is run by hand.
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-}
     restart: "no"
     command: ["sh", "-c", "rm -rf /srv/* && cp -r /app/dist/. /srv/ && echo 'web dist copied to webroot'"]
     volumes:
