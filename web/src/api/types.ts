@@ -38,6 +38,8 @@ export interface PointProps {
   nonres?: number;
   q?: Quality;
   status?: string | null;
+  /** Electors at this door who have voted. Organizers everywhere; volunteers inside their turfs only. */
+  voted?: number;
 }
 
 export type PointsCollection = FeatureCollection<Point, PointProps>;
@@ -55,6 +57,9 @@ export interface Voter {
   last_support: number | null;
   last_result: string | null;
   last_contact_at: string | null;
+  /** From the clerk's voted list (POST /api/voted/import). Every role: a canvasser must not ask a voter to vote twice. */
+  voted_at: string | null;
+  has_voted: boolean;
   // organizer/admin only
   resident_class?: string;
   mailing_address?: string | null;
@@ -197,6 +202,8 @@ export interface Door {
   lat: number | null;
   lon: number | null;
   n_voters: number;
+  /** How many of them have voted — "2 of 3 voted" on the row, and the "still to vote" filter. */
+  n_voted: number;
   walk_order: number;
   last_result: ContactResult | null;
   last_contact_at: string | null;
@@ -701,3 +708,59 @@ export interface ManualRequestInput {
 
 /** Every field of a manual request is editable. A website sign-up's are not — the API refuses. */
 export type ManualRequestPatch = Partial<ManualRequestInput>;
+
+// ------------------------------------------------------------------ who has voted (1.9.0)
+
+/** One applied file (GET /api/voted/imports, and `import` on a non-dry POST). */
+export interface VotedImport {
+  id: number;
+  at: string;
+  user_id: string | null;
+  user_name: string | null;
+  label: string;
+  mode: 'merge' | 'replace';
+  sha256: string;
+  n_entries: number;
+  n_matched: number;
+  n_unmatched: number;
+  n_ambiguous: number;
+  n_marked: number;
+  n_cleared: number;
+}
+
+export type VotedImportMode = VotedImport['mode'];
+
+export interface VotedImportInput {
+  label: string;
+  mode: VotedImportMode;
+  dry_run: boolean;
+  /** The uploaded file as parsed JSON, passed through untouched; the API accepts several shapes. */
+  entries: unknown;
+}
+
+/** POST /api/voted/import — 200 for a dry run, 201 when applied. */
+export interface VotedImportResult {
+  dry_run: boolean;
+  import: VotedImport | null;
+  counts: {
+    entries: number;
+    matched: number;
+    unmatched: number;
+    ambiguous: number;
+    address_differs: number;
+    by_how: Record<'id' | 'key' | 'name+address' | 'name' | 'name~address', number>;
+    would_mark: number;
+    would_clear: number;
+  };
+  /** The rows the file gave that could not be placed — the operator's own text, echoed back. */
+  unmatched: { index: number; name: string | null; address: string | null; reason: string; candidates?: number }[];
+}
+
+/** GET /api/voted/summary — counts only. */
+export interface Turnout {
+  totals: { voters: number; voted: number; households: number; households_any: number; households_all: number };
+  by_ward: { ward: string; voters: number; voted: number }[];
+  by_community: { community: string | null; voters: number; voted: number }[];
+  by_day: { day: string; voted: number }[];
+  last_import: VotedImport | null;
+}

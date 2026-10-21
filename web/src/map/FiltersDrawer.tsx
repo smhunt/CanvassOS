@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
-import type { PointFilters } from '../api/hooks';
+import type { PointFilters, VotedFilter } from '../api/hooks';
 import type { Meta, Quality } from '../api/types';
 import { n, titleCase, wardLabel } from '../components/ui';
 import { QUALITY_COLOURS, QUALITY_LABELS, communityColour, wardColour } from './palette';
@@ -14,13 +14,19 @@ interface Props {
 }
 
 const QUALITIES: Quality[] = ['good', 'approx', 'check'];
+/** In the order a door moves through them as the polls go on. */
+const VOTED: { id: VotedFilter; label: string; note: string }[] = [
+  { id: 'none', label: 'Nobody has voted yet', note: 'every elector still to vote' },
+  { id: 'some', label: 'Some have voted', note: 'at least one, not all' },
+  { id: 'all', label: 'Everyone has voted', note: 'nothing left to win here' },
+];
 
 function toggle<T>(list: T[], v: T): T[] {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
 }
 
 export function countActive(f: PointFilters): number {
-  return f.ward.length + f.community.length + f.quality.length;
+  return f.ward.length + f.community.length + f.quality.length + f.voted.length;
 }
 
 export function FiltersDrawer({ open, onClose, meta, filters, onChange, organizer }: Props) {
@@ -47,7 +53,7 @@ export function FiltersDrawer({ open, onClose, meta, filters, onChange, organize
           <h2 id="filters-h">Filters</h2>
           <div className="row">
             {active > 0 && (
-              <button type="button" className="btn btn--small" onClick={() => onChange({ ward: [], community: [], quality: [] })}>
+              <button type="button" className="btn btn--small" onClick={() => onChange({ ward: [], community: [], quality: [], voted: [] })}>
                 Clear {active}
               </button>
             )}
@@ -120,6 +126,26 @@ export function FiltersDrawer({ open, onClose, meta, filters, onChange, organize
                 </label>
               ))}
               <p className="muted small fs__note">Legal-description parcels have no map point; see “unmapped parcels” in the legend.</p>
+            </fieldset>
+          )}
+
+          {organizer && (
+            <fieldset className="fs">
+              <legend>Who has voted</legend>
+              {VOTED.map((v) => (
+                <label key={v.id} className="check">
+                  <input
+                    type="checkbox"
+                    checked={filters.voted.includes(v.id)}
+                    onChange={() => onChange({ ...filters, voted: toggle(filters.voted, v.id) })}
+                  />
+                  <span className="check__label">{v.label}</span>
+                  <span className="check__count muted">{v.note}</span>
+                </label>
+              ))}
+              <p className="muted small fs__note">
+                From the clerk’s voted list, as last imported under Turnout. A door nobody has imported for counts as “nobody has voted yet”.
+              </p>
             </fieldset>
           )}
           <p className="muted small">Counts are doors · voters for the whole municipality.</p>

@@ -596,6 +596,12 @@ table.visually-hidden {
   background: var(--surface-3);
   color: var(--muted);
 }
+/* Struck off the clerk's list as having voted: a settled, quiet green — the job at this person is
+   done, which is the opposite of what a loud colour says. */
+.tag--voted {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
 .tag--rc-resident {
   background: var(--ok-bg);
   color: var(--ok);
@@ -780,6 +786,10 @@ table.visually-hidden {
   flex-direction: row;
   align-items: center;
   gap: 0.6rem;
+}
+.field__error {
+  color: var(--danger);
+  font-size: 0.85rem;
 }
 .field__label {
   font-size: 0.85rem;
@@ -1633,6 +1643,20 @@ select {
 .legend__note {
   margin: 0.4rem 0 0;
 }
+/* The heat ramp, drawn from the same stops the layer paints with (Legend.tsx HEAT_GRADIENT). */
+.legend__heat {
+  margin-bottom: 0.5rem;
+}
+.legend__heat-bar {
+  height: 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+.legend__heat-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.15rem;
+}
 .legend-wrap__legal {
   display: block;
   padding: 0.4rem 0.8rem 0.7rem;
@@ -1762,6 +1786,13 @@ select {
 }
 .voter__full {
   font-weight: 400;
+}
+.voter--voted .voter__name {
+  color: var(--muted);
+}
+.sheet__h3-tag {
+  margin-left: 0.5rem;
+  vertical-align: middle;
 }
 .voter__badges {
   display: flex;
@@ -2244,4 +2275,27 @@ select {
   display: flex;
   gap: 0.5rem;
   flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------------ turnout (who has voted) */
+.turnout-import__form {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 0.75rem;
+}
+.turnout-import__actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.turnout-result {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.turnout-result__how {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1em;
+}
+.turnout-result__warn {
+  color: var(--warn);
 }

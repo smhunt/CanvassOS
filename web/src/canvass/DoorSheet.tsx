@@ -107,6 +107,9 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
             </span>
             {door.community && <span>{titleCase(door.community)}</span>}
             <span>{door.n_voters === 1 ? '1 voter' : `${n(door.n_voters)} voters`}</span>
+            {door.n_voted > 0 && (
+              <span className="cv-voted">{door.n_voted >= door.n_voters ? 'all voted' : `${n(door.n_voted)} voted`}</span>
+            )}
             {/* The shift is spent inside this card, so the queue has to be legible from here. */}
             <SyncStatus compact />
           </div>
@@ -138,9 +141,13 @@ export function DoorSheet({ door, turfId, index, total, onClose, onRecorded, onP
           ) : (
             <ul className="cv-voters">
               {door.voters.map((v) => (
-                <li key={v.id} className="cv-voter">
+                <li key={v.id} className={`cv-voter${v.has_voted ? ' cv-voter--voted' : ''}`}>
                   <span className="cv-voter__name">{v.display_name}</span>
-                  {v.last_support !== null && <span className="tag tag--mini">Support {v.last_support}/5</span>}
+                  <span className="cv-voter__tags">
+                    {/* Struck off by the clerk: nothing left to ask this person, so the row says so first. */}
+                    {v.has_voted && <span className="tag tag--mini tag--voted">Voted</span>}
+                    {v.last_support !== null && <span className="tag tag--mini">Support {v.last_support}/5</span>}
+                  </span>
                 </li>
               ))}
             </ul>

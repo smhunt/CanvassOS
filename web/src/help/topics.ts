@@ -19,11 +19,11 @@ export const MAP_HELP: HelpTopic = {
   sections: [
     {
       heading: 'Dots and colours',
-      body: 'Every dot is one door. The menu next to Filters chooses what the colour means: Ward, Community, Voters per door or Canvass status, and organizers also get Record quality and Non-resident owners. “Legend” at the bottom left explains the colours and can be folded away.',
+      body: 'Every dot is one door. The menu next to Filters chooses what the colour means: Ward, Community, Voters per door or Canvass status, and organizers also get Record quality and Non-resident owners. Heat adds a warm glow under the dots where the voters are thickest; organizers can weigh it by who has voted or who is still to. “Legend” at the bottom left explains it all.',
     },
     {
       heading: 'Filters and counts',
-      body: 'Filters narrows the map to chosen wards and communities (organizers can also filter by record quality). The pill at the bottom left counts the doors and voters in view, and how many match your filters.',
+      body: 'Filters narrows the map to chosen wards and communities (organizers can also filter by record quality and by who has voted: nobody yet, some, or everyone at the door). The pill at the bottom left counts the doors and voters in view, and how many match your filters.',
     },
     {
       heading: 'Tapping a door',
@@ -98,7 +98,7 @@ export const DOOR_HELP: HelpTopic = {
   sections: [
     {
       heading: 'Finding the next door',
-      body: '“All doors” shows the whole turf and “Not yet knocked” hides the ones already done. “Near me” sorts by distance from where you are standing; it needs location turned on, and the doors stay in walking order until the phone has a fix. Map shows the turf as dots instead of a list.',
+      body: '“All doors” shows the whole turf and “Not yet knocked” hides the ones already done; once a voted list has been imported, “Still to vote” also hides doors where everyone has voted. “Near me” sorts by distance from where you are standing and needs location turned on. Map shows the turf as dots instead of a list.',
     },
     {
       heading: 'At the door',
@@ -449,6 +449,43 @@ export const ACCOUNT_HELP: HelpTopic = {
     {
       heading: 'About this app',
       body: 'Shows the version number, with Changelog, “How it works” and Roadmap buttons and a GitHub link.',
+    },
+  ],
+};
+
+export const TURNOUT_HELP: HelpTopic = {
+  title: 'How the turnout page works',
+  spoken: [
+    'This page shows who has already voted, from the list the clerk gives the campaign.',
+    'The tiles count how many electors have voted, in all and by ward and community.',
+    'An admin can import the clerk\u2019s file here, and should check it first, because nothing is written until it is applied.',
+    'A row the matcher cannot place with certainty is listed and left alone, never guessed.',
+    'Once a voter is marked, every door screen shows them as voted, so nobody is asked to vote twice.',
+  ],
+  sections: [
+    {
+      heading: 'What the numbers mean',
+      body: 'Have voted is the number of electors on the list the clerk has struck off so far. Doors finished are households where everyone has voted. The by-ward and by-community bars show the list in grey and the voted in colour, with the share beside each.',
+    },
+    {
+      heading: 'Importing a file (admins)',
+      body: 'Choose a JSON file of the people who have voted. Each row needs a name — “SURNAME, GIVEN”, or separate last and first names — and ideally the property address. Press “Check the file” first: it reports how many rows matched and how, and lists the rows it could not place, without writing anything.',
+    },
+    {
+      heading: 'New voters, or everyone so far',
+      body: 'Say what the file is. “Only the new voters” adds to what is already marked, for a daily file. “Everyone who has voted so far” treats the file as complete, so anyone marked earlier but missing from it is un-marked. A row with hasVoted false clears that person in either mode.',
+    },
+    {
+      heading: 'Rows that were not placed',
+      body: 'Nobody of that name means the list has no such elector; check the spelling. Several people of that name means the address is needed to tell them apart. A match on the name alone where the address did not agree is counted separately so you can look at it.',
+    },
+    {
+      heading: 'Where it shows up',
+      body: 'A marked voter has a Voted badge on the household card, the door screen and the paper sheet, a door row says how many have voted, the door screen gains a “Still to vote” filter, and the map can filter doors and draw a heat map by who has voted.',
+    },
+    {
+      heading: 'Keep it private',
+      body: 'Whether somebody voted is part of the voters list and protected in the same way. Every import, including a check, is recorded in the audit log with counts only.',
     },
   ],
 };

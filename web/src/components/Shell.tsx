@@ -102,6 +102,7 @@ export function Shell() {
     { to: '/messaging', label: 'Messaging', show: isOrganizer(user) },
     { to: '/reports', label: 'Reports', show: isOrganizer(user) },
     { to: '/stats', label: 'Stats', show: isOrganizer(user) },
+    { to: '/turnout', label: 'Turnout', show: isOrganizer(user) },
     { to: '/admin/users', label: 'Users', show: isAdmin(user) },
     { to: '/admin/audit', label: 'Audit', show: isAdmin(user) },
     { to: '/account', label: 'Account', show: true },

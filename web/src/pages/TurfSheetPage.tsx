@@ -181,7 +181,6 @@ function Sheet({ turfId, assignedTo, dueDate }: { turfId: string | undefined; as
 
 /** One door, in walking order. Nothing here may depend on colour — this gets printed in greyscale. */
 function DoorPrintRow({ door, index }: { door: Door; index: number }) {
-  const names = door.voters.map((v) => v.display_name);
   return (
     <tr className="ts-door">
       <td className="ts-col-num">{index}</td>
@@ -196,10 +195,18 @@ function DoorPrintRow({ door, index }: { door: Door; index: number }) {
         )}
       </td>
       <td className="ts-col-names">
-        <span className="ts-door__count">{door.n_voters === 1 ? '1 voter' : `${door.n_voters} voters`}</span>
+        <span className="ts-door__count">
+          {door.n_voters === 1 ? '1 voter' : `${door.n_voters} voters`}
+          {door.n_voted > 0 && ` · ${door.n_voted} voted`}
+        </span>
         <ol className="ts-door__names">
-          {names.map((name, i) => (
-            <li key={`${door.household_id}-${i}`}>{name}</li>
+          {/* "voted" in words, not a tick or a colour: the sheet comes off a mono laser printer and
+              a struck-through name reads as "do not knock", which is not what this says. */}
+          {door.voters.map((v, i) => (
+            <li key={`${door.household_id}-${i}`} className={v.has_voted ? 'ts-name--voted' : undefined}>
+              {v.display_name}
+              {v.has_voted && <span className="ts-name__voted"> (voted)</span>}
+            </li>
           ))}
         </ol>
       </td>

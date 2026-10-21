@@ -37,6 +37,7 @@ export const ROUTE_PATTERNS = [
   '/requests',
   '/reports',
   '/stats',
+  '/turnout',
   '/admin/users',
   '/admin/audit',
   '/account',

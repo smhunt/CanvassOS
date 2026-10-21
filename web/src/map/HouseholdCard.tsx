@@ -97,6 +97,11 @@ function VolunteerView({ props }: { props: PointProps | undefined }) {
       <p className="big-number">
         {n(props?.n ?? 0)} <span className="muted">{props?.n === 1 ? 'voter' : 'voters'} at this door</span>
       </p>
+      {typeof props?.voted === 'number' && props.voted > 0 && (
+        <p className="tag tag--voted">
+          {props.voted === props.n ? 'Everyone here has voted' : `${n(props.voted)} of ${n(props.n)} have voted`}
+        </p>
+      )}
       {props?.inst && <p className="tag tag--neutral">Institution / multi-unit</p>}
       <div className="alert alert--info">
         <div>
@@ -161,6 +166,11 @@ function OrganizerView({ hh, onFly }: { hh: Household; onFly: (lon: number, lat:
       <section aria-labelledby="voters-h">
         <h3 id="voters-h" className="sheet__h3">
           Voters <span className="muted">({hh.voters.length})</span>
+          {hh.voters.some((v) => v.has_voted) && (
+            <span className="tag tag--mini tag--voted sheet__h3-tag">
+              {hh.voters.filter((v) => v.has_voted).length} of {hh.voters.length} voted
+            </span>
+          )}
         </h3>
         {hh.voters.length === 0 ? (
           <p className="muted">No voters listed at this address.</p>
@@ -259,12 +269,13 @@ function OrganizerView({ hh, onFly }: { hh: Household; onFly: (lon: number, lat:
 function VoterRow({ v }: { v: Voter }) {
   const rc = v.resident_class ?? '';
   return (
-    <li className="voter">
+    <li className={`voter${v.has_voted ? ' voter--voted' : ''}`}>
       <div className="voter__name">
         <span>{v.display_name}</span>
         {v.full_name !== v.display_name && <span className="muted small voter__full">{v.full_name}</span>}
       </div>
       <div className="voter__badges">
+        {v.has_voted && <span className="tag tag--mini tag--voted">Voted</span>}
         {rc && <span className={`tag tag--mini tag--rc-${rc.replace(/[^a-z]/g, '')}`}>{rc}</span>}
         {v.mail_kind === 'po_box' && <span className="tag tag--mini tag--neutral">PO box</span>}
       </div>
