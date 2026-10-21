@@ -1,6 +1,6 @@
 {
   "name": "canvass-web",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "private": true,
   "description": "Middlesex Centre Canvass — React SPA (Phase 1: login, voter map, stats)",
   "type": "module",

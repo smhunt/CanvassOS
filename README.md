@@ -523,6 +523,30 @@ IMPORT_TEST_ADMIN_URL=postgresql://canvass:$POSTGRES_PASSWORD@localhost:5443/pos
   python3 -m pytest -q test_apply_integration.py
 ```
 
+### Importing the clerk's voted list
+
+Once the advance polls open the clerk tells candidates who has voted. Sign in as an admin, open
+**Turnout**, choose the JSON file and press **Check the file** first: it reports how many rows matched
+(and how — by id, by name and address, by name alone), lists the rows it could not place, and writes
+nothing. Then **Apply this file**. Say what the file is: *only the new voters* (a daily file, added to
+what is marked already) or *everyone who has voted so far* (the complete list, so anyone marked
+earlier and missing from it is un-marked). The accepted shapes and the matching rules are in
+[`API.md`](API.md) under "Who has voted"; the short version is a JSON array of objects with a name
+(`"SURNAME, GIVEN"`, or `last_name` + `first_name`), ideally the property address, and optionally
+`hasVoted: false` to clear somebody.
+
+From then on a marked voter shows as **Voted** on their door everywhere — the household card, the
+door screen, the paper sheet — a door row says how many have voted, the door screen gains a
+**Still to vote** filter, and the map can filter doors by who has voted and draw a **heat map** of
+where the voters are (all of them, or only those still to vote). A row the matcher cannot place with
+certainty is left alone and listed, never guessed: a wrong mark tells a canvasser to skip somebody
+who has not voted, which is the one mistake the feature exists to prevent.
+
+The stamps survive a list re-import: `make import-apply` keeps a voted elector who has left the
+list, counts the stamps before and after and rolls back if the number went down, and
+`make import-force` names them among what it would destroy. Every import, dry runs included, is in
+the audit log with counts only.
+
 ### First login and inviting people
 
 Browse to `https://canvass.webarchitecture.ca` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. The

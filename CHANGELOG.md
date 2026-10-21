@@ -4,6 +4,35 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-10-21
+
+### Added
+
+- **Who has voted.** The clerk's strike-off list can be imported as JSON under the new **Turnout**
+  page (`POST /api/voted/import`, admin; `GET /api/voted/summary` for organizers, counts only;
+  migration `010_voted.sql`). The file is checked first — how many rows matched and how, and which
+  could not be placed — and nothing is written until it is applied. Matching never guesses: a name
+  that could be two people is left alone and listed. A file can be "only the new voters" (added to
+  what is marked) or "everyone who has voted so far" (anyone marked but missing is un-marked), and a
+  row with `hasVoted: false` clears somebody. Every import, dry runs included, is audited with counts
+  only (`import_voted`); reading the turnout is `view_turnout`.
+- **Voted, everywhere a voter is.** Every voter projection carries `has_voted` / `voted_at`, for
+  volunteers too, because the canvasser at the door is the person who must not ask somebody who
+  voted on Tuesday to vote. The household card, the door screen and the paper sheet say "Voted"
+  beside the name; a door row says "2 of 3 voted" (`n_voted` on `GET /api/turfs/:id/doors`) and a
+  door where everyone has voted steps back like a knocked one; the door screen gains a **Still to
+  vote** filter once a list has been imported.
+- **Where the voters are, as heat.** A **Heat** button on the map draws a density surface under the
+  dots, weighed by all voters on the list or, for organizers, by who has voted or who is still to
+  vote (`web/src/map/style.ts`, its own un-clustered source so village clusters do not become single
+  hot pixels). The legend shows the ramp. Map points carry `voted` (organizers everywhere, volunteers
+  inside their own turfs, under the same rule as `status`), and organizers can filter the map by
+  **who has voted**: nobody yet, some, or everyone at the door (`voted=` on `/api/households/points`,
+  `403` for a volunteer).
+- **The list re-import keeps the stamps.** `make import-apply` treats a voted elector as referenced,
+  counts the stamps before and after and rolls back if the number went down; `make import-force`
+  names them among what it would destroy.
+
 ## [1.8.0] - 2026-10-01
 
 ### Added

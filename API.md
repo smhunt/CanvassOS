@@ -36,12 +36,16 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
   (boundary served from `data/mc_boundary.json`.)
 
 ## Households
-- `GET /api/households/points?ward=01,02&community=KOMOKA&quality=good,approx&bbox=minLon,minLat,maxLon,maxLat`
+- `GET /api/households/points?ward=01,02&community=KOMOKA&quality=good,approx&voted=none,some,all&bbox=minLon,minLat,maxLon,maxLat`
   → GeoJSON FeatureCollection of ALL matching households with civic coords (legal ones excluded — they have no point).
   Feature properties, **every role**: `{ id, ward, community, n, inst }` (`n` = n_voters, `inst` = is_institution).
-  Organizer/admin additionally get: `{ nonres: n_nonresident, q: record_quality, status: last_result | null }`.
-  Volunteers additionally get `{ status: last_result | null }` **only on the doors inside a turf assigned to them**
-  (so they can colour their own turf); every other feature keeps the five anonymous keys and no `status` key at all.
+  Organizer/admin additionally get: `{ nonres: n_nonresident, q: record_quality, status: last_result | null, voted }`
+  (`voted` = electors at the door the clerk's list says have voted, see "Who has voted").
+  Volunteers additionally get `{ status: last_result | null, voted }` **only on the doors inside a turf assigned to them**
+  (so they can colour their own turf); every other feature keeps the five anonymous keys and neither `status` nor `voted`.
+  `voted=` filters doors by that count — `none` (0), `some` (between 0 and `n`), `all` (`n > 0` and every elector) —
+  and is **organizer/admin only**: a volunteer passing it gets `403 forbidden`, because a municipality-wide filter on
+  it would say which doors outside their turf have finished voting.
   Bounded to ~7.1k features; no pagination. Cache-Control: private, max-age=60.
 - `GET /api/households/:id` → household card (organizer/admin: any door; volunteer: only a door inside one of their
   assigned turfs, otherwise `403 not_your_turf` — the scope is checked before the row is loaded, so an out-of-turf
@@ -50,10 +54,14 @@ everywhere, including inside their own turf. Organizers and admins are unscoped.
   { id, ward, community, postal, locality, address, property_address_raw, civic_num, street, street_type, street_dir, unit,
     lat, lon, addr_match, record_quality, is_legal, is_institution, n_voters,
     voters: [{ id, display_name, full_name, first_name, middle_names, last_name, suffix, resident_class, mail_kind,
-               mail_differs_real, mailing_address, mail_city, mail_postal, last_support, last_result, last_contact_at }],
+               mail_differs_real, mailing_address, mail_city, mail_postal, last_support, last_result, last_contact_at,
+               voted_at, has_voted }],
     turfs: [{ id, name }],
     status: { last_result, last_contact_at, last_user_name } }
   ```
+  `voted_at` / `has_voted` (1.9.0) come from the clerk's voted list (`POST /api/voted/import`) and are on **every**
+  role's projection: a volunteer at the door is the person who must not ask somebody who has already voted to
+  vote. `null` / `false` means "not known to have voted", never "has not voted".
   `turfs` is the **active** turfs this door is in, so the card can offer a way into the door screen
   instead of being read-only. Scoped like everything else: a volunteer is told only about turfs
   assigned to them, so this cannot become a way to enumerate the campaign's turf structure. An empty
@@ -224,10 +232,12 @@ unencumbered option and the map layer worth building next.
 ## Door screen
 - `GET /api/turfs/:id/doors` → `{ turf, doors: [...] }`, ordered by `walk_order` (nulls last, then id):
   ```
-  { household_id, address, community, ward, lat, lon, n_voters, walk_order,
+  { household_id, address, community, ward, lat, lon, n_voters, n_voted, walk_order,
     last_result, last_contact_at,
     voters: [ ... same projection as the household card, serialized by role ... ] }
   ```
+  `n_voted` (1.9.0) is how many of the door's electors the clerk's list says have voted, so the door list can say
+  "2 of 3 voted" and offer a "still to vote" filter.
   Organizer/admin: any turf. **Volunteer: only a turf they are assigned to, else `403 not_your_turf`.**
   `turf` is the `GET /api/turfs/:id` object (including `polygon` and `streets`) so the screen can draw the outline —
   but without `assignees`: a volunteer has no business knowing who else is on the turf.
@@ -786,6 +796,75 @@ non-commercial political SMS from a municipal candidate (`docs/phase-5-messaging
   visit ticked follow-up — the same rule as `GET /api/follow-ups`. A door in two turfs counts in both
   turf rows (each turf's own progress); `by_ward` sums to the municipality, the others do not.
   `by_day` has no denominator and its `support` is visits that day.
+## Who has voted (1.9.0)
+
+The clerk's strike-off list — who has already voted at the advance polls, and on the day — imported so a
+canvasser never asks somebody who voted on Tuesday to vote, and so the map can show where the remaining
+voters are. Migration `010_voted.sql`: a `voted_at` stamp on `voter` (NULL = not known to have voted,
+never "has not voted"), a `voted_import` row per applied file.
+
+- `POST /api/voted/import` → **admin**. Body
+  `{ label, mode?: 'merge' | 'replace', dry_run?: boolean, voted_at?: ISO-8601, entries }`; this one route takes
+  a body of up to **16 MB** (the app-wide limit is 64 KB).
+  `entries` is the uploaded file as parsed JSON, in any of several shapes, because there is no standard export
+  for a voted list: a bare array, or an object holding one under `voters` / `voted` / `entries` / `records` /
+  `data` / `rows` / `items`; each item an object or a plain string (a name). Item keys are matched
+  case-insensitively with `_`, `-` and spaces ignored, so `last_name`, `lastName` and `Last Name` are the same key:
+
+  | field | accepted keys | notes |
+  |---|---|---|
+  | voter id | `voter_id`, `voter`, `id`, `uuid` | only when it is a UUID of ours; a clerk's elector number is ignored |
+  | natural key | `natural_key`, `key` | the importer's `natural_key`; falls through to the name if it no longer exists |
+  | name | `name`, `full_name`, `elector`, `elector_name`, `voter_name`, `name_raw` | "SURNAME, GIVEN MIDDLE" or "Given Last"; Jr/Sr/II/III dropped |
+  | split name | `last_name` / `surname` / `last` / `family_name`, `first_name` / `given_name` / `given` / `first` | |
+  | address | `address`, `property_address`, `civic_address`, `street_address`, `qualifying_address`, `addr` | the property address, in any spelling |
+  | voted | `hasVoted`, `voted`, `did_vote`, `is_voted`, `ballot_cast` | boolean, 0/1, or Y/N/yes/no/true/false; **absent means voted** |
+  | when | `voted_at`, `voted_date`, `date`, `when`, `voted_on`, `timestamp` | per-row stamp; otherwise the body's `voted_at`, else now |
+
+  **Matching is conservative and never guesses.** In order: voter id → natural key → surname + first given
+  name (then the given name among the middle names, then a nickname of it via `lib/nicknames.ts`). With an
+  address: exactly one candidate at that address matches (`name+address`); several there is `ambiguous`; none
+  there but exactly one of that name on the whole list matches and is **flagged** (`name~address`, counted in
+  `address_differs`). Without an address: one candidate matches (`name`), two or more is `ambiguous` — two
+  people of one name at the same door included. Ambiguous and unmatched rows are left alone and reported.
+  The pure planner is `api/src/lib/voted.ts`, unit-tested in `api/test/voted.test.ts`.
+
+  `mode`: **`merge`** (default) stamps everyone the file names and leaves everyone else as they were — a daily
+  file. **`replace`** treats the file as the complete list of everyone who has voted so far, so a voter stamped
+  earlier and absent from it is un-stamped. In both modes a row flagged not-voted clears that voter; a voter
+  already stamped **keeps the earlier stamp** (the first file that said so is when we learned it).
+  `dry_run: true` goes through every step but the transaction: `200`, writes nothing, records no
+  `voted_import` row. An apply is `201`. Both audit **`import_voted`** — a dry run reads every name on the list
+  to place the file, so it is on the record like a read — with `{ dry_run, mode, entries, matched, unmatched,
+  ambiguous, address_differs, how_* , marked?, cleared? }`, never a name or address from either side.
+  ```
+  { dry_run, import: { id, at, user_id, user_name, label, mode, sha256, n_entries, n_matched, n_unmatched,
+                       n_ambiguous, n_marked, n_cleared } | null,
+    counts: { entries, matched, unmatched, ambiguous, address_differs,
+              by_how: { id, key, "name+address", name, "name~address" }, would_mark, would_clear },
+    unmatched: [{ index, name, address, reason: 'no_candidate' | 'nothing_to_match_on' | 'ambiguous', candidates? }] }
+  ```
+  `unmatched` is the operator's own file echoed back (at most 500 rows; the counts are always complete).
+  `400 bad_file` when `entries` holds no list, `400 empty_file` when it holds no rows.
+- `GET /api/voted/imports` → **admin**. `{ imports: [ ...the import object above... ] }`, newest first, 200 at most.
+- `GET /api/voted/summary` → **organizer/admin**. Turnout so far, **counts only** — the same class as
+  `/stats/coverage`. Audited as **`view_turnout`**.
+  ```
+  { totals: { voters, voted, households, households_any, households_all },
+    by_ward: [{ ward, voters, voted }], by_community: [{ community, voters, voted }],
+    by_day: [{ day, voted }],          // Ontario calendar day of voted_at
+    last_import: { ...import object... } | null }
+  ```
+  `households` counts doors with at least one elector; `households_any` doors where at least one has voted;
+  `households_all` doors where everyone has.
+
+Everything else reads the result through the routes that already exist, scoped exactly as before: `has_voted` /
+`voted_at` on every voter projection, `n_voted` on `GET /api/turfs/:id/doors`, and `voted` on the map points
+(organizer everywhere; a volunteer only inside their own turfs, where `status` already is) with the
+organizer-only `voted=` filter. **A re-import of the list keeps the stamps**: `importer/import.py` treats a voted
+elector as referenced (kept if they leave the list), counts the stamps before and after an apply and rolls back
+if the number went down, and the `--force` guard names them.
+
 ## Public sign-up form (no session)
 
 - `POST /api/public/requests` → **public, unauthenticated.** How the campaign website's form reaches
@@ -1062,7 +1141,7 @@ candidates: [{ id, voter_id, natural_key, household_id, voter_name, household_ad
   `view_follow_ups`, `contact`. Lawn signs add `place_sign`, `update_sign`, `delete_sign`, `upload_sign_photo`,
   `view_sign_photo` and `view_sign_requests`. Doorstep phone/email adds `collect_voter_contact`,
   `view_voter_contacts`, `update_voter_contact`, `withdraw_voter_contact`, `delete_voter_contact` and
-  `view_gotv_list`.
+  `view_gotv_list`. Who has voted (1.9.0) adds `import_voted` (dry runs included) and `view_turnout`.
 - `POST /api/users/:id/reinvite` also works for a user who already has a password (acts as an admin-driven
   password reset: accepting the new invite sets a new password and drops old sessions).
 - Invite tokens are stored hashed (sha256) in `app_user.invite_token`; the raw token appears only in `invite_url`.

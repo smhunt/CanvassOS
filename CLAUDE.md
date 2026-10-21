@@ -27,6 +27,15 @@ approximate hull drawn dotted), **the reachability report** (`GET /api/stats/rea
 spoken aloud, and from 1.2.0 explaining itself aloud on first use with a help button that repeats
 it; web-only, no endpoint of its own).
 
+Also shipped 2026-10-21 (1.9.0): **who has voted** — the clerk's strike-off list imported as JSON
+under Turnout (`POST /api/voted/import`, admin, always a dry run first; the matching is the pure
+`api/src/lib/voted.ts` and never guesses between two people of one name), `has_voted` / `voted_at` on
+every voter projection, `n_voted` per door, a "still to vote" filter on the door screen, and on the
+map a who-has-voted filter plus a **heat layer** (`heat` source + layer in `web/src/map/style.ts`,
+weighed by all voters, voted, or still to vote; the last two organizer-only because a volunteer's
+`voted` point property exists only inside their turfs). Migration `010_voted.sql`; the diff re-import
+and the `--force` guard both know about the stamps.
+
 **Phase 4 is partly done.** The **diff-based re-import** shipped 2026-09-15 (`make import-diff`, then
 `make import-apply`): it updates the list in place and keeps every contact, sign, consent record,
 turf and sign-up. **Coverage/support reports** (`GET /api/stats/coverage`, `/reports?tab=coverage`:
@@ -231,7 +240,7 @@ Cloudflare, not in this repo, so a move to another hostname or zone must bring i
 is a file in `db/migrations/`, applied with `make migrate` (`make migrate-status` to see what is
 pending) and recorded in `schema_migration`. **Never edit `db/schema.sql` to change a live stack**; it
 will not re-run, and the two will silently diverge. Applied so far: `001_signs.sql` through
-`008_sign_request_cancel.sql`, all eight (`make migrate-status` is the authority, not this sentence).
+`010_voted.sql` (`make migrate-status` is the authority, not this sentence).
 
 **008 must be applied BEFORE the API that reads `sign.cancelled_at` is deployed, not after.** This is
 not a theoretical ordering: an API build carrying the cancel feature, pointed at a database without
