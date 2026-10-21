@@ -124,6 +124,7 @@ const PURPOSES = ['gotv', 'updates'] as const;
 const ASSIGNMENT_STATUSES = ['open', 'in_progress', 'done'] as const;
 const DECISIONS = ['accept', 'reject'] as const;
 const PROVIDERS = ['log', 'twilio', 'google'] as const;
+const IMPORT_MODES = ['merge', 'replace'] as const;
 const USER_FIELDS = ['name', 'role', 'active'] as const;
 const TURF_FIELDS = ['name', 'archived'] as const;
 const CAMPAIGN_FIELDS = ['name', 'purpose', 'body_sms', 'email_subject', 'body_email', 'audience', 'scheduled_for'] as const;
@@ -206,6 +207,20 @@ export const AUDIT_EVENTS: Record<AuditAction, Mapper | null> = {
   // ops
   export: () => ({ event: 'list_exported' }),
   import: () => ({ event: 'list_imported' }),
+  import_voted: (d) => ({
+    event: 'voted_list_imported',
+    props: pick({
+      mode: oneOf(d, 'mode', IMPORT_MODES),
+      dry_run: bool(d, 'dry_run'),
+      entries: num(d, 'entries'),
+      matched: num(d, 'matched'),
+      unmatched: num(d, 'unmatched'),
+      ambiguous: num(d, 'ambiguous'),
+      marked: num(d, 'marked'),
+      cleared: num(d, 'cleared'),
+    }),
+  }),
+  view_turnout: () => ({ event: 'report_viewed', props: { report: 'turnout' } }),
 
   // turfs
   preview_turf: (d) => ({

@@ -218,6 +218,14 @@ def table_exists(cur, table: str) -> bool:
     return bool(cur.fetchone()[0])
 
 
+def column_exists(cur, table: str, column: str) -> bool:
+    cur.execute(
+        "SELECT count(*) FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+        (table, column),
+    )
+    return bool(cur.fetchone()[0])
+
+
 def fetch_referenced(cur) -> tuple[set[str], set[str]]:
     def collect(sources) -> set[str]:
         out: set[str] = set()
@@ -228,7 +236,14 @@ def fetch_referenced(cur) -> tuple[set[str], set[str]]:
             cur.execute(f"SELECT DISTINCT {col}::text FROM {table} WHERE {col} IS NOT NULL")
             out.update(r[0] for r in cur.fetchall())
         return out
-    return collect(HOUSEHOLD_REFERENCES), collect(VOTER_REFERENCES)
+    voters = collect(VOTER_REFERENCES)
+    # Migration 010: an elector the clerk has struck off as having voted is campaign knowledge
+    # about that person, and it lives on the voter row itself. A voted elector who has left the
+    # list is kept for the same reason a contacted one is — deleting the row would delete the fact.
+    if column_exists(cur, "voter", "voted_at"):
+        cur.execute("SELECT id::text FROM voter WHERE voted_at IS NOT NULL")
+        voters.update(r[0] for r in cur.fetchall())
+    return collect(HOUSEHOLD_REFERENCES), voters
 
 
 def survivor_counts(cur) -> dict[str, int]:
@@ -242,6 +257,10 @@ def survivor_counts(cur) -> dict[str, int]:
         # alone would not notice a result losing the person it was about.
         cur.execute("SELECT count(*) FROM contact WHERE voter_id IS NOT NULL")
         counts["contact.voter_id"] = cur.fetchone()[0]
+    if column_exists(cur, "voter", "voted_at"):
+        # Likewise the voted stamps (migration 010): a replaced voter row loses its stamp silently.
+        cur.execute("SELECT count(*) FROM voter WHERE voted_at IS NOT NULL")
+        counts["voter.voted_at"] = cur.fetchone()[0]
     return counts
 
 
@@ -541,6 +560,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                 n = cur.fetchone()[0]
                 if n:
                     counts.append((table, label, n))
+            # Migration 010: "has voted" is a column ON voter, not a table referencing household, so
+            # the table loop above cannot see it — yet TRUNCATE household CASCADE empties voter and
+            # every stamp with it. Counted and named like the rest.
+            if column_exists(cur, "voter", "voted_at"):
+                cur.execute("SELECT count(*) FROM voter WHERE voted_at IS NOT NULL")
+                n = cur.fetchone()[0]
+                if n:
+                    counts.append(("voter.voted_at", "electors marked as having voted (the clerk's voted list)", n))
             n_contacts = next((n for t, _l, n in counts if t == "contact"), 0)
 
             if n_existing > 0:

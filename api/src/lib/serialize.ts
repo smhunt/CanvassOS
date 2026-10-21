@@ -43,6 +43,8 @@ export interface VoterRow {
   last_support: number | null;
   last_result: string | null;
   last_contact_at: Date | string | null;
+  /** Migration 010: when the clerk's list said they had voted; null = not known to have voted. */
+  voted_at: Date | string | null;
 }
 
 export interface VoterPublic {
@@ -58,6 +60,13 @@ export interface VoterPublic {
   last_support: number | null;
   last_result: string | null;
   last_contact_at: Date | string | null;
+  /**
+   * Every role, deliberately: a volunteer at the door is the person who must not ask somebody who
+   * voted on Tuesday to vote. It says nothing about HOW they voted, only that the clerk struck them
+   * off, which is why it sits with the canvass fields and not with the organizer-only ones.
+   */
+  voted_at: Date | string | null;
+  has_voted: boolean;
 }
 
 export interface VoterOrganizer extends VoterPublic {
@@ -81,6 +90,8 @@ export function serializeVoter(row: VoterRow, role: Role): VoterPublic | VoterOr
     last_support: row.last_support,
     last_result: row.last_result,
     last_contact_at: row.last_contact_at,
+    voted_at: row.voted_at ?? null,
+    has_voted: row.voted_at !== null && row.voted_at !== undefined,
   };
   if (!isOrganizer(role)) return base;
   return {
@@ -182,6 +193,8 @@ export interface PointRow {
   n_nonresident: number;
   record_quality: string;
   last_result: string | null;
+  /** Electors at this door the clerk has struck off as having voted (migration 010). */
+  n_voted: number;
   lat: number;
   lon: number;
   /** Volunteers only: true when the door is inside one of the caller's assigned turfs. */
@@ -200,11 +213,17 @@ export interface PointPropsOrganizer extends PointPropsPublic {
   nonres: number;
   q: string;
   status: string | null;
+  voted: number;
 }
 
-/** Phase 2: a volunteer's own turf is colourable, so those doors (and only those) carry `status`. */
+/**
+ * Phase 2: a volunteer's own turf is colourable, so those doors (and only those) carry `status` —
+ * and, since 1.9.0, `voted`. Both say something about the people at an identified door, which is
+ * exactly what an out-of-turf point must not do, so they travel together under the same rule.
+ */
 export interface PointPropsScoped extends PointPropsPublic {
   status: string | null;
+  voted: number;
 }
 
 /** Feature.properties for GET /api/households/points — compact keys, per API.md. */
@@ -221,9 +240,9 @@ export function serializePointProps(
   };
   if (!isOrganizer(role)) {
     // Out-of-turf doors stay exactly as anonymous as they were in Phase 1.
-    return row.in_turf ? { ...base, status: row.last_result } : base;
+    return row.in_turf ? { ...base, status: row.last_result, voted: row.n_voted } : base;
   }
-  return { ...base, nonres: row.n_nonresident, q: row.record_quality, status: row.last_result };
+  return { ...base, nonres: row.n_nonresident, q: row.record_quality, status: row.last_result, voted: row.n_voted };
 }
 
 // ------------------------------------------------------------------ turf doors
@@ -242,6 +261,8 @@ export interface DoorRow {
   lat: number | null;
   lon: number | null;
   n_voters: number;
+  /** How many of them have voted, so the list can say "2 of 3 voted" and skip a finished door. */
+  n_voted: number;
   walk_order: number | null;
   last_result: string | null;
   last_contact_at: Date | string | null;
@@ -260,6 +281,7 @@ export function serializeDoor(row: DoorRow, voters: VoterRow[], role: Role): Doo
     lat: row.lat,
     lon: row.lon,
     n_voters: row.n_voters,
+    n_voted: row.n_voted,
     walk_order: row.walk_order,
     last_result: row.last_result,
     last_contact_at: row.last_contact_at,

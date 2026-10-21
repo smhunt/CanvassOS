@@ -428,7 +428,7 @@ describe('households/points', () => {
     assert.equal(fc.type, 'FeatureCollection');
     assert.equal(fc.features.length, nWithCoords);
     const p = fc.features[0]!.properties;
-    assert.deepEqual(Object.keys(p).sort(), ['community', 'id', 'inst', 'n', 'nonres', 'q', 'status', 'ward']);
+    assert.deepEqual(Object.keys(p).sort(), ['community', 'id', 'inst', 'n', 'nonres', 'q', 'status', 'voted', 'ward']);
     const [lon, lat] = fc.features[0]!.geometry.coordinates as [number, number];
     assert.ok(lon < -80 && lon > -82 && lat > 42 && lat < 44, 'coordinates are lon,lat in Middlesex');
   });
@@ -1016,6 +1016,7 @@ describe('turfs', () => {
     );
     const withVoters = body.doors.find((d) => d.voters.length > 0)!;
     assert.ok(withVoters, 'at least one door has voters');
+    for (const d of body.doors as Array<{ n_voted?: unknown }>) assert.equal(typeof d.n_voted, 'number', 'every door counts its voted electors');
 
     // `ward: '02'` on the request was a label only — the turf holds the whole of both streets.
     const wards = new Set(
@@ -2104,9 +2105,225 @@ describe('turf scope (volunteer)', () => {
     const mapped = ctx.streetHouseholdIds.filter((id) => households.find((h) => h.household_id === id)?.lat);
     assert.equal(scoped.length, mapped.length);
     assert.deepEqual(scoped.map((f) => f.properties.id).sort(), mapped.slice().sort());
+    // `voted` (how many at the door have voted) travels under the same rule as `status`.
+    for (const f of scoped) assert.equal(typeof f.properties.voted, 'number');
+    assert.equal(fc.features.filter((f) => 'voted' in f.properties).length, scoped.length);
     for (const f of fc.features) {
       assert.ok(!('nonres' in f.properties) && !('q' in f.properties), 'organizer-only point keys stay hidden');
     }
+    // And the municipality-wide filter on it is not theirs to use.
+    const filtered = await call('GET', '/api/households/points?voted=all', volunteerCookie);
+    assert.equal(filtered.statusCode, 403);
+  });
+});
+
+describe('voted (who has voted)', () => {
+  /** Every stamp on the test database before this suite ran, so after() can put them back exactly. */
+  let before: Array<{ id: string; voted_at: Date; voted_import_id: number | null }> = [];
+  let importIds: number[] = [];
+  // A door in the volunteer's turf with at least two electors, so "some" and "all" can both be seen.
+  let door: Row;
+  let doorVoters: Row[];
+
+  before(async () => {
+    before = (
+      await db.query<{ id: string; voted_at: Date; voted_import_id: number | null }>(
+        `SELECT id, voted_at, voted_import_id FROM voter WHERE voted_at IS NOT NULL`,
+      )
+    ).rows;
+    door = ctx.streetHouseholdIds
+      .map((id) => households.find((h) => h.household_id === id)!)
+      .find((h) => h.lat && Number(h.n_voters) >= 2 && voters.filter((v) => v.household_id === h.household_id).length === Number(h.n_voters))!;
+    assert.ok(door, 'a mapped door in the turf with two or more electors');
+    doorVoters = voters.filter((v) => v.household_id === door.household_id);
+  });
+
+  after(async () => {
+    // Undo exactly this suite's stamps (and un-stamps): everything stamped by one of its imports is
+    // cleared, then whatever was stamped before it ran is restored, then its bookkeeping rows go.
+    await db.query(`UPDATE voter SET voted_at = NULL, voted_import_id = NULL WHERE voted_import_id = ANY($1::int[])`, [importIds]);
+    for (const b of before) {
+      await db.query(`UPDATE voter SET voted_at = $2, voted_import_id = $3 WHERE id = $1`, [b.id, b.voted_at, b.voted_import_id]);
+    }
+    await db.query(`DELETE FROM voted_import WHERE id = ANY($1::int[])`, [importIds]);
+  });
+
+  const entryFor = (v: Row, extra: Record<string, unknown> = {}) => ({
+    lastName: v.last_name,
+    firstName: v.first_name,
+    propertyAddress: door.property_address,
+    ...extra,
+  });
+  const votedCount = async (): Promise<number> =>
+    (await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM voter WHERE voted_at IS NOT NULL`)).rows[0]!.n;
+
+  it('is admin-only to import, organizer-and-above to read the summary', async () => {
+    const body = { label: 'x', entries: [entryFor(doorVoters[0]!)] };
+    assert.equal((await call('POST', '/api/voted/import', volunteerCookie, body)).statusCode, 403);
+    assert.equal((await call('POST', '/api/voted/import', organizerCookie, body)).statusCode, 403);
+    assert.equal((await call('GET', '/api/voted/imports', organizerCookie)).statusCode, 403);
+    assert.equal((await call('GET', '/api/voted/summary', volunteerCookie)).statusCode, 403);
+    assert.equal((await call('GET', '/api/voted/summary', organizerCookie)).statusCode, 200);
+  });
+
+  it('refuses a file that is not a list, and an empty one', async () => {
+    const notList = await call('POST', '/api/voted/import', adminCookie, { label: 'x', entries: { hello: 1 } });
+    assert.equal(notList.statusCode, 400);
+    assert.equal((notList.json() as { error: { code: string } }).error.code, 'bad_file');
+    const empty = await call('POST', '/api/voted/import', adminCookie, { label: 'x', entries: [] });
+    assert.equal(empty.statusCode, 400);
+    assert.equal((empty.json() as { error: { code: string } }).error.code, 'empty_file');
+  });
+
+  it('a dry run reports the matches, writes nothing, and is audited all the same', async () => {
+    const n0 = await votedCount();
+    const res = await call('POST', '/api/voted/import', adminCookie, {
+      label: 'dry',
+      dry_run: true,
+      entries: [entryFor(doorVoters[0]!), { name: 'Nobody Whatsoever', address: '1 Nowhere Rd' }],
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const body = res.json() as {
+      dry_run: boolean;
+      import: unknown;
+      counts: { entries: number; matched: number; unmatched: number; would_mark: number };
+      unmatched: Array<{ index: number; name: string; reason: string }>;
+    };
+    assert.equal(body.dry_run, true);
+    assert.equal(body.import, null);
+    assert.equal(body.counts.entries, 2);
+    assert.equal(body.counts.matched, 1);
+    assert.equal(body.counts.unmatched, 1);
+    assert.equal(body.counts.would_mark, 1);
+    assert.deepEqual(body.unmatched.map((u) => [u.index, u.name, u.reason]), [[1, 'Nobody Whatsoever', 'no_candidate']]);
+    assert.equal(await votedCount(), n0, 'a dry run stamps nobody');
+    assert.equal((await db.query(`SELECT count(*)::int AS n FROM voted_import WHERE label = 'dry'`)).rows[0]!.n, 0);
+    const a = await db.query(`SELECT detail FROM audit_log WHERE action = 'import_voted' AND detail->>'dry_run' = 'true' ORDER BY id DESC LIMIT 1`);
+    assert.equal(a.rows.length, 1);
+  });
+
+  it('stamps the matched electors, which then show on the card, the door list, the map and the summary', async () => {
+    const n0 = await votedCount();
+    const first = doorVoters[0]!;
+    const res = await call('POST', '/api/voted/import', adminCookie, {
+      label: 'advance poll day 1',
+      voted_at: '2026-10-17T15:00:00.000Z',
+      entries: [entryFor(first)],
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    const body = res.json() as {
+      dry_run: boolean;
+      import: { id: number; label: string; mode: string; n_entries: number; n_matched: number; n_marked: number; n_cleared: number; user_name: string };
+      counts: { matched: number };
+    };
+    importIds.push(body.import.id);
+    assert.equal(body.import.mode, 'merge');
+    assert.equal(body.import.n_matched, 1);
+    assert.equal(body.import.n_marked, 1);
+    assert.equal(body.import.n_cleared, 0);
+    assert.equal(await votedCount(), n0 + 1);
+
+    // The household card: has_voted on exactly that elector, for the organizer and the volunteer alike.
+    for (const cookie of [adminCookie, volunteerCookie]) {
+      const card = await call('GET', `/api/households/${door.household_id}`, cookie);
+      assert.equal(card.statusCode, 200);
+      const { voters: vs } = card.json() as { voters: Array<{ display_name: string; has_voted: boolean; voted_at: string | null }> };
+      const hit = vs.filter((v) => v.has_voted);
+      assert.equal(hit.length, 1);
+      assert.equal(hit[0]!.display_name, first.display_name);
+      assert.equal(hit[0]!.voted_at, '2026-10-17T15:00:00.000Z');
+      for (const v of vs.filter((v) => !v.has_voted)) assert.equal(v.voted_at, null);
+    }
+
+    // The door list: n_voted for the door.
+    const doors = await call('GET', `/api/turfs/${ctx.streetTurfId}/doors`, volunteerCookie);
+    const d = (doors.json() as { doors: Array<{ household_id: string; n_voted: number; voters: Array<{ has_voted: boolean }> }> }).doors.find(
+      (x) => x.household_id === door.household_id,
+    )!;
+    assert.equal(d.n_voted, 1);
+    assert.equal(d.voters.filter((v) => v.has_voted).length, 1);
+
+    // The map: `voted` on the point, and the organizer filter.
+    const pts = await call('GET', '/api/households/points', adminCookie);
+    const f = (pts.json() as { features: Array<{ properties: { id: string; voted: number; n: number } }> }).features.find(
+      (x) => x.properties.id === door.household_id,
+    )!;
+    assert.equal(f.properties.voted, 1);
+    assert.ok(f.properties.n >= 2);
+    const some = await call('GET', '/api/households/points?voted=some', adminCookie);
+    const someIds = (some.json() as { features: Array<{ properties: { id: string } }> }).features.map((x) => x.properties.id);
+    assert.ok(someIds.includes(door.household_id), 'one of two voted = some');
+    const all = await call('GET', '/api/households/points?voted=all', adminCookie);
+    assert.ok(!(all.json() as { features: Array<{ properties: { id: string } }> }).features.some((x) => x.properties.id === door.household_id));
+    const none = await call('GET', '/api/households/points?voted=none', adminCookie);
+    assert.ok(!(none.json() as { features: Array<{ properties: { id: string } }> }).features.some((x) => x.properties.id === door.household_id));
+
+    // The summary: counts only.
+    const sum = await call('GET', '/api/voted/summary', organizerCookie);
+    const sb = sum.json() as {
+      totals: { voters: number; voted: number; households_any: number };
+      by_ward: Array<{ ward: string; voters: number; voted: number }>;
+      by_day: Array<{ day: string; voted: number }>;
+      last_import: { id: number } | null;
+    };
+    assert.equal(sb.totals.voters, voters.length);
+    assert.equal(sb.totals.voted, n0 + 1);
+    assert.ok(sb.totals.households_any >= 1);
+    assert.equal(sb.by_ward.reduce((t, w) => t + w.voted, 0), n0 + 1);
+    assert.ok(sb.by_day.some((x) => x.day === '2026-10-17'), 'Ontario calendar day of the stamp');
+    assert.equal(sb.last_import?.id, body.import.id);
+    const text = sum.body;
+    for (const v of doorVoters) assert.ok(!text.includes(v.last_name!), 'no name in the summary');
+    assert.ok(!text.includes(door.property_address!), 'no address in the summary');
+  });
+
+  it('a repeat of the same file marks nobody twice and keeps the first stamp; an explicit not-voted clears', async () => {
+    const first = doorVoters[0]!;
+    const again = await call('POST', '/api/voted/import', adminCookie, { label: 'day 1 again', entries: [entryFor(first)] });
+    assert.equal(again.statusCode, 201);
+    const b1 = again.json() as { import: { id: number; n_matched: number; n_marked: number } };
+    importIds.push(b1.import.id);
+    assert.equal(b1.import.n_matched, 1);
+    assert.equal(b1.import.n_marked, 0);
+    const card = await call('GET', `/api/households/${door.household_id}`, adminCookie);
+    const v = (card.json() as { voters: Array<{ has_voted: boolean; voted_at: string | null }> }).voters.find((x) => x.has_voted)!;
+    assert.equal(v.voted_at, '2026-10-17T15:00:00.000Z', 'the earlier stamp stands');
+
+    const n1 = await votedCount();
+    const clear = await call('POST', '/api/voted/import', adminCookie, { label: 'correction', entries: [entryFor(first, { hasVoted: false })] });
+    assert.equal(clear.statusCode, 201);
+    const b2 = clear.json() as { import: { id: number; n_marked: number; n_cleared: number } };
+    importIds.push(b2.import.id);
+    assert.equal(b2.import.n_cleared, 1);
+    assert.equal(await votedCount(), n1 - 1);
+  });
+
+  it('replace mode un-stamps everyone the file omits; the import history lists every file', async () => {
+    const [a, b] = doorVoters as [Row, Row];
+    const r1 = await call('POST', '/api/voted/import', adminCookie, { label: 'both', entries: [entryFor(a), entryFor(b)] });
+    assert.equal(r1.statusCode, 201);
+    importIds.push((r1.json() as { import: { id: number } }).import.id);
+    const allNow = await call('GET', '/api/households/points?voted=all', adminCookie);
+    assert.ok((allNow.json() as { features: Array<{ properties: { id: string } }> }).features.some((x) => x.properties.id === door.household_id));
+
+    const n2 = await votedCount();
+    const r2 = await call('POST', '/api/voted/import', adminCookie, { label: 'full list so far', mode: 'replace', entries: [entryFor(a)] });
+    assert.equal(r2.statusCode, 201);
+    const b2 = r2.json() as { import: { id: number; mode: string; n_marked: number; n_cleared: number } };
+    importIds.push(b2.import.id);
+    assert.equal(b2.import.mode, 'replace');
+    assert.equal(b2.import.n_marked, 0);
+    // Everybody stamped who is not in the file — b, and any stamp that predates this suite.
+    assert.equal(b2.import.n_cleared, n2 - 1);
+    assert.equal(await votedCount(), 1);
+
+    const list = await call('GET', '/api/voted/imports', adminCookie);
+    const { imports } = list.json() as { imports: Array<{ id: number; label: string; sha256: string }> };
+    for (const id of importIds) assert.ok(imports.some((i) => i.id === id), `import ${id} listed`);
+    assert.deepEqual(Object.keys(imports[0]!).sort(), [
+      'at', 'id', 'label', 'mode', 'n_ambiguous', 'n_cleared', 'n_entries', 'n_marked', 'n_matched', 'n_unmatched',
+      'sha256', 'user_id', 'user_name',
+    ]);
   });
 });
 
