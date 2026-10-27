@@ -819,14 +819,18 @@ never "has not voted"), a `voted_import` row per applied file.
   | split name | `last_name` / `surname` / `last` / `family_name`, `first_name` / `given_name` / `given` / `first` | |
   | address | `address`, `property_address`, `civic_address`, `street_address`, `qualifying_address`, `addr` | the property address, in any spelling |
   | voted | `hasVoted`, `voted`, `did_vote`, `is_voted`, `ballot_cast` | boolean, 0/1, or Y/N/yes/no/true/false; **absent means voted** |
-  | when | `voted_at`, `voted_date`, `date`, `when`, `voted_on`, `timestamp` | per-row stamp; otherwise the body's `voted_at`, else now |
+  | when | `voted_at`, `voted_date`, `date`, `when`, `voted_on`, `timestamp` | per-row stamp; otherwise the body's `voted_at`, else the wrapper object's `exported_at` / `generated_at` / `as_of`, else now |
 
   **Matching is conservative and never guesses.** In order: voter id → natural key → surname + first given
   name (then the given name among the middle names, then a nickname of it via `lib/nicknames.ts`). With an
   address: exactly one candidate at that address matches (`name+address`); several there is `ambiguous`; none
   there but exactly one of that name on the whole list matches and is **flagged** (`name~address`, counted in
   `address_differs`). Without an address: one candidate matches (`name`), two or more is `ambiguous` — two
-  people of one name at the same door included. Ambiguous and unmatched rows are left alone and reported.
+  people of one name at the same door included. In either case, when several remain and the file carries
+  full given names, the one candidate whose given names are exactly the file's ("SMITH, JOHN A" beside
+  "SMITH, JOHN B") is taken; otherwise the row stays ambiguous. Ambiguous and unmatched rows are left alone
+  and reported. The Intelivote candidate-view export (`{ source, exported_at, totals, voters: [{ id, name,
+  address, voted, tagged }] }`) is read as-is: its `id` is the clerk's elector number and is ignored.
   The pure planner is `api/src/lib/voted.ts`, unit-tested in `api/test/voted.test.ts`.
 
   `mode`: **`merge`** (default) stamps everyone the file names and leaves everyone else as they were — a daily
@@ -841,7 +845,9 @@ never "has not voted"), a `voted_import` row per applied file.
   { dry_run, import: { id, at, user_id, user_name, label, mode, sha256, n_entries, n_matched, n_unmatched,
                        n_ambiguous, n_marked, n_cleared } | null,
     counts: { entries, matched, unmatched, ambiguous, address_differs,
-              by_how: { id, key, "name+address", name, "name~address" }, would_mark, would_clear },
+              by_how: { id, key, "name+address", name, "name~address" },
+              would_mark, would_clear },      // against what is stamped NOW: a `voted: false` row for
+                                              // somebody never stamped is not an un-marking
     unmatched: [{ index, name, address, reason: 'no_candidate' | 'nothing_to_match_on' | 'ambiguous', candidates? }] }
   ```
   `unmatched` is the operator's own file echoed back (at most 500 rows; the counts are always complete).

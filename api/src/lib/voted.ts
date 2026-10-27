@@ -51,6 +51,8 @@ export interface MatchableVoter {
   property_address_raw: string;
   civic_num: string | null;
   street: string | null;
+  /** Already stamped. Optional: the plan does not need it, but the route's "would mark" counts do. */
+  voted?: boolean;
 }
 
 export type MatchHow = 'id' | 'key' | 'name+address' | 'name' | 'name~address';
@@ -130,8 +132,9 @@ function pickFlag(rec: Record<string, unknown>, names: readonly string[]): boole
  * Accepts: a bare array; an object with one array under `voters`, `voted`, `entries`, `records`,
  * `data`, `rows` or `items`; items that are objects (keys as in KEYS) or plain strings (a name).
  */
-export function parseEntries(raw: unknown): { entries: VotedEntry[]; error?: string } {
+export function parseEntries(raw: unknown): { entries: VotedEntry[]; exported_at?: string; error?: string } {
   let list: unknown;
+  let exportedAt: string | undefined;
   if (Array.isArray(raw)) list = raw;
   else if (raw && typeof raw === 'object') {
     const o = raw as Record<string, unknown>;
@@ -141,6 +144,10 @@ export function parseEntries(raw: unknown): { entries: VotedEntry[]; error?: str
         break;
       }
     }
+    // An export's own timestamp (Intelivote writes `exported_at`) is the honest default stamp for
+    // rows that carry no date: the file says who had voted as of then, not as of the upload.
+    const at = pickString(o, ['exportedat', 'exported', 'generatedat', 'asof', 'asat', 'timestamp', 'date']);
+    if (at && !Number.isNaN(Date.parse(at))) exportedAt = new Date(at).toISOString();
   }
   if (!Array.isArray(list)) return { entries: [], error: 'expected a JSON array of voters, or an object holding one' };
   if (list.length > MAX_ENTRIES) return { entries: [], error: `too many entries (${list.length}; the limit is ${MAX_ENTRIES})` };
@@ -173,7 +180,7 @@ export function parseEntries(raw: unknown): { entries: VotedEntry[]; error?: str
     if (at && !Number.isNaN(Date.parse(at))) e.voted_at = new Date(at).toISOString();
     entries.push(e);
   }
-  return { entries };
+  return exportedAt ? { entries, exported_at: exportedAt } : { entries };
 }
 
 // ------------------------------------------------------------------ normalisation
@@ -192,27 +199,50 @@ export function norm(s: string | null | undefined): string {
 const SUFFIXES = new Set(['JR', 'SR', 'II', 'III', 'IV']);
 
 /** Split a typed name into the surname and the first given name, the two tokens the list indexes on. */
-export function splitName(e: Pick<VotedEntry, 'name' | 'last_name' | 'first_name'>): { last: string; first: string | null } | null {
+export function splitName(
+  e: Pick<VotedEntry, 'name' | 'last_name' | 'first_name'>,
+): { last: string; first: string | null; given: string[] } | null {
+  const givenOf = (s: string): string[] => norm(s).split(' ').filter((t) => t && !SUFFIXES.has(t));
   if (e.last_name) {
     const last = norm(e.last_name);
     if (!last) return null;
-    const first = norm(e.first_name).split(' ')[0] ?? '';
-    return { last, first: first || null };
+    const given = givenOf(e.first_name ?? '');
+    return { last, first: given[0] ?? null, given };
   }
   if (!e.name) return null;
   const comma = e.name.indexOf(',');
   if (comma >= 0) {
     // "ADAMS, JEFF JOHN" — the list's own `name_raw` shape.
     const last = norm(e.name.slice(0, comma));
-    const first = norm(e.name.slice(comma + 1)).split(' ')[0] ?? '';
-    return last ? { last, first: first || null } : null;
+    const given = givenOf(e.name.slice(comma + 1));
+    return last ? { last, first: given[0] ?? null, given } : null;
   }
-  const tokens = norm(e.name)
-    .split(' ')
-    .filter((t) => t && !SUFFIXES.has(t));
+  const tokens = givenOf(e.name);
   if (tokens.length === 0) return null;
-  if (tokens.length === 1) return { last: tokens[0] as string, first: null };
-  return { last: tokens[tokens.length - 1] as string, first: tokens[0] as string };
+  if (tokens.length === 1) return { last: tokens[0] as string, first: null, given: [] };
+  return { last: tokens[tokens.length - 1] as string, first: tokens[0] as string, given: tokens.slice(0, -1) };
+}
+
+/** A voter's given names as the list wrote them: everything after the comma of `name_raw`. */
+function givenOfVoter(v: Pick<MatchableVoter, 'name_raw' | 'first_name'>): string[] {
+  const comma = v.name_raw.indexOf(',');
+  const src = comma >= 0 ? v.name_raw.slice(comma + 1) : v.first_name;
+  return norm(src).split(' ').filter((t) => t && !SUFFIXES.has(t));
+}
+
+/**
+ * Two people with the same surname and first given name at one door — a parent and child, usually
+ * — can still be told apart when the file carries the full given names ("SMITH, JOHN A" and
+ * "SMITH, JOHN B"). Returns the one candidate whose given names are exactly the file's, or null
+ * when that does not single anyone out (then the row stays ambiguous).
+ */
+function refineByGivenNames(candidates: MatchableVoter[], given: string[]): MatchableVoter | null {
+  // One token still discriminates: "LARKSPUR, ORLA" beside "LARKSPUR, ORLA JUNE" at one door is two
+  // people, and the clerk's file writes names exactly as the list does — it is the same list.
+  if (given.length === 0) return null;
+  const want = given.join(' ');
+  const exact = candidates.filter((v) => givenOfVoter(v).join(' ') === want);
+  return exact.length === 1 ? (exact[0] as MatchableVoter) : null;
 }
 
 /** The leading civic number of a typed address, if any ("21584 Adelaide St N" → "21584"). */
@@ -335,7 +365,10 @@ function resolve(idx: Index, e: VotedEntry): Outcome {
   if (e.address) {
     const atAddress = candidates.filter((v) => addressMatches(e.address as string, v));
     if (atAddress.length === 1) return { kind: 'matched', voter_id: (atAddress[0] as MatchableVoter).id, how: 'name+address' };
-    if (atAddress.length > 1) return { kind: 'ambiguous', candidates: atAddress.length };
+    if (atAddress.length > 1) {
+      const one = refineByGivenNames(atAddress, parts.given);
+      return one ? { kind: 'matched', voter_id: one.id, how: 'name+address' } : { kind: 'ambiguous', candidates: atAddress.length };
+    }
     // Nobody of that name at that address. One person of that name on the whole list is still
     // them — the clerk's address formatting is not ours — but it is flagged, not silent.
     if (candidates.length === 1) return { kind: 'matched', voter_id: (candidates[0] as MatchableVoter).id, how: 'name~address' };
@@ -343,6 +376,8 @@ function resolve(idx: Index, e: VotedEntry): Outcome {
   }
   if (candidates.length === 1) return { kind: 'matched', voter_id: (candidates[0] as MatchableVoter).id, how: 'name' };
   // Two of the same name at the SAME door (a parent and child, say) cannot be told apart without
-  // more than a name; two at different doors need the address the file did not give.
-  return { kind: 'ambiguous', candidates: candidates.length };
+  // more than a name; two at different doors need the address the file did not give. The full
+  // given names are the one more thing a file may carry.
+  const one = refineByGivenNames(candidates, parts.given);
+  return one ? { kind: 'matched', voter_id: one.id, how: 'name' } : { kind: 'ambiguous', candidates: candidates.length };
 }

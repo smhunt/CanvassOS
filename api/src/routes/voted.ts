@@ -108,7 +108,8 @@ export const votedRoutes: FastifyPluginAsync = async (app) => {
     const parsed = parseEntries(body.entries);
     if (parsed.error) throw badRequest(parsed.error, 'bad_file');
     if (parsed.entries.length === 0) throw badRequest('the file holds no voters', 'empty_file');
-    const stamp = body.voted_at ? new Date(body.voted_at) : new Date();
+    // The body's stamp, else the file's own export time, else now.
+    const stamp = new Date(body.voted_at ?? parsed.exported_at ?? Date.now());
 
     // The whole list, once, in memory: ~17k narrow rows is a couple of megabytes and a few tens of
     // milliseconds, and it is the only way to tell "one John Smith" from "three" without a query
@@ -116,7 +117,7 @@ export const votedRoutes: FastifyPluginAsync = async (app) => {
     const voters = await q<MatchableVoter>(
       app.db,
       `SELECT v.id, v.natural_key, v.first_name, v.last_name, v.full_name, v.name_raw, v.household_id,
-              h.address, h.property_address_raw, h.civic_num, h.street
+              h.address, h.property_address_raw, h.civic_num, h.street, (v.voted_at IS NOT NULL) AS voted
        FROM voter v JOIN household h ON h.id = v.household_id`,
     );
     const plan = planVotedImport(parsed.entries, voters);
@@ -126,7 +127,18 @@ export const votedRoutes: FastifyPluginAsync = async (app) => {
 
     const markIds = [...plan.mark.keys()];
     const clearIds = [...plan.clear.keys()];
-    const counts = { ...plan.counts, would_mark: markIds.length, would_clear: clearIds.length };
+    // What would actually change, against what is stamped now: a complete export carries a
+    // `voted: false` for every elector who has not voted, and ten thousand of those are not ten
+    // thousand un-markings. `replace` also un-marks everyone stamped whom the file does not name.
+    const stamped = new Set(voters.filter((v) => v.voted).map((v) => v.id));
+    const markSet = new Set(markIds);
+    const wouldMark = markIds.filter((id) => !stamped.has(id)).length;
+    let wouldClear = clearIds.filter((id) => stamped.has(id)).length;
+    if (body.mode === 'replace') {
+      const clearSet = new Set(clearIds);
+      for (const id of stamped) if (!markSet.has(id) && !clearSet.has(id)) wouldClear++;
+    }
+    const counts = { ...plan.counts, would_mark: wouldMark, would_clear: wouldClear };
 
     if (body.dry_run) {
       await audit(app.db, req.log, {

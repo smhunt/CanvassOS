@@ -37,6 +37,12 @@ const LIST: MatchableVoter[] = [
   voter({ first_name: 'Robert', last_name: 'Fernbrake', address: '93 STONE FIELD LN UNIT 106', street: 'STONE FIELD' }),
   voter({ first_name: 'Juno', last_name: 'Goldhawk', address: '5 QUEEN ST' }),
   voter({ first_name: 'Juno', last_name: 'Goldhawk', address: '5 QUEEN ST' }), // the same name twice at one door (#2)
+  // A parent and child: same surname, same first given name, same door, different middle names.
+  voter({ first_name: 'Hattie Rose', last_name: 'Inkpen', name_raw: 'INKPEN, HATTIE ROSE', full_name: 'Hattie Rose Inkpen', address: '8 MEDWAY RD' }),
+  voter({ first_name: 'Hattie May', last_name: 'Inkpen', name_raw: 'INKPEN, HATTIE MAY', full_name: 'Hattie May Inkpen', address: '8 MEDWAY RD' }),
+  // And a pair the clerk's file writes as "LARKSPUR, ORLA" and "LARKSPUR, ORLA JUNE".
+  voter({ first_name: 'Orla', last_name: 'Larkspur', name_raw: 'LARKSPUR, ORLA', address: '3 KING ST' }),
+  voter({ first_name: 'Orla June', last_name: 'Larkspur', name_raw: 'LARKSPUR, ORLA JUNE', full_name: 'Orla June Larkspur', address: '3 KING ST' }),
 ];
 const byName = (first: string, last: string, addr?: string) =>
   LIST.find((v) => v.first_name === first && v.last_name === last && (!addr || v.address === addr)) as MatchableVoter;
@@ -84,11 +90,30 @@ describe('voted.norm / splitName / addressMatches', () => {
   });
 
   it('splits "LAST, FIRST MIDDLE", "First Last", split fields and a bare surname', () => {
-    assert.deepEqual(splitName({ name: 'DUNMORE, CORMAC ROBERT' }), { last: 'DUNMORE', first: 'CORMAC' });
-    assert.deepEqual(splitName({ name: 'Cormac R. Dunmore Jr' }), { last: 'DUNMORE', first: 'CORMAC' });
-    assert.deepEqual(splitName({ last_name: 'Dunmore', first_name: 'Cormac Robert' }), { last: 'DUNMORE', first: 'CORMAC' });
-    assert.deepEqual(splitName({ name: 'Dunmore' }), { last: 'DUNMORE', first: null });
+    assert.deepEqual(splitName({ name: 'DUNMORE, CORMAC ROBERT' }), { last: 'DUNMORE', first: 'CORMAC', given: ['CORMAC', 'ROBERT'] });
+    assert.deepEqual(splitName({ name: 'Cormac R. Dunmore Jr' }), { last: 'DUNMORE', first: 'CORMAC', given: ['CORMAC', 'R'] });
+    assert.deepEqual(splitName({ last_name: 'Dunmore', first_name: 'Cormac Robert' }), { last: 'DUNMORE', first: 'CORMAC', given: ['CORMAC', 'ROBERT'] });
+    assert.deepEqual(splitName({ name: 'Dunmore' }), { last: 'DUNMORE', first: null, given: [] });
     assert.equal(splitName({}), null);
+  });
+
+  it('reads an export wrapper: the array under `voters`, and its exported_at as the default stamp', () => {
+    const r = parseEntries({
+      source: 'Intelivote Election Manager – Candidate View',
+      exported_at: '2026-10-27T17:52:16.781Z',
+      totals: { voters: 2, voted: 1 },
+      voters: [
+        { id: '100001', name: 'ASHGROVE, ALMA ROSE', address: '12 GEORGE ST 4', voted: false, tagged: false },
+        { id: '100002', name: 'DUNMORE, CORMAC', address: '40 KING ST', voted: true, tagged: false },
+      ],
+    });
+    assert.equal(r.error, undefined);
+    assert.equal(r.exported_at, '2026-10-27T17:52:16.781Z');
+    assert.deepEqual(r.entries, [
+      { index: 0, voted: false, name: 'ASHGROVE, ALMA ROSE', address: '12 GEORGE ST 4' },
+      { index: 1, voted: true, name: 'DUNMORE, CORMAC', address: '40 KING ST' },
+    ]);
+    assert.equal(parseEntries([{ name: 'x' }]).exported_at, undefined);
   });
 
   it('matches an address exactly, through punctuation, and by civic number + street words', () => {
@@ -139,6 +164,21 @@ describe('voted.planVotedImport', () => {
     // Two of the same name at the SAME door stay ambiguous even with the address.
     const twins = planVotedImport(parseEntries([{ name: 'Juno Goldhawk', address: '5 Queen St' }]).entries, LIST);
     assert.deepEqual(twins.results[0]?.outcome, { kind: 'ambiguous', candidates: 2 });
+  });
+
+  it('tells two people of one first name at one door apart by their full given names, and only then', () => {
+    const full = planVotedImport(parseEntries([{ name: 'INKPEN, HATTIE MAY', address: '8 Medway Rd' }]).entries, LIST);
+    assert.deepEqual(full.results[0]?.outcome, { kind: 'matched', voter_id: byName('Hattie May', 'Inkpen').id, how: 'name+address' });
+    const noAddr = planVotedImport(parseEntries([{ name: 'INKPEN, HATTIE ROSE' }]).entries, LIST);
+    assert.deepEqual(noAddr.results[0]?.outcome, { kind: 'matched', voter_id: byName('Hattie Rose', 'Inkpen').id, how: 'name' });
+    // The first name alone, or a middle name neither of them has, singles nobody out.
+    for (const name of ['INKPEN, HATTIE', 'INKPEN, HATTIE JANE']) {
+      const r = planVotedImport(parseEntries([{ name, address: '8 Medway Rd' }]).entries, LIST);
+      assert.deepEqual(r.results[0]?.outcome, { kind: 'ambiguous', candidates: 2 }, name);
+    }
+    // But "LARKSPUR, ORLA" is exactly one of the two Orla Larkspurs, as the list writes them.
+    const one = planVotedImport(parseEntries([{ name: 'LARKSPUR, ORLA', address: '3 King St' }, { name: 'LARKSPUR, ORLA JUNE', address: '3 King St' }]).entries, LIST);
+    assert.deepEqual(one.results.map((r) => (r.outcome as { voter_id?: string }).voter_id), [byName('Orla', 'Larkspur').id, byName('Orla June', 'Larkspur').id]);
   });
 
   it('flags a unique name whose address does not agree, rather than dropping or trusting it silently', () => {
