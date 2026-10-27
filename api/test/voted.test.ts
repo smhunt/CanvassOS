@@ -207,12 +207,29 @@ describe('voted.planVotedImport', () => {
       index: 0,
       name: 'Nobody Here',
       address: '1 Main St',
-      outcome: { kind: 'unmatched', reason: 'no_candidate' },
+      outcome: { kind: 'unmatched', reason: 'no_candidate', why: 'new_address' },
     });
-    assert.deepEqual(plan.results[2]?.outcome, { kind: 'unmatched', reason: 'nothing_to_match_on' });
+    assert.deepEqual(plan.results[2]?.outcome, { kind: 'unmatched', reason: 'nothing_to_match_on', why: 'no_name' });
     assert.equal(plan.counts.unmatched, 2);
     assert.equal(plan.clear.size, 1);
     assert.equal(plan.mark.size, 0);
+  });
+
+  it('says why an unplaced row could not be placed', () => {
+    const plan = planVotedImport(
+      parseEntries([
+        { name: 'NEWCOMER, PAT', address: '999 Nowhere Cres' }, // a house we never had
+        { name: 'NEWCOMER, PAT', address: '12 George St' }, // our door, a surname not at it
+        { name: 'ASHGROVE, ZELDA', address: '12 George St' }, // our door, the Ashgroves live there, no Zelda
+        { name: 'NEWCOMER, PAT' }, // nothing to place it by
+      ]).entries,
+      LIST,
+    );
+    assert.deepEqual(
+      plan.results.map((r) => (r.outcome as { why: string }).why),
+      ['new_address', 'new_at_door', 'given_name_differs', 'surname_unknown'],
+    );
+    assert.deepEqual(plan.counts.unmatched_by, { new_address: 1, new_at_door: 1, given_name_differs: 1, surname_unknown: 1, no_name: 0 });
   });
 
   it('counts a person listed twice once, and lets the later line decide', () => {

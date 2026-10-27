@@ -19,6 +19,8 @@ import {
   TURF_CONTRAST_ON_IMAGERY,
   TURF_OUTLINE,
   TURF_OUTLINE_ON_IMAGERY,
+  TURNOUT_COLOURS,
+  TURNOUT_SHARE_STEPS,
   WARD_COLOURS,
   communityColour,
   type BaseLayer,
@@ -114,6 +116,9 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
         clusterRadius: 44,
         clusterProperties: {
           voters: ['+', ['get', 'n']],
+          // Electors struck off as voted, so a cluster can be painted by its turnout share.
+          // `voted` is absent on a volunteer's out-of-turf points, hence the coalesce.
+          voted: ['+', ['coalesce', ['get', 'voted'], 0]],
           // One accumulator per ward: how many doors in this cluster belong to each. Used by
           // clusterColourExpression() to paint the cluster in its dominant ward's colour.
           ...WARD_ACCUMULATORS,
@@ -479,6 +484,13 @@ export const WARD_ACCUMULATORS: Record<string, unknown> = Object.fromEntries(
  * Ties fall to the lowest-numbered ward, which keeps the colour stable as the map is panned.
  */
 export function clusterColourExpression(mode: ColourMode): ExpressionSpecification | string {
+  if (mode === 'turnout') {
+    // Share of the cluster's electors who have voted, in four steps (TURNOUT_SHARE_STEPS).
+    const share: ExpressionSpecification = ['/', ['get', 'voted'], ['max', 1, ['get', 'voters']]];
+    const stops: (number | string)[] = [];
+    for (const s of TURNOUT_SHARE_STEPS.slice(1)) stops.push(s.min, s.colour);
+    return ['step', share, TURNOUT_SHARE_STEPS[0]?.colour ?? CLUSTER_COLOUR, ...stops] as unknown as ExpressionSpecification;
+  }
   if (mode !== 'ward') return CLUSTER_COLOUR;
   const wards = Object.keys(WARD_COLOURS);
   const cases: unknown[] = [];
@@ -540,6 +552,20 @@ export function colourExpression(mode: ColourMode, communities: string[]): Expre
       ];
     case 'nonres':
       return ['case', ['>', ['coalesce', ['get', 'nonres'], 0], 0], NONRES_HIGHLIGHT, NONRES_MUTED];
+    case 'turnout': {
+      // Per door: nobody yet (grey), some (amber), everyone (green). A door with no electors
+      // counts as nobody.
+      const voted: ExpressionSpecification = ['coalesce', ['get', 'voted'], 0];
+      const n: ExpressionSpecification = ['coalesce', ['get', 'n'], 0];
+      return [
+        'case',
+        ['<=', voted, 0],
+        TURNOUT_COLOURS.none,
+        ['>=', voted, n],
+        TURNOUT_COLOURS.all,
+        TURNOUT_COLOURS.some,
+      ];
+    }
   }
 }
 

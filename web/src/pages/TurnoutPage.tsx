@@ -1,7 +1,8 @@
 import { useRef, useState, type ChangeEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { isApiError } from '../api/client';
 import { useTurnout, useVotedImport, useVotedImports } from '../api/hooks';
-import type { VotedImportMode, VotedImportResult } from '../api/types';
+import type { UnmatchedWhy, VotedImportMode, VotedImportResult } from '../api/types';
 import { isAdmin } from '../auth';
 import { HBars } from '../components/Bars';
 import { useUser } from '../components/Shell';
@@ -31,6 +32,14 @@ export function TurnoutPage() {
           the app, so nobody is asked to vote twice, and the map can show where the remaining voters are.
         </p>
       </header>
+
+      <p>
+        {/* The map in its turnout mode: every door nobody / some / everyone, clusters by share,
+            and the heat surface weighed by who has voted. The params are read once by MapPage. */}
+        <Link className="btn btn--primary" to="/map?mode=turnout&heat=voted">
+          Open the turnout map
+        </Link>
+      </p>
 
       {turnout.isPending && <LoadingTiles count={5} label="Loading the turnout…" />}
       {turnout.isError && <ErrorBox title="Could not load the turnout" error={turnout.error} onRetry={() => void turnout.refetch()} />}
@@ -132,6 +141,24 @@ function countRows(parsed: unknown): number {
   }
   return 0;
 }
+
+/** Why an unplaced row failed, in the operator's terms. Order is the order the breakdown lists them. */
+const WHY_LABELS: Record<UnmatchedWhy, { short: string; long: string }> = {
+  new_address: {
+    short: 'an address our list does not have',
+    long: 'Nothing on our list lives at that address. A house added to the list since the export we loaded.',
+  },
+  new_at_door: {
+    short: 'a door we have, but nobody of that surname at it',
+    long: 'The door is on our list, but nobody with that surname is. Somebody moved in or was added at revision.',
+  },
+  given_name_differs: {
+    short: 'the surname is at that door, but no given name agrees',
+    long: 'That family is at that door on our list, but no given name agrees: a person added at revision, or a name the nickname table does not know.',
+  },
+  surname_unknown: { short: 'no address given, and no such surname anywhere', long: 'No address to go on, and no such surname on our list.' },
+  no_name: { short: 'no name in the row', long: 'The row carried nothing to match on.' },
+};
 
 const HOW_LABELS: Record<keyof VotedImportResult['counts']['by_how'], string> = {
   id: 'by voter id',
@@ -293,6 +320,25 @@ function ImportResult({ r }: { r: VotedImportResult }) {
           </li>
         )}
       </ul>
+      {c.unmatched > 0 && (
+        <div className="turnout-result__why">
+          <h4 className="sheet__h3">Why {n(c.unmatched)} {c.unmatched === 1 ? 'row was' : 'rows were'} not found</h4>
+          <ul className="muted small turnout-result__how">
+            {(Object.keys(WHY_LABELS) as UnmatchedWhy[])
+              .filter((k) => c.unmatched_by[k] > 0)
+              .map((k) => (
+                <li key={k}>
+                  <strong>{n(c.unmatched_by[k])}</strong> {WHY_LABELS[k].short}
+                </li>
+              ))}
+          </ul>
+          <p className="muted small">
+            The clerk’s final list is not the export this app was loaded from: electors are added and removed through the
+            revision period and on election day. “New address” and “new at the door” rows are people who were not on the
+            list we hold, and there is nobody here to mark — they are not errors.
+          </p>
+        </div>
+      )}
       {r.unmatched.length > 0 && (
         <details className="disclosure" open={r.unmatched.length <= 20}>
           <summary>
@@ -316,9 +362,11 @@ function ImportResult({ r }: { r: VotedImportResult }) {
                   <td>
                     {u.reason === 'ambiguous'
                       ? `${u.candidates ?? 'several'} people of that name — add the address`
-                      : u.reason === 'nothing_to_match_on'
-                        ? 'no name in the row'
-                        : 'nobody of that name on the list'}
+                      : u.why
+                        ? WHY_LABELS[u.why].long
+                        : u.reason === 'nothing_to_match_on'
+                          ? 'no name in the row'
+                          : 'nobody of that name on the list'}
                   </td>
                 </tr>
               ))}

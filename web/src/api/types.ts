@@ -749,12 +749,16 @@ export interface VotedImportResult {
     ambiguous: number;
     address_differs: number;
     by_how: Record<'id' | 'key' | 'name+address' | 'name' | 'name~address', number>;
+    /** Why the unplaced rows failed, in total — the answer to "why so many". */
+    unmatched_by: Record<UnmatchedWhy, number>;
     would_mark: number;
     would_clear: number;
   };
   /** The rows the file gave that could not be placed — the operator's own text, echoed back. */
-  unmatched: { index: number; name: string | null; address: string | null; reason: string; candidates?: number }[];
+  unmatched: { index: number; name: string | null; address: string | null; reason: string; why?: UnmatchedWhy; candidates?: number }[];
 }
+
+export type UnmatchedWhy = 'new_address' | 'new_at_door' | 'given_name_differs' | 'surname_unknown' | 'no_name';
 
 /** GET /api/voted/summary — counts only. */
 export interface Turnout {

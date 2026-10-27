@@ -12,6 +12,8 @@ import {
   QUALITY_COLOURS,
   QUALITY_LABELS,
   RESULT_COLOURS,
+  TURNOUT_COLOURS,
+  TURNOUT_SHARE_STEPS,
   communityColour,
   wardColour,
   type ColourMode,
@@ -59,6 +61,13 @@ export function Legend({ mode, meta, zoom, heat = 'off' }: Props) {
         { colour: NONRES_MUTED, label: 'Residents only' },
       ];
       break;
+    case 'turnout':
+      items = [
+        { colour: TURNOUT_COLOURS.all, label: 'Everyone at the door has voted' },
+        { colour: TURNOUT_COLOURS.some, label: 'Some have voted' },
+        { colour: TURNOUT_COLOURS.none, label: 'Nobody has voted yet' },
+      ];
+      break;
   }
   const clustered = zoom < 13;
   const heatMode = heat === 'off' ? null : HEAT_MODES.find((h) => h.id === heat);
@@ -103,6 +112,21 @@ export function Legend({ mode, meta, zoom, heat = 'off' }: Props) {
       {mode === 'doors' && <p className="muted small legend__note">Dot size also grows with voters per door.</p>}
       {mode === 'status' && (
         <p className="muted small legend__note">Clusters stay ward-coloured; zoom in to see each door&rsquo;s status.</p>
+      )}
+      {mode === 'turnout' && (
+        <>
+          <ul className="legend__list legend__list--sub" aria-label="Cluster shares">
+            {TURNOUT_SHARE_STEPS.map((s) => (
+              <li key={s.label} className="legend__item">
+                <span className="legend__cluster" style={{ background: s.colour }} aria-hidden="true">
+                  n
+                </span>
+                <span>Cluster: {s.label}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small legend__note">From the clerk&rsquo;s voted list, as last imported under Turnout.</p>
+        </>
       )}
     </div>
   );

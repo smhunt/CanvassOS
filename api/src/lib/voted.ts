@@ -57,9 +57,20 @@ export interface MatchableVoter {
 
 export type MatchHow = 'id' | 'key' | 'name+address' | 'name' | 'name~address';
 
+/**
+ * Why an unplaced row could not be placed — the answer to "why are so many unmatched", row by
+ * row and in total. `new_address`: nothing on our list lives at that address, so it is a house
+ * the list did not have when it was exported. `new_at_door`: the door is ours but nobody of that
+ * surname is at it — somebody moved in, or was added at revision. `given_name_differs`: the
+ * surname is at that door but no given name agrees, which is a list revision or a spelling the
+ * nickname table does not know. `surname_unknown`: no address to go on, and no such surname
+ * anywhere. `no_name`: the row carried nothing to match on.
+ */
+export type UnmatchedWhy = 'new_address' | 'new_at_door' | 'given_name_differs' | 'surname_unknown' | 'no_name';
+
 export type Outcome =
   | { kind: 'matched'; voter_id: string; how: MatchHow }
-  | { kind: 'unmatched'; reason: 'no_candidate' | 'nothing_to_match_on' }
+  | { kind: 'unmatched'; reason: 'no_candidate' | 'nothing_to_match_on'; why: UnmatchedWhy }
   | { kind: 'ambiguous'; candidates: number };
 
 export interface EntryResult {
@@ -83,6 +94,7 @@ export interface VotedPlan {
     /** Matched on name alone while the file's address did NOT agree — worth a look. */
     address_differs: number;
     by_how: Record<MatchHow, number>;
+    unmatched_by: Record<UnmatchedWhy, number>;
   };
 }
 
@@ -274,6 +286,10 @@ interface Index {
   byName: Map<string, MatchableVoter[]>;
   /** `LAST` → voters, for a surname-only entry or a given name that only appears among the middle names. */
   byLast: Map<string, MatchableVoter[]>;
+  /** One voter per household, as the address to test an unplaced row against (why it failed). */
+  households: MatchableVoter[];
+  /** `CIVIC` → the households with that civic number, so an address lookup is not 7k tests. */
+  byCivic: Map<string, MatchableVoter[]>;
 }
 
 export function indexVoters(voters: MatchableVoter[]): Index {
@@ -281,6 +297,9 @@ export function indexVoters(voters: MatchableVoter[]): Index {
   const byKey = new Map<string, MatchableVoter>();
   const byName = new Map<string, MatchableVoter[]>();
   const byLast = new Map<string, MatchableVoter[]>();
+  const seenHousehold = new Set<string>();
+  const households: MatchableVoter[] = [];
+  const byCivic = new Map<string, MatchableVoter[]>();
   const push = (m: Map<string, MatchableVoter[]>, k: string, v: MatchableVoter) => {
     const list = m.get(k);
     if (list) list.push(v);
@@ -293,8 +312,31 @@ export function indexVoters(voters: MatchableVoter[]): Index {
     const first = norm(v.first_name).split(' ')[0] ?? '';
     push(byName, `${last}|${first}`, v);
     push(byLast, last, v);
+    if (!seenHousehold.has(v.household_id)) {
+      seenHousehold.add(v.household_id);
+      households.push(v);
+      if (v.civic_num) push(byCivic, norm(v.civic_num), v);
+    }
   }
-  return { byId, byKey, byName, byLast };
+  return { byId, byKey, byName, byLast, households, byCivic };
+}
+
+/** The households on our list at a typed address (normally one; several for an unnumbered road). */
+function householdsAt(idx: Index, typed: string): Set<string> {
+  const out = new Set<string>();
+  const civic = civicOf(norm(typed));
+  const pool = civic ? (idx.byCivic.get(civic) ?? []) : idx.households;
+  for (const h of pool) if (addressMatches(typed, h)) out.add(h.household_id);
+  return out;
+}
+
+/** Why a row with no candidate could not be placed (see UnmatchedWhy). */
+function whyUnmatched(idx: Index, e: VotedEntry, last: string): UnmatchedWhy {
+  if (!e.address) return 'surname_unknown';
+  const doors = householdsAt(idx, e.address);
+  if (doors.size === 0) return 'new_address';
+  const surnameAtDoor = (idx.byLast.get(last) ?? []).some((v) => doors.has(v.household_id));
+  return surnameAtDoor ? 'given_name_differs' : 'new_at_door';
 }
 
 /** The voters an entry's name could mean, widening step by step and stopping at the first step that finds anyone. */
@@ -326,10 +368,12 @@ export function planVotedImport(entries: VotedEntry[], voters: MatchableVoter[])
     ambiguous: 0,
     address_differs: 0,
     by_how: { id: 0, key: 0, 'name+address': 0, name: 0, 'name~address': 0 },
+    unmatched_by: { new_address: 0, new_at_door: 0, given_name_differs: 0, surname_unknown: 0, no_name: 0 },
   };
 
   for (const e of entries) {
     const outcome = resolve(idx, e);
+    if (outcome.kind === 'unmatched') counts.unmatched_by[outcome.why]++;
     const label = e.name ?? [e.last_name, e.first_name].filter(Boolean).join(', ');
     results.push({ index: e.index, name: label || null, address: e.address ?? null, outcome });
     if (outcome.kind === 'matched') {
@@ -349,7 +393,7 @@ export function planVotedImport(entries: VotedEntry[], voters: MatchableVoter[])
 function resolve(idx: Index, e: VotedEntry): Outcome {
   if (e.voter_id) {
     const v = idx.byId.get(e.voter_id);
-    return v ? { kind: 'matched', voter_id: v.id, how: 'id' } : { kind: 'unmatched', reason: 'no_candidate' };
+    return v ? { kind: 'matched', voter_id: v.id, how: 'id' } : { kind: 'unmatched', reason: 'no_candidate', why: 'no_name' };
   }
   if (e.natural_key) {
     const v = idx.byKey.get(e.natural_key);
@@ -358,9 +402,9 @@ function resolve(idx: Index, e: VotedEntry): Outcome {
     // whose address spelling changed, and the file may predate that.
   }
   const parts = splitName(e);
-  if (!parts) return { kind: 'unmatched', reason: 'nothing_to_match_on' };
+  if (!parts) return { kind: 'unmatched', reason: 'nothing_to_match_on', why: 'no_name' };
   const candidates = nameCandidates(idx, parts.last, parts.first);
-  if (candidates.length === 0) return { kind: 'unmatched', reason: 'no_candidate' };
+  if (candidates.length === 0) return { kind: 'unmatched', reason: 'no_candidate', why: whyUnmatched(idx, e, parts.last) };
 
   if (e.address) {
     const atAddress = candidates.filter((v) => addressMatches(e.address as string, v));

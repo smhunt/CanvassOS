@@ -78,6 +78,11 @@ export function MapPage() {
   // — the follow-up queue, a turf door list, a link pasted into Signal — can point at it directly.
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkId = searchParams.get('household');
+  // `/map?mode=turnout&heat=voted` is how the Turnout page opens the turnout map. Consumed once,
+  // like the other params, then stripped so a later change of mode is not undone on re-render.
+  // An unknown or role-barred value is simply ignored.
+  const modeParam = searchParams.get('mode');
+  const heatParam = searchParams.get('heat');
   const [viewport, setViewport] = useState<ViewportStats>({ doors: 0, voters: 0, zoom: 10 });
   // The turf drawer needs the live map to add its own layers, so MapView hands it over once ready.
   const [map, setMap] = useState<MapLibreMap | null>(null);
@@ -235,6 +240,18 @@ export function MapPage() {
     writeLS(LS_HEAT, h);
   }, []);
   const toggleHeat = useCallback(() => setHeat(heat === 'off' ? 'voters' : 'off'), [heat, setHeat]);
+
+  const viewLinkDone = useRef(false);
+  useEffect(() => {
+    if ((!modeParam && !heatParam) || viewLinkDone.current) return;
+    viewLinkDone.current = true;
+    if (modeParam && modes.some((m) => m.id === modeParam)) setMode(modeParam as ColourMode);
+    if (heatParam && (heatParam === 'off' || heatModes.some((h) => h.id === heatParam))) setHeat(heatParam as HeatMode);
+    const next = new URLSearchParams(searchParams);
+    next.delete('mode');
+    next.delete('heat');
+    setSearchParams(next, { replace: true });
+  }, [modeParam, heatParam, modes, heatModes, setHeat, searchParams, setSearchParams]);
 
   // The turf overlay. A preference, remembered, and off by default: the map's first job is the
   // doors, and forty boundaries over them is a choice rather than a default.

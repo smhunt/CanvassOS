@@ -2299,3 +2299,9 @@ select {
 .turnout-result__warn {
   color: var(--warn);
 }
+.turnout-result__why {
+  margin: 0.25rem 0 0.75rem;
+}
+.legend__list--sub {
+  margin-top: 0.35rem;
+}

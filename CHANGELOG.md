@@ -4,6 +4,20 @@ All notable changes to CanvassOS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-10-27
+
+### Added
+
+- **A turnout map.** "Turnout" joins the map's colour modes (organizers): every door nobody /
+  some / everyone has voted, and clusters painted by their share of electors who have voted, with
+  the legend to match. "Open the turnout map" on the Turnout page opens it with the heat surface
+  weighed by who has voted (`/map?mode=turnout&heat=voted`, read once by the map).
+- **Why a row was not found.** The check now classifies every unplaced row — an address our list
+  does not have, a door we have with a new surname, the family at that door with a different given
+  name, a surname we do not have at all — and shows the totals, so a long "not found" list reads
+  as what it is: electors added to the clerk's list after the export this app was loaded from.
+  `unmatched_by` and `why` on `POST /api/voted/import`; the same totals in the audit detail.
+
 ## [1.9.0] - 2026-10-21
 
 ### Added

@@ -19,7 +19,7 @@ export const MAP_HELP: HelpTopic = {
   sections: [
     {
       heading: 'Dots and colours',
-      body: 'Every dot is one door. The menu next to Filters chooses what the colour means: Ward, Community, Voters per door or Canvass status, and organizers also get Record quality and Non-resident owners. Heat adds a warm glow under the dots where the voters are thickest; organizers can weigh it by who has voted or who is still to. “Legend” at the bottom left explains it all.',
+      body: 'Every dot is one door. The menu next to Filters chooses what the colour means: Ward, Community, Voters per door or Canvass status; organizers also get Record quality, Non-resident owners and Turnout (nobody, some or everyone at the door has voted, clusters by share). Heat adds a warm glow where the voters are thickest. “Legend” explains it all.',
     },
     {
       heading: 'Filters and counts',
@@ -477,11 +477,11 @@ export const TURNOUT_HELP: HelpTopic = {
     },
     {
       heading: 'Rows that were not placed',
-      body: 'Nobody of that name means the list has no such elector; check the spelling. Several people of that name means the address is needed to tell them apart. A match on the name alone where the address did not agree is counted separately so you can look at it.',
+      body: 'Under “Why rows were not found” the check says what kind each is: an address our list does not have, a door we have with a new surname, or the family at that door with a different given name. Those are people added to the list since our export, not errors. Several people of that name means the address is needed to tell them apart.',
     },
     {
       heading: 'Where it shows up',
-      body: 'A marked voter has a Voted badge on the household card, the door screen and the paper sheet, a door row says how many have voted, the door screen gains a “Still to vote” filter, and the map can filter doors and draw a heat map by who has voted.',
+      body: 'A marked voter has a Voted badge on the household card, the door screen and the paper sheet, a door row says how many have voted, the door screen gains a “Still to vote” filter, and “Open the turnout map” shows every door as nobody, some or everyone voted, with the heat weighed by who has voted.',
     },
     {
       heading: 'Keep it private',
