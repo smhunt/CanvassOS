@@ -222,7 +222,8 @@ mc-canvass/
 │   │   ├── 006_public_requests.sql      public_request: website sign-ups and hand-entered requests
 │   │   ├── 007_subscriber_link.sql      subscriber_link, match_candidate (the phase 8 matcher)
 │   │   ├── 008_sign_request_cancel.sql  sign.cancelled_*: a request withdrawn, stamped not deleted
-│   │   └── 009_product_waitlist.sql     product_waitlist: other campaigns' CanvassOS enquiries (not voter data)
+│   │   ├── 009_product_waitlist.sql     product_waitlist: other campaigns' CanvassOS enquiries (not voter data)
+│   │   └── 010_voted.sql        voter.voted_at (the clerk's voted list) + voted_import (one row per file)
 │   └── migrate.sh               applies pending migrations, records them in schema_migration
 │
 ├── importer/                    one-shot loader: import.py (stdlib + psycopg), diff.py (the pure re-import
@@ -329,7 +330,7 @@ recorded in the `schema_migration` table that `db/migrate.sh` creates on demand
 together, so a failure leaves nothing half-applied, and "pending" is simply "a file in
 `db/migrations/` whose basename is not a row in that table".
 
-The migrations are `001_signs.sql` through `009_product_waitlist.sql`; which of them a given
+The migrations are `001_signs.sql` through `010_voted.sql`; which of them a given
 database has applied is answered by `make migrate-status`, not by this sentence, which goes stale. They have to be
 applied to `canvass_test` and `canvass_demo` as well, or the test suite and the demo drift out of
 shape — `make demo` does exactly that (`schema.sql` into a fresh database, then `migrate.sh`).
@@ -406,6 +407,18 @@ materialisation is a cheap bbox `BETWEEN` in SQL followed by a ray-casting point
 TypeScript (`api/src/lib/geo.ts`), which is one query plus a few thousand comparisons per turf save —
 well under a millisecond over ~7k rows. `CREATE EXTENSION postgis` has never been run. It is there if a
 genuinely spatial query ever needs it.
+
+**Who has voted (`010_voted.sql`, 1.9.0).** `voter.voted_at` is when the clerk's strike-off list said
+that elector had voted — NULL means "not known to have voted", never "has not voted" — and
+`voter.voted_import_id` points at the `voted_import` row for the file that set it (label, mode,
+sha256, who, and the counts the operator saw; `ON DELETE SET NULL`, so deleting an import's
+bookkeeping un-votes nobody). A column on `voter` rather than a table of its own for the reason 008
+put the cancel stamp on `sign`: one row per elector already exists, every read of a voter already
+passes through `serialize.ts`, and no new foreign key to `household` means no change to the `--force`
+guard's table list — the guard counts the stamps themselves instead. Set and cleared only by
+`POST /api/voted/import` (`api/src/routes/voted.ts`), whose matching lives in the pure
+`api/src/lib/voted.ts`. The diff re-import treats a stamped elector as referenced and counts the
+stamps as a survivor, so a list update cannot silently un-vote anyone.
 
 **Canvassing (Phase 2, now live).** `turf` (name, optional `ward` **label**, GeoJSON polygon in a
 `jsonb` column when drawn, `created_by`, `archived`), `turf_household` (with `walk_order`),
@@ -720,6 +733,7 @@ Summary only — [`../API.md`](../API.md) is the contract.
 | Stats | `/api/stats/overview` | organizer | totals, per-ward, per-community, quality, household size, and live canvass numbers |
 | Reachability | `/api/stats/reachability` | organizer | why part of the list cannot be reached. **Aggregates only** — no name, address or id, asserted in the suite — which is what makes it safe to hand to the advice layer. Every category declares which channel it blocks (`door` / `mail` / `gatekeeper`), because "unreachable" is not one thing: `po_box_only` is 306 doors that are all perfectly knockable. `combined.households_blocked` is door-only and de-duplicated; nothing in the response is the sum of the rows above it. Audited as `view_reachability` |
 | Coverage | `/api/stats/coverage` | organizer | where the canvass has been, by ward / community / turf / Ontario day, and the latest stance per door. Aggregates only, same class as reachability. `attempted`/`spoke` are cumulative per door; `support` is the newest support at each door (doors, not visits). Audited as `view_coverage` |
+| Who has voted | `/api/voted/*` | `import`, `imports`: admin · `summary`: organizer | the clerk's voted list in (dry run first, matching never guesses, `merge` or `replace`), and turnout out as counts only. The result reaches every role through the existing scoped routes: `has_voted` on each voter, `n_voted` on a door, `voted` on a map point (volunteers inside their turfs only) and the organizer-only `voted=` points filter. Audited as `import_voted` (dry runs too) and `view_turnout` |
 | Turf shapes | `/api/turfs/shapes` | any (**scoped**) | the turf overlay on the main map. A volunteer gets only their assigned turfs; an organiser gets all of them with `mine` set on their own — a WHERE clause, not a filter after loading. A name, a shape and two counts, no door list, so fetching the whole municipality is not a bulk read. `approx: true` means the shape was derived from the turf's doors (a padded convex hull) rather than drawn, which can cover doors that are *not* in the turf — the map draws those dotted and says so |
 | Audit | `/api/audit` | admin | reverse-chronological, keyset-paged on `before=<id>`, filterable by `user_id` / `action` |
 

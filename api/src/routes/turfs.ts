@@ -564,7 +564,8 @@ export const turfRoutes: FastifyPluginAsync = async (app) => {
       q<DoorRow>(
         app.db,
         `SELECT h.id AS household_id, h.address, h.community, h.ward, h.lat, h.lon, h.n_voters,
-                x.walk_order, s.last_result, s.last_contact_at
+                x.walk_order, s.last_result, s.last_contact_at,
+                (SELECT count(*)::int FROM voter v WHERE v.household_id = h.id AND v.voted_at IS NOT NULL) AS n_voted
          FROM turf_household x
          JOIN household h ON h.id = x.household_id
          LEFT JOIN LATERAL (
@@ -579,7 +580,7 @@ export const turfRoutes: FastifyPluginAsync = async (app) => {
         app.db,
         `SELECT v.household_id, v.id, v.display_name, v.full_name, v.first_name, v.middle_names, v.last_name,
                 v.suffix, v.resident_class, v.mail_kind, v.mail_differs_real, v.mailing_address, v.mail_city,
-                v.mail_postal, vs.last_support, vs.last_result, vs.last_contact_at
+                v.mail_postal, vs.last_support, vs.last_result, vs.last_contact_at, v.voted_at
          FROM voter v
          JOIN turf_household x ON x.household_id = v.household_id AND x.turf_id = $1
          LEFT JOIN LATERAL (

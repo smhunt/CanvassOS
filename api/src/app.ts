@@ -34,6 +34,7 @@ import { assignmentRoutes, turfRoutes } from './routes/turfs.js';
 import { userRoutes } from './routes/users.js';
 import { waitlistRoutes } from './routes/waitlist.js';
 import { voterContactRoutes } from './routes/voter-contacts.js';
+import { votedRoutes } from './routes/voted.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -235,6 +236,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       await api.register(contactRoutes);
       await api.register(signRoutes, { prefix: '/signs' });
       await api.register(voterContactRoutes, { prefix: '/voter-contacts' });
+      await api.register(votedRoutes, { prefix: '/voted' });
       await api.register(messagingRoutes, { prefix: '/messaging' });
       // Public, no session: the self-serve opt-in form posts here. Sits beside /messaging rather
       // than under it because it is the one messaging route an anonymous visitor may call.

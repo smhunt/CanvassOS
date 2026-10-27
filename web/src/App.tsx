@@ -26,6 +26,8 @@ const CampaignsPage = lazy(() => import('./pages/CampaignsPage').then((m) => ({ 
 const TurfSheetPage = lazy(() => import('./pages/TurfSheetPage').then((m) => ({ default: m.TurfSheetPage })));
 // The website sign-up queue with the matcher's suggestions (phase 8), organiser-only.
 const RequestsPage = lazy(() => import('./pages/RequestsPage').then((m) => ({ default: m.RequestsPage })));
+// Who has voted: the clerk's list imported (admin) and the turnout it adds up to (organiser).
+const TurnoutPage = lazy(() => import('./pages/TurnoutPage').then((m) => ({ default: m.TurnoutPage })));
 
 export default function App() {
   return (
@@ -144,6 +146,16 @@ export default function App() {
             element={
               <RequireRole min="organizer">
                 <StatsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/turnout"
+            element={
+              <RequireRole min="organizer">
+                <Suspense fallback={<LoadingList rows={4} label="Loading the turnout…" />}>
+                  <TurnoutPage />
+                </Suspense>
               </RequireRole>
             }
           />

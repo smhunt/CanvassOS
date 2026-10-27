@@ -14,13 +14,14 @@ import { HouseholdCard, type Selection } from '../map/HouseholdCard';
 import { LegalList } from '../map/LegalList';
 import { Legend } from '../map/Legend';
 import { MapView, type MapViewHandle, type TurfHighlight, type ViewportStats } from '../map/MapView';
-import { BASE_LAYERS, COLOUR_MODES, type BaseLayer, type ColourMode } from '../map/palette';
+import { BASE_LAYERS, COLOUR_MODES, HEAT_MODES, type BaseLayer, type ColourMode, type HeatMode } from '../map/palette';
 import { SearchBox, type SearchPick } from '../map/SearchBox';
 import { TurfBanner } from '../map/TurfBanner';
 
 const LS_BASE = 'mc.map.base';
 const LS_MODE = 'mc.map.mode';
 const LS_TURFS = 'mc.map.turfs';
+const LS_HEAT = 'mc.map.heat';
 
 function readLS<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -221,6 +222,20 @@ export function MapPage() {
     setSearchParams(next, { replace: true });
   }, [turfParam, searchParams, setSearchParams]);
 
+  // The heat surface: off by default and remembered like the base layer. A volunteer's only weight
+  // is "all voters" — the voted counts exist for them inside their own turf alone, which is not a
+  // municipality-wide density — so the organizer-only modes are not offered and a remembered one is
+  // discarded if the role has changed on this device.
+  const heatModes = useMemo(() => HEAT_MODES.filter((h) => organizer || !h.organizerOnly), [organizer]);
+  const [heat, setHeatState] = useState<HeatMode>(() =>
+    readLS<HeatMode>(LS_HEAT, ['off', ...heatModes.map((h) => h.id)], 'off'),
+  );
+  const setHeat = useCallback((h: HeatMode) => {
+    setHeatState(h);
+    writeLS(LS_HEAT, h);
+  }, []);
+  const toggleHeat = useCallback(() => setHeat(heat === 'off' ? 'voters' : 'off'), [heat, setHeat]);
+
   // The turf overlay. A preference, remembered, and off by default: the map's first job is the
   // doors, and forty boundaries over them is a choice rather than a default.
   const [turfsOn, setTurfsOn] = useState(() => readLS(LS_TURFS, ['on', 'off'] as const, 'off') === 'on');
@@ -413,6 +428,29 @@ export function MapPage() {
           )}
         <button
           type="button"
+          className={`btn btn--map${heat !== 'off' ? ' btn--map-active' : ''}`}
+          onClick={toggleHeat}
+          aria-pressed={heat !== 'off'}
+          aria-label="Show where the voters are as a heat map"
+          title="Heat map"
+        >
+          <HeatIcon />
+          <span>Heat</span>
+        </button>
+        {heat !== 'off' && heatModes.length > 1 && (
+          <label className="select-pill">
+            <span className="visually-hidden">Heat map weighs</span>
+            <select value={heat} onChange={(e) => setHeat(e.target.value as HeatMode)} aria-label="Heat map weighs">
+              {heatModes.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <button
+          type="button"
           className={`btn btn--map${turfsOn ? ' btn--map-active' : ''}`}
           onClick={toggleTurfs}
           aria-pressed={turfsOn}
@@ -436,6 +474,7 @@ export function MapPage() {
         colourMode={mode}
         communities={communities}
         base={base}
+        heat={heat}
         selectedId={selection?.id ?? null}
         turfHighlight={turf?.highlight ?? null}
         turfShapes={turfShapes}
@@ -490,7 +529,7 @@ export function MapPage() {
           </button>
           {legendOpen && (
             <>
-              <Legend mode={mode} meta={meta.data} zoom={viewport.zoom} />
+              <Legend mode={mode} meta={meta.data} zoom={viewport.zoom} heat={heat} />
               {organizer && (
                 <button type="button" className="linkbtn legend-wrap__legal" onClick={() => setLegalOpen(true)}>
                   {legalCount !== null && legalCount > 0 ? `${n(legalCount)} unmapped parcels` : 'Unmapped parcels'} (legal descriptions)
@@ -574,6 +613,15 @@ function TurfIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3z" />
       <path d="M9 4v13M15 7v13" />
+    </svg>
+  );
+}
+
+/** A flame: the heat map. */
+function HeatIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 22c4.4 0 7-2.9 7-6.6 0-3.1-1.9-5.2-3.6-7.2-.5 1.6-1.4 2.6-2.6 3.1.3-2.9-.9-6.2-3.8-8.3.2 3-1.3 4.6-2.8 6.3C4.8 10.9 5 13 5 15.4 5 19.1 7.6 22 12 22z" />
     </svg>
   );
 }

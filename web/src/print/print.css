@@ -162,6 +162,13 @@
   padding-left: 1.1em;
   font-size: 7.5pt;
 }
+/* Has voted: said in words, lighter, never struck through — that would read as "do not knock". */
+.ts-name--voted {
+  color: #555;
+}
+.ts-name__voted {
+  font-style: italic;
+}
 
 /* Tick boxes: an empty bordered square, big enough for a pen tick. */
 .ts-ticks {

@@ -23,6 +23,7 @@ test('every screen in the nav opens its own help', () => {
     ['/messaging', topics.MESSAGING_HELP],
     ['/reports', topics.REPORTS_HELP],
     ['/stats', topics.STATS_HELP],
+    ['/turnout', topics.TURNOUT_HELP],
     ['/admin/users', topics.USERS_HELP],
     ['/admin/audit', topics.AUDIT_HELP],
     ['/account', topics.ACCOUNT_HELP],
@@ -49,7 +50,7 @@ test('unknown routes get no help rather than the wrong help', () => {
 test('every exported topic is reachable from some route (nothing written and forgotten)', () => {
   const routes = [
     '/map', '/canvass', '/canvass/x', '/turfs', '/signs', '/requests', '/messaging',
-    '/reports', '/stats', '/admin/users', '/admin/audit', '/account',
+    '/reports', '/stats', '/turnout', '/admin/users', '/admin/audit', '/account',
   ];
   const reached = new Set(routes.map(helpFor));
   for (const [name, t] of ALL) {

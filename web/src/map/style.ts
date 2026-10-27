@@ -6,6 +6,7 @@ import {
   RESULT_COLOURS,
   CLUSTER_COLOUR,
   DOOR_STEPS,
+  HEAT_RAMP,
   NONRES_HIGHLIGHT,
   NONRES_MUTED,
   QUALITY_COLOURS,
@@ -22,6 +23,7 @@ import {
   communityColour,
   type BaseLayer,
   type ColourMode,
+  type HeatMode,
 } from './palette';
 
 // ------------------------------------------------------------------ base layers (raster, inline)
@@ -99,6 +101,11 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
       // the single-turf `turf-outline` source, which answers a different question ("show me THIS
       // one") and must keep working while the overlay is on.
       'turf-shapes': { type: 'geojson', data: EMPTY_FC },
+      // The same door features again, UNclustered, for the heat layer. A heatmap over the clustered
+      // `households` source would be fed cluster centroids at low zoom — one hot pixel per village
+      // and nothing in between — so the density has its own copy of the points. Empty until the
+      // layer is switched on, so a map that never shows heat never holds the second copy.
+      heat: { type: 'geojson', data: EMPTY_FC },
       households: {
         type: 'geojson',
         data: EMPTY_FC,
@@ -207,6 +214,25 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
           // Fades out as the per-door rings fade in: past z16 the doors say which are yours and the
           // boundary is just a line across the street you are standing on.
           'line-opacity': ['interpolate', ['linear'], ['zoom'], 15.2, 0.9, 17, 0.35],
+        },
+      },
+      // The heat surface sits under the dots and clusters: it is ground, like the turf fills, and
+      // a door must stay tappable through it. Hidden until a mode is chosen (applyHeat).
+      {
+        id: 'heat',
+        type: 'heatmap',
+        source: 'heat',
+        layout: { visibility: 'none' },
+        paint: {
+          'heatmap-weight': heatWeightExpression('voters'),
+          // Kernel radius in pixels, growing with zoom so the surface stays a surface rather than
+          // collapsing into dots once the doors spread out.
+          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 9, 10, 11, 18, 13, 30, 15, 50, 17, 80],
+          'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 9, 0.5, 12, 1, 15, 2.2, 17, 3],
+          'heatmap-color': heatColourExpression(),
+          // Fades as the individual doors become the story; it never quite leaves, so the hot
+          // streets still read as hot with the dots on top.
+          'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0.9, 16, 0.55, 18, 0.3],
         },
       },
       {
@@ -341,6 +367,45 @@ export function buildStyle(initial: BaseLayer): StyleSpecification {
       },
     ],
   };
+}
+
+// ------------------------------------------------------------------ heat
+
+/**
+ * What one door contributes to the density. Linear in the count up to five people, flat above:
+ * an eight-voter institution is one hot door, not a town. `left` is what is still to be won —
+ * electors minus the clerk's struck-off count, floored at zero in case a count ever ran ahead.
+ */
+export function heatWeightExpression(mode: Exclude<HeatMode, 'off'>): ExpressionSpecification {
+  const n: ExpressionSpecification = ['coalesce', ['get', 'n'], 1];
+  const voted: ExpressionSpecification = ['coalesce', ['get', 'voted'], 0];
+  const count: ExpressionSpecification =
+    mode === 'voters' ? n : mode === 'voted' ? voted : ['max', 0, ['-', n, voted]];
+  return ['interpolate', ['linear'], count, 0, 0, 1, 0.3, 5, 1];
+}
+
+function heatColourExpression(): ExpressionSpecification {
+  const stops: (number | string)[] = [];
+  for (const [pos, colour] of HEAT_RAMP) stops.push(pos, colour);
+  return ['interpolate', ['linear'], ['heatmap-density'], ...stops] as unknown as ExpressionSpecification;
+}
+
+/**
+ * Switch the heat surface on in one mode or off. `heat` is the un-clustered copy of the doors;
+ * it is filled only while the layer is visible and emptied when it is not, so the second copy of
+ * 7k features exists only on a map that is actually showing it.
+ */
+export function applyHeat(map: import('maplibre-gl').Map, mode: HeatMode, points: FeatureCollection | undefined): void {
+  const src = map.getSource('heat') as import('maplibre-gl').GeoJSONSource | undefined;
+  if (!map.getLayer('heat') || !src) return;
+  if (mode === 'off') {
+    map.setLayoutProperty('heat', 'visibility', 'none');
+    src.setData(EMPTY_FC);
+    return;
+  }
+  map.setPaintProperty('heat', 'heatmap-weight', heatWeightExpression(mode));
+  map.setLayoutProperty('heat', 'visibility', 'visible');
+  src.setData(points ?? EMPTY_FC);
 }
 
 // ------------------------------------------------------------------ data-driven expressions
@@ -519,8 +584,14 @@ const DIMMED = 0.12;
  * highlight cannot clear the mode. Pass `null` to put the map back to normal — the values restored
  * here are the ones buildStyle() ships with, which is why they are repeated rather than captured.
  */
-export function applyTurfHighlight(map: import('maplibre-gl').Map, ids: string[] | null): void {
+export function applyTurfHighlight(map: import('maplibre-gl').Map, ids: string[] | null, heat = false): void {
   const on = ids !== null;
+  // With the heat surface on, the cluster bubbles are the one thing that hides it at village zoom,
+  // so they step back the same way they do for a turf highlight. Written here, not in applyHeat,
+  // because this function is the single owner of these opacities and two writers would fight.
+  const clusterOpacity = on ? 0.25 : heat ? 0.35 : 0.88;
+  const clusterStroke = on ? 0.25 : heat ? 0.5 : 1;
+  const countOpacity = on ? 0.35 : heat ? 0.6 : 1;
   // Linear scan per feature, once per data/zoom change rather than per frame; a turf is at most a
   // few thousand ids against ~7k doors, which is well inside the budget for a one-off evaluation.
   const inTurf: ExpressionSpecification = ['in', ['get', 'id'], ['literal', ids ?? []]];
@@ -533,9 +604,9 @@ export function applyTurfHighlight(map: import('maplibre-gl').Map, ids: string[]
   // as a whole. The turf's own doors stay marked because their rings come from the `turf` source,
   // which is never clustered.
   if (map.getLayer('clusters')) {
-    map.setPaintProperty('clusters', 'circle-opacity', on ? 0.25 : 0.88);
-    map.setPaintProperty('clusters', 'circle-stroke-opacity', on ? 0.25 : 1);
+    map.setPaintProperty('clusters', 'circle-opacity', clusterOpacity);
+    map.setPaintProperty('clusters', 'circle-stroke-opacity', clusterStroke);
   }
-  if (map.getLayer('cluster-count')) map.setPaintProperty('cluster-count', 'text-opacity', on ? 0.35 : 1);
+  if (map.getLayer('cluster-count')) map.setPaintProperty('cluster-count', 'text-opacity', countOpacity);
   if (map.getLayer('inst-ring')) map.setPaintProperty('inst-ring', 'circle-stroke-opacity', on ? DIMMED : 1);
 }

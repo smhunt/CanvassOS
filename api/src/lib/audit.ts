@@ -37,6 +37,12 @@ export type AuditAction =
   | 'delete_manual_request'
   | 'export'
   | 'import'
+  // The clerk's "who has voted" list (POST /api/voted/import, migration 010). The matcher reads
+  // every name on the list to place the file's rows, so a dry run is audited exactly like an apply;
+  // the detail is the mode, the dry-run flag and the counts — never a name or address from either
+  // side. `view_turnout` is the counts-only summary, same class as view_coverage.
+  | 'import_voted'
+  | 'view_turnout'
   // Phase 2 — canvassing
   // Building a turf reads which doors sit on which streets / inside a drawn shape, so the preview
   // is a read of the voters list and is recorded like one even though it changes nothing.

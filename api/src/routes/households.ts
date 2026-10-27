@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { currentSession, requireAuth, requireRole } from '../auth/guard.js';
 import { one, q } from '../db.js';
 import { audit } from '../lib/audit.js';
-import { ApiError, notFound } from '../lib/errors.js';
+import { ApiError, forbidden, notFound } from '../lib/errors.js';
 import { assertHouseholdAccess } from '../lib/scope.js';
 import {
   requestDoorImage,
@@ -35,6 +35,13 @@ const pointsQuery = z.object({
   ward: csvList(/^\d{2}$/, 10),
   community: csvList(/^[A-Z' .-]{1,30}$/i, 30).transform((a) => a?.map((c) => c.toUpperCase())),
   quality: csvList(/^(good|approx|legal|check)$/, 4),
+  /**
+   * Doors by how many of their electors have voted: `none` (nobody yet), `some` (at least one, not
+   * all), `all` (everyone). Organizer/admin only — for a volunteer the voted count exists only
+   * inside their own turf, and a municipality-wide filter on it would say which doors elsewhere
+   * have finished voting.
+   */
+  voted: csvList(/^(none|some|all)$/, 3),
   bbox: z
     .string()
     .optional()
@@ -105,7 +112,7 @@ const HOUSEHOLD_COLS = `
 const VOTER_COLS = `
   v.id, v.display_name, v.full_name, v.first_name, v.middle_names, v.last_name, v.suffix,
   v.resident_class, v.mail_kind, v.mail_differs_real, v.mailing_address, v.mail_city, v.mail_postal,
-  vs.last_support, vs.last_result, vs.last_contact_at`;
+  vs.last_support, vs.last_result, vs.last_contact_at, v.voted_at`;
 
 /** 6 decimals ≈ 0.1 m; keeps the 7k-point payload small. */
 const round6 = (n: number): number => Math.round(n * 1e6) / 1e6;
@@ -139,6 +146,14 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
       const n = params.length;
       where.push(`h.lon BETWEEN $${n - 3} AND $${n - 1}`, `h.lat BETWEEN $${n - 2} AND $${n}`);
     }
+    if (qp.voted) {
+      if (!organizer) throw forbidden('the voted filter is organizer-only', 'forbidden');
+      const tests: string[] = [];
+      if (qp.voted.includes('none')) tests.push('coalesce(vt.n, 0) = 0');
+      if (qp.voted.includes('some')) tests.push('(coalesce(vt.n, 0) > 0 AND vt.n < h.n_voters)');
+      if (qp.voted.includes('all')) tests.push('(h.n_voters > 0 AND coalesce(vt.n, 0) >= h.n_voters)');
+      where.push(`(${tests.join(' OR ')})`);
+    }
 
     // Organizers get `status` everywhere. Volunteers get it only for doors inside a turf assigned
     // to them (Phase 2 — so they can colour their own turf); everything else stays as anonymous as
@@ -146,10 +161,15 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
     let cte = '';
     let joins: string;
     let extraCols: string;
+    // `vt` is the per-door count of electors struck off as having voted (migration 010). For a
+    // volunteer it is computed only inside their scope, like `status`: out-of-turf rows are never
+    // counted, not counted and then stripped.
     if (organizer) {
       joins = `LEFT JOIN LATERAL (SELECT c.result AS last_result FROM contact c
-                                  WHERE c.household_id = h.id ORDER BY c.at DESC LIMIT 1) s ON true`;
-      extraCols = 's.last_result, true AS in_turf';
+                                  WHERE c.household_id = h.id ORDER BY c.at DESC LIMIT 1) s ON true
+               LEFT JOIN (SELECT household_id, count(*)::int AS n FROM voter
+                          WHERE voted_at IS NOT NULL GROUP BY household_id) vt ON vt.household_id = h.id`;
+      extraCols = 's.last_result, coalesce(vt.n, 0) AS n_voted, true AS in_turf';
     } else {
       params.push(sess.user.id);
       cte = `WITH scope AS (
@@ -160,8 +180,11 @@ export const householdRoutes: FastifyPluginAsync = async (app) => {
       joins = `LEFT JOIN scope sc ON sc.household_id = h.id
                LEFT JOIN LATERAL (SELECT c.result AS last_result FROM contact c
                                   WHERE sc.household_id IS NOT NULL AND c.household_id = h.id
-                                  ORDER BY c.at DESC LIMIT 1) s ON true`;
-      extraCols = 's.last_result, (sc.household_id IS NOT NULL) AS in_turf';
+                                  ORDER BY c.at DESC LIMIT 1) s ON true
+               LEFT JOIN LATERAL (SELECT count(*)::int AS n FROM voter v
+                                  WHERE sc.household_id IS NOT NULL AND v.household_id = h.id
+                                    AND v.voted_at IS NOT NULL) vt ON true`;
+      extraCols = 's.last_result, coalesce(vt.n, 0) AS n_voted, (sc.household_id IS NOT NULL) AS in_turf';
     }
 
     const rows = await q<PointRow>(

@@ -45,8 +45,12 @@ import type {
   VoterContact,
   VoterContactInput,
   TurfSummary,
+  Turnout,
   User,
   UserRow,
+  VotedImport,
+  VotedImportInput,
+  VotedImportResult,
 } from './types';
 
 export const ME_KEY = ['me'] as const;
@@ -124,22 +128,27 @@ export function useMeta(enabled = true) {
 
 // ------------------------------------------------------------------ households
 
+/** Doors by how many of their electors have voted. Organizer-only on the API, so only an organizer's drawer offers it. */
+export type VotedFilter = 'none' | 'some' | 'all';
+
 export interface PointFilters {
   ward: string[];
   community: string[];
   quality: Quality[];
+  voted: VotedFilter[];
 }
 
-export const EMPTY_FILTERS: PointFilters = { ward: [], community: [], quality: [] };
+export const EMPTY_FILTERS: PointFilters = { ward: [], community: [], quality: [], voted: [] };
 
 export function usePoints(filters: PointFilters) {
   return useQuery({
-    queryKey: ['points', filters.ward, filters.community, filters.quality],
+    queryKey: ['points', filters.ward, filters.community, filters.quality, filters.voted],
     queryFn: () =>
       api.get<PointsCollection>('/households/points', {
         ward: filters.ward,
         community: filters.community,
         quality: filters.quality,
+        voted: filters.voted,
       }),
     staleTime: 60_000,
     placeholderData: keepPreviousData,
@@ -183,6 +192,49 @@ export function useStats() {
     queryKey: ['stats'],
     queryFn: () => api.get<StatsOverview>('/stats/overview'),
     staleTime: 60_000,
+  });
+}
+
+// ------------------------------------------------------------------ who has voted (1.9.0)
+
+export const TURNOUT_KEY = ['turnout'] as const;
+
+/** Turnout so far — counts only. Organizer and above. */
+export function useTurnout(enabled = true) {
+  return useQuery({
+    queryKey: TURNOUT_KEY,
+    queryFn: () => api.get<Turnout>('/voted/summary'),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+/** The files applied so far. Admin only. */
+export function useVotedImports(enabled = true) {
+  return useQuery({
+    queryKey: ['voted-imports'],
+    queryFn: () => api.get<{ imports: VotedImport[] }>('/voted/imports').then((r) => r.imports),
+    staleTime: 30_000,
+    enabled,
+  });
+}
+
+/**
+ * Import a voted list. A dry run changes nothing and invalidates nothing; an apply changes who has
+ * voted on every door, so the points, every open card and door list, and the turnout all refetch.
+ */
+export function useVotedImport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: VotedImportInput) => api.post<VotedImportResult>('/voted/import', body),
+    onSuccess: (r) => {
+      if (r.dry_run) return;
+      void qc.invalidateQueries({ queryKey: ['voted-imports'] });
+      void qc.invalidateQueries({ queryKey: TURNOUT_KEY });
+      void qc.invalidateQueries({ queryKey: ['points'] });
+      void qc.invalidateQueries({ queryKey: ['household'] });
+      void qc.invalidateQueries({ queryKey: ['doors'] });
+    },
   });
 }
 

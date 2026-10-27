@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.8.0';
+export const APP_VERSION = '1.9.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,15 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.9.0',
+    date: '2026-10-21',
+    changes: [
+      'Who has voted: the clerk\u2019s list of people who have already voted can be imported under the new Turnout page. Check the file first, then apply it; a name that could be two people is left alone and listed, never guessed.',
+      'Once imported, a voter who has voted shows as "Voted" on the household card, the door screen and the paper sheet, a door row says how many have voted, and the door screen has a "Still to vote" filter \u2014 so nobody is asked to vote twice.',
+      'The map has a Heat button: a warm glow under the dots where the voters are thickest. Organizers can weigh it by who has voted or who is still to vote, and filter the map by who has voted at each door.',
+    ],
+  },
   {
     version: '1.8.0',
     date: '2026-10-01',

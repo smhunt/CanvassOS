@@ -131,3 +131,33 @@ export const BASE_LAYERS: { id: BaseLayer; label: string }[] = [
   { id: 'streets', label: 'Streets' },
   { id: 'satellite', label: 'Satellite' },
 ];
+
+/**
+ * The heat layer: where the voters are, as a density surface under the dots.
+ *
+ * Three weights, one ramp. `voters` is every elector on the list (any role); `voted` and `left`
+ * read the per-door voted count, which a volunteer only has inside their own turf — so those two
+ * are organizer-only, exactly like the `voted` point property they are built from. One ramp rather
+ * than three, because the layer answers one question ("where is there a lot of this?") and a
+ * second hue would read as a second category rather than more of the same.
+ *
+ * The ramp is ColorBrewer YlOrRd: it starts transparent so empty countryside stays the basemap,
+ * and none of its stops is a ward, result or sign colour.
+ */
+export type HeatMode = 'off' | 'voters' | 'voted' | 'left';
+
+export const HEAT_MODES: { id: Exclude<HeatMode, 'off'>; label: string; legend: string; organizerOnly?: boolean }[] = [
+  { id: 'voters', label: 'All voters', legend: 'voters on the list' },
+  { id: 'voted', label: 'Have voted', legend: 'voters who have voted', organizerOnly: true },
+  { id: 'left', label: 'Still to vote', legend: 'voters still to vote', organizerOnly: true },
+];
+
+/** `[position 0..1, colour]` stops for `heatmap-color`, and for the legend's gradient. */
+export const HEAT_RAMP: [number, string][] = [
+  [0, 'rgba(255, 255, 178, 0)'],
+  [0.15, 'rgba(254, 217, 118, 0.55)'],
+  [0.4, 'rgba(254, 178, 76, 0.75)'],
+  [0.65, 'rgba(253, 141, 60, 0.85)'],
+  [0.85, 'rgba(240, 59, 32, 0.9)'],
+  [1, 'rgba(189, 0, 38, 0.95)'],
+];

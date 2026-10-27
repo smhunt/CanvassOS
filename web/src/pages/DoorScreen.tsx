@@ -21,7 +21,8 @@ import { EmptyState, ErrorBox, LoadingList, Spinner, n, wardLabel } from '../com
 // volunteer actually asks for a map — never as a side effect of opening the door list.
 const TurfMap = lazy(() => import('../canvass/TurfMap'));
 
-type Filter = 'all' | 'todo';
+/** `tovote`: doors where somebody has not yet voted AND nobody has knocked — the GOTV list. */
+type Filter = 'all' | 'todo' | 'tovote';
 type View = 'list' | 'map';
 
 const NO_DISTANCES = new Map<string, number>();
@@ -80,7 +81,17 @@ export function DoorScreen() {
   );
 
   const done = doors.filter((d) => resultFor(d) !== null).length;
-  const visible = filter === 'todo' ? doors.filter((d) => resultFor(d) === null) : doors;
+  const stillToVote = (d: Door) => d.n_voters === 0 || d.n_voted < d.n_voters;
+  const visible =
+    filter === 'todo'
+      ? doors.filter((d) => resultFor(d) === null)
+      : filter === 'tovote'
+        ? doors.filter((d) => resultFor(d) === null && stillToVote(d))
+        : doors;
+  // Only offered once the campaign has imported a voted list: before that it is the same list as
+  // "not yet knocked" and a third button would be noise.
+  const anyVoted = doors.some((d) => d.n_voted > 0);
+  const toVote = doors.filter((d) => resultFor(d) === null && stillToVote(d)).length;
   const openIndex = doors.findIndex((d) => d.household_id === openId);
   const openDoor = openIndex >= 0 ? doors[openIndex] : undefined;
 
@@ -218,6 +229,11 @@ export function DoorScreen() {
               <button type="button" className="cv-seg__btn" aria-pressed={filter === 'todo'} onClick={() => setFilter('todo')}>
                 Not yet knocked ({n(todo)})
               </button>
+              {anyVoted && (
+                <button type="button" className="cv-seg__btn" aria-pressed={filter === 'tovote'} onClick={() => setFilter('tovote')}>
+                  Still to vote ({n(toVote)})
+                </button>
+              )}
             </div>
           )}
           {view === 'list' && (
@@ -304,7 +320,7 @@ export function DoorScreen() {
         )}
 
         {view === 'list' && doors.length > 0 && visible.length === 0 && (
-          <EmptyState title="Every door here is done">
+          <EmptyState title={filter === 'tovote' ? 'Everyone left here has voted, or been knocked' : 'Every door here is done'}>
             Nice work. Switch to “All doors” to look one up again.
           </EmptyState>
         )}

@@ -3,8 +3,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Meta, PointProps, PointsCollection } from '../api/types';
-import type { BaseLayer, ColourMode } from './palette';
-import { EMPTY_FC, applyTurfHighlight, buildStyle, clusterColourExpression, colourExpression, setBaseLayer } from './style';
+import type { BaseLayer, ColourMode, HeatMode } from './palette';
+import { EMPTY_FC, applyHeat, applyTurfHighlight, buildStyle, clusterColourExpression, colourExpression, setBaseLayer } from './style';
 
 export interface ViewportStats {
   doors: number;
@@ -40,6 +40,8 @@ interface Props {
   colourMode: ColourMode;
   communities: string[];
   base: BaseLayer;
+  /** The density surface under the dots: off, or which count it weighs. */
+  heat?: HeatMode;
   selectedId: string | null;
   /** A turf opened via /map?turf=<id>, or null for the normal map. */
   turfHighlight?: TurfHighlight | null;
@@ -93,6 +95,7 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     colourMode,
     communities,
     base,
+    heat = 'off',
     selectedId,
     turfHighlight = null,
     drawing = false,
@@ -299,6 +302,7 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
           nonres: typeof props.nonres === 'number' ? props.nonres : undefined,
           q: props.q as PointProps['q'],
           status: (props.status as string | null | undefined) ?? null,
+          voted: typeof props.voted === 'number' ? props.voted : undefined,
         },
         coords,
       );
@@ -350,6 +354,15 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     emitViewportRef.current();
   }, [points, ready]);
 
+  // ---- heat surface
+  // Re-fed on every points change too: it is a second copy of the same features, and a filter that
+  // changes the doors must change the density with them.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    applyHeat(map, heat, points);
+  }, [heat, points, ready]);
+
   // ---- colour mode
   useEffect(() => {
     const map = mapRef.current;
@@ -384,8 +397,8 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     src.setData(turfHighlight?.points ?? EMPTY_FC);
     const outline = map.getSource('turf-outline') as GeoJSONSource | undefined;
     outline?.setData(turfHighlight?.outline ?? EMPTY_FC);
-    applyTurfHighlight(map, turfHighlight?.ids ?? null);
-  }, [turfHighlight, ready]);
+    applyTurfHighlight(map, turfHighlight?.ids ?? null, heat !== 'off');
+  }, [turfHighlight, heat, ready]);
 
   // ---- lawn signs overlay
   useEffect(() => {

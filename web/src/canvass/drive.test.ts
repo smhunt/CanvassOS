@@ -52,6 +52,7 @@ const door = (id: string, lat: number, lon: number): Door => ({
   lat,
   lon,
   n_voters: 1,
+  n_voted: 0,
   walk_order: 0,
   last_result: null,
   last_contact_at: null,

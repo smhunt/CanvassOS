@@ -4,6 +4,8 @@ import { titleCase, wardLabel } from '../components/ui';
 import {
   CLUSTER_COLOUR,
   DOOR_STEPS,
+  HEAT_MODES,
+  HEAT_RAMP,
   NONRES_HIGHLIGHT,
   NONRES_MUTED,
   NOT_CONTACTED,
@@ -13,15 +15,20 @@ import {
   communityColour,
   wardColour,
   type ColourMode,
+  type HeatMode,
 } from './palette';
 
 interface Props {
   mode: ColourMode;
   meta: Meta | undefined;
   zoom: number;
+  heat?: HeatMode;
 }
 
-export function Legend({ mode, meta, zoom }: Props) {
+/** The ramp as one CSS gradient, so the legend shows exactly the colours the layer paints. */
+const HEAT_GRADIENT = `linear-gradient(to right, ${HEAT_RAMP.map(([p, c]) => `${c} ${Math.round(p * 100)}%`).join(', ')})`;
+
+export function Legend({ mode, meta, zoom, heat = 'off' }: Props) {
   const communities = meta?.communities.map((c) => c.community) ?? [];
   let items: { colour: string; label: string }[] = [];
   switch (mode) {
@@ -54,8 +61,21 @@ export function Legend({ mode, meta, zoom }: Props) {
       break;
   }
   const clustered = zoom < 13;
+  const heatMode = heat === 'off' ? null : HEAT_MODES.find((h) => h.id === heat);
   return (
     <div className="legend" aria-label="Legend">
+      {heatMode && (
+        <div className="legend__heat">
+          <div className="legend__heat-bar" style={{ background: HEAT_GRADIENT }} aria-hidden="true" />
+          <div className="legend__heat-ends muted small" aria-hidden="true">
+            <span>fewer</span>
+            <span>more</span>
+          </div>
+          <p className="muted small legend__note">
+            Heat: {heatMode.legend}, per area. The dots on top are still coloured by {mode === 'status' ? 'canvass status' : 'the mode above'}.
+          </p>
+        </div>
+      )}
       {clustered && (
         <div className="legend__item">
           <span className="legend__cluster" style={{ background: CLUSTER_COLOUR }} aria-hidden="true">

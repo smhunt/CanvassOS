@@ -11,6 +11,7 @@ import {
   SIGNS_HELP,
   STATS_HELP,
   TURFS_HELP,
+  TURNOUT_HELP,
   USERS_HELP,
 } from './topics';
 
@@ -41,6 +42,8 @@ export function helpFor(pathname: string): HelpTopic | null {
       return REPORTS_HELP;
     case '/stats':
       return STATS_HELP;
+    case '/turnout':
+      return TURNOUT_HELP;
     case '/admin/users':
       return USERS_HELP;
     case '/admin/audit':
