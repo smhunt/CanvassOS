@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export const APP_VERSION = '1.9.0';
+export const APP_VERSION = '1.10.0';
 export const REPO_URL = 'https://github.com/smhunt/CanvassOS';
 
 export interface Release {
@@ -11,6 +11,14 @@ export interface Release {
 
 /** Mirrors CHANGELOG.md at the repo root — keep the two in step. */
 export const CHANGELOG: Release[] = [
+  {
+    version: '1.10.0',
+    date: '2026-10-27',
+    changes: [
+      'A turnout map: colour the map by Turnout to see every door as nobody, some or everyone voted, with clusters shaded by their share. "Open the turnout map" on the Turnout page takes you straight there.',
+      'When a voted list is checked, the rows that could not be placed are now explained: an address we do not have, a new surname at a door we have, or a different given name in a family we have. These are people added to the list after ours was exported, not mistakes.',
+    ],
+  },
   {
     version: '1.9.0',
     date: '2026-10-21',

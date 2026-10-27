@@ -110,7 +110,7 @@ export const SIGN_FALLBACK = '#8a94a0';
 export const TURF_AREA = '#2f6fbf';
 export const TURF_AREA_MINE = '#0b4a91';
 
-export type ColourMode = 'ward' | 'community' | 'doors' | 'quality' | 'nonres' | 'status';
+export type ColourMode = 'ward' | 'community' | 'doors' | 'quality' | 'nonres' | 'status' | 'turnout';
 
 export const COLOUR_MODES: { id: ColourMode; label: string; organizerOnly?: boolean }[] = [
   { id: 'ward', label: 'Ward' },
@@ -119,6 +119,22 @@ export const COLOUR_MODES: { id: ColourMode; label: string; organizerOnly?: bool
   { id: 'quality', label: 'Record quality', organizerOnly: true },
   { id: 'nonres', label: 'Non-resident owners', organizerOnly: true },
   { id: 'status', label: 'Canvass status' },
+  // Organizer-only because the `voted` point property a volunteer gets exists only inside their
+  // own turfs, and a municipality-wide colouring from it would be mostly grey and misleading.
+  { id: 'turnout', label: 'Turnout', organizerOnly: true },
+];
+
+/**
+ * Turnout per door, from the clerk's voted list: nobody yet, some, everyone. Grey for nobody so
+ * the untouched doors recede and the voted ones read; the shares for clusters run the same
+ * green at four strengths, because a cluster is a ratio rather than a state.
+ */
+export const TURNOUT_COLOURS = { none: '#c3ccd6', some: '#e0a31a', all: '#1f8a4c' } as const;
+export const TURNOUT_SHARE_STEPS: { label: string; min: number; colour: string }[] = [
+  { label: 'under 25% voted', min: 0, colour: '#d7dee6' },
+  { label: '25–50%', min: 0.25, colour: '#9fd3b6' },
+  { label: '50–75%', min: 0.5, colour: '#4fae7c' },
+  { label: '75% and up', min: 0.75, colour: '#1f6e42' },
 ];
 
 export type BaseLayer = 'light' | 'streets' | 'satellite';

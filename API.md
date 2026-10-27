@@ -846,10 +846,18 @@ never "has not voted"), a `voted_import` row per applied file.
                        n_ambiguous, n_marked, n_cleared } | null,
     counts: { entries, matched, unmatched, ambiguous, address_differs,
               by_how: { id, key, "name+address", name, "name~address" },
+              unmatched_by: { new_address, new_at_door, given_name_differs, surname_unknown, no_name },
               would_mark, would_clear },      // against what is stamped NOW: a `voted: false` row for
                                               // somebody never stamped is not an un-marking
-    unmatched: [{ index, name, address, reason: 'no_candidate' | 'nothing_to_match_on' | 'ambiguous', candidates? }] }
+    unmatched: [{ index, name, address, reason: 'no_candidate' | 'nothing_to_match_on' | 'ambiguous',
+                  why?, candidates? }] }
   ```
+  `why` (and `unmatched_by`, the totals) says what kind of miss an unplaced row is, so "why so many" has
+  an answer: `new_address` — no household on our list at that address; `new_at_door` — the door is ours
+  but nobody of that surname is at it; `given_name_differs` — that surname is at that door but no given
+  name agrees; `surname_unknown` — no address given and no such surname anywhere; `no_name`. The first
+  three are electors added to the clerk's list after the export this stack was loaded from (the list is
+  revised through election day), not matching failures. The audit detail carries the same totals as `why_*`.
   `unmatched` is the operator's own file echoed back (at most 500 rows; the counts are always complete).
   `400 bad_file` when `entries` holds no list, `400 empty_file` when it holds no rows.
 - `GET /api/voted/imports` → **admin**. `{ imports: [ ...the import object above... ] }`, newest first, 200 at most.

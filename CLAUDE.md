@@ -34,7 +34,11 @@ every voter projection, `n_voted` per door, a "still to vote" filter on the door
 map a who-has-voted filter plus a **heat layer** (`heat` source + layer in `web/src/map/style.ts`,
 weighed by all voters, voted, or still to vote; the last two organizer-only because a volunteer's
 `voted` point property exists only inside their turfs). Migration `010_voted.sql`; the diff re-import
-and the `--force` guard both know about the stamps.
+and the `--force` guard both know about the stamps. 1.10.0 adds a **Turnout** colour mode (doors
+nobody/some/everyone, clusters by share via a `voted` cluster accumulator) opened from the Turnout
+page as `/map?mode=turnout&heat=voted`, and the check classifies every unplaced row
+(`unmatched_by`: new address, new at door, given name differs…) — on the real final list those are
+electors added after our export, not matcher failures.
 
 **Phase 4 is partly done.** The **diff-based re-import** shipped 2026-09-15 (`make import-diff`, then
 `make import-apply`): it updates the list in place and keeps every contact, sign, consent record,

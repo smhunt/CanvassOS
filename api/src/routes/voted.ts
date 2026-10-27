@@ -95,6 +95,7 @@ const unplaced = (results: EntryResult[]) =>
         name: r.name,
         address: r.address,
         reason: o.kind === 'ambiguous' ? 'ambiguous' : o.kind === 'unmatched' ? o.reason : 'matched',
+        why: o.kind === 'unmatched' ? o.why : undefined,
         candidates: o.kind === 'ambiguous' ? o.candidates : undefined,
       };
     });
@@ -304,5 +305,10 @@ function flatCounts(c: ReturnType<typeof planVotedImport>['counts']): Record<str
     how_name_address: c.by_how['name+address'],
     how_name: c.by_how.name,
     how_name_only: c.by_how['name~address'],
+    why_new_address: c.unmatched_by.new_address,
+    why_new_at_door: c.unmatched_by.new_at_door,
+    why_given_name_differs: c.unmatched_by.given_name_differs,
+    why_surname_unknown: c.unmatched_by.surname_unknown,
+    why_no_name: c.unmatched_by.no_name,
   };
 }
